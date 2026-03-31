@@ -189,8 +189,16 @@ async function loadListings() {
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
-  <ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination></ActiveList>
+  <ActiveList>
+    <Include>true</Include>
+    <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
+    <Sort>ItemID</Sort>
+  </ActiveList>
   <DetailLevel>ReturnAll</DetailLevel>
+  <OutputSelector>ActiveList</OutputSelector>
+  <OutputSelector>ItemID</OutputSelector>
+  <OutputSelector>Title</OutputSelector>
+  <OutputSelector>Description</OutputSelector>
 </GetMyeBaySellingRequest>`;
 
   try {
