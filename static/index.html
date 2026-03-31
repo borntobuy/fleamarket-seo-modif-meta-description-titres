@@ -155,27 +155,15 @@ function getKeys() {
   };
 }
 
-async function ebayCall(callName, xmlBody) {
-  const keys = getKeys();
-  const resp = await fetch('/ebay', {
+async function ebayREST(path, method, token, body) {
+  const resp = await fetch('/ebay_rest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      headers: {
-        'X-EBAY-API-SITEID': '0',
-        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
-        'X-EBAY-API-CALL-NAME': callName,
-        'X-EBAY-API-APP-NAME': keys.appId,
-        'X-EBAY-API-DEV-NAME': '',
-        'X-EBAY-API-CERT-NAME': keys.certId,
-        'Content-Type': 'text/xml'
-      },
-      body: xmlBody
-    })
+    body: JSON.stringify({ path, method, token, body })
   });
   const data = await resp.json();
   if (data.error) throw new Error(data.error);
-  return new DOMParser().parseFromString(data.body, 'text/xml');
+  return data;
 }
 
 async function loadListings() {
@@ -186,45 +174,19 @@ async function loadListings() {
   }
   setStatus('Connexion à eBay...', 'info');
 
-  const xml = `<?xml version="1.0" encoding="utf-8"?>
-<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
-  <ActiveList>
-    <Include>true</Include>
-    <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
-    <Sort>ItemID</Sort>
-  </ActiveList>
-  <DetailLevel>ReturnAll</DetailLevel>
-  <OutputSelector>ActiveList</OutputSelector>
-  <OutputSelector>ItemID</OutputSelector>
-  <OutputSelector>Title</OutputSelector>
-  <OutputSelector>Description</OutputSelector>
-</GetMyeBaySellingRequest>`;
-
   try {
-    const doc = await ebayCall('GetMyeBaySelling', xml);
-    const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
-    if (ack !== 'Success' && ack !== 'Warning') {
-      throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
-    }
-    const items = doc.getElementsByTagName('Item');
-    listings = Array.from(items).map(item => ({
-      id: item.getElementsByTagName('ItemID')[0]?.textContent || '',
-      title: item.getElementsByTagName('Title')[0]?.textContent || '',
-      description: item.getElementsByTagName('Description')[0]?.textContent || '',
+    // Use eBay REST Inventory API
+    const data = await ebayREST('/sell/inventory/v1/inventory_item?limit=200', 'GET', keys.token, null);
+    const items = data.inventoryItems || [];
+    listings = items.map(item => ({
+      id: item.sku || '',
+      title: item.product?.title || '',
+      description: item.product?.description || '',
       status: 'pending',
       newDescription: null,
       keyword: null
     }));
-
-    const activeListCount = doc.getElementsByTagName('TotalNumberOfEntries')[0]?.textContent;
-    const ackVal = doc.getElementsByTagName('Ack')[0]?.textContent;
-    const errMsg = doc.getElementsByTagName('ShortMessage')[0]?.textContent || '';
-    // Afficher XML brut
-    let dbx = document.getElementById('debug-xml');
-    if (!dbx) { dbx = document.createElement('textarea'); dbx.id='debug-xml'; dbx.style.cssText='width:100%;height:180px;font-size:10px;font-family:monospace;margin-top:12px;padding:8px;border:1px solid #d4c9b0;background:#f5f0e8;'; document.getElementById('status').insertAdjacentElement('afterend', dbx); }
-    dbx.value = new XMLSerializer().serializeToString(doc);
-    if (listings.length === 0) { setStatus('Aucun article. Ack:' + ackVal + ' Total:' + (activeListCount||'?') + ' — voir XML ci-dessous', 'error'); return; }
+    if (listings.length === 0) { setStatus('Aucun article trouvé via REST API. Réponse: ' + JSON.stringify(data).substring(0,200), 'error'); return; }
     counts.total = listings.length;
     updateCounts();
     setStatus(`${listings.length} articles chargés.`, 'success');
