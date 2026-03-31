@@ -209,7 +209,10 @@ async function loadListings() {
       keyword: null
     }));
 
-    if (listings.length === 0) { setStatus('Aucun article actif trouvé.', 'error'); return; }
+    const activeListCount = doc.querySelector('ActiveList PaginationResult TotalNumberOfEntries')?.textContent;
+    const ackVal = doc.querySelector('Ack')?.textContent;
+    const errMsg = doc.querySelector('ShortMessage')?.textContent || '';
+    if (listings.length === 0) { setStatus(`Aucun article trouvé. Ack: ${ackVal} | Total eBay: ${activeListCount || '?'} | ${errMsg || 'pas d\'erreur'}`, 'error'); return; }
     counts.total = listings.length;
     updateCounts();
     setStatus(`${listings.length} articles chargés.`, 'success');
