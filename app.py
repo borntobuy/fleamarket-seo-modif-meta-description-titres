@@ -55,8 +55,10 @@ def ebay_rest_proxy():
 @app.route('/anthropic', methods=['POST'])
 def anthropic_proxy():
     data = request.json
-    api_key = data.get('api_key', '')
+    api_key = data.get('api_key', '').strip()
     payload = data.get('payload', {})
+    if not api_key:
+        return jsonify({'error': {'message': 'Clé Anthropic manquante — vérifiez le champ API Key.'}}), 400
     try:
         resp = requests.post(
             'https://api.anthropic.com/v1/messages',
@@ -68,9 +70,15 @@ def anthropic_proxy():
             json=payload,
             timeout=60
         )
-        return jsonify(resp.json())
+        text = resp.text.strip()
+        if not text:
+            return jsonify({'error': {'message': f'Réponse vide de l\'API Anthropic (HTTP {resp.status_code})'}}), 502
+        try:
+            return jsonify(resp.json())
+        except Exception:
+            return jsonify({'error': {'message': f'Réponse non-JSON ({resp.status_code}): {text[:300]}'}}), 502
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': {'message': str(e)}}), 500
 
 @app.route('/fetch_image', methods=['POST'])
 def fetch_image():
@@ -82,6 +90,8 @@ def fetch_image():
         return jsonify({'error': 'No URL provided'}), 400
     try:
         resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
+        if not resp.content:
+            return jsonify({'error': 'Image vide'}), 204
         content_type = resp.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
         b64 = base64.b64encode(resp.content).decode('utf-8')
         return jsonify({'base64': b64, 'mediaType': content_type})
