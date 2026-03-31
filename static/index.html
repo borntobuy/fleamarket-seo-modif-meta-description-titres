@@ -195,24 +195,28 @@ async function loadListings() {
 
   try {
     const doc = await ebayCall('GetMyeBaySelling', xml);
-    const ack = doc.querySelector('Ack')?.textContent;
+    const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
     if (ack !== 'Success' && ack !== 'Warning') {
-      throw new Error(doc.querySelector('ShortMessage')?.textContent || 'Erreur eBay');
+      throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
     }
-    const items = doc.querySelectorAll('ActiveList ItemArray Item');
+    const items = doc.getElementsByTagName('Item');
     listings = Array.from(items).map(item => ({
-      id: item.querySelector('ItemID')?.textContent || '',
-      title: item.querySelector('Title')?.textContent || '',
-      description: item.querySelector('Description')?.textContent || '',
+      id: item.getElementsByTagName('ItemID')[0]?.textContent || '',
+      title: item.getElementsByTagName('Title')[0]?.textContent || '',
+      description: item.getElementsByTagName('Description')[0]?.textContent || '',
       status: 'pending',
       newDescription: null,
       keyword: null
     }));
 
-    const activeListCount = doc.querySelector('ActiveList PaginationResult TotalNumberOfEntries')?.textContent;
-    const ackVal = doc.querySelector('Ack')?.textContent;
-    const errMsg = doc.querySelector('ShortMessage')?.textContent || '';
-    if (listings.length === 0) { setStatus(`Aucun article trouvé. Ack: ${ackVal} | Total eBay: ${activeListCount || '?'} | ${errMsg || 'pas d\'erreur'}`, 'error'); return; }
+    const activeListCount = doc.getElementsByTagName('TotalNumberOfEntries')[0]?.textContent;
+    const ackVal = doc.getElementsByTagName('Ack')[0]?.textContent;
+    const errMsg = doc.getElementsByTagName('ShortMessage')[0]?.textContent || '';
+    // Afficher XML brut
+    let dbx = document.getElementById('debug-xml');
+    if (!dbx) { dbx = document.createElement('textarea'); dbx.id='debug-xml'; dbx.style.cssText='width:100%;height:180px;font-size:10px;font-family:monospace;margin-top:12px;padding:8px;border:1px solid #d4c9b0;background:#f5f0e8;'; document.getElementById('status').insertAdjacentElement('afterend', dbx); }
+    dbx.value = new XMLSerializer().serializeToString(doc);
+    if (listings.length === 0) { setStatus('Aucun article. Ack:' + ackVal + ' Total:' + (activeListCount||'?') + ' — voir XML ci-dessous', 'error'); return; }
     counts.total = listings.length;
     updateCounts();
     setStatus(`${listings.length} articles chargés.`, 'success');
@@ -354,9 +358,9 @@ async function pushOne(i) {
   <Item><ItemID>${listings[i].id}</ItemID><Description><![CDATA[${listings[i].newDescription}]]></Description></Item>
 </ReviseItemRequest>`;
   const doc = await ebayCall('ReviseItem', xml);
-  const ack = doc.querySelector('Ack')?.textContent;
+  const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
   if (ack !== 'Success' && ack !== 'Warning') {
-    throw new Error(doc.querySelector('ShortMessage')?.textContent || 'Erreur eBay');
+    throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
   }
   listings[i].status = 'updated';
   counts.pushed++;
