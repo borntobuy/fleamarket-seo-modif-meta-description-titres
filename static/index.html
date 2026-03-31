@@ -479,7 +479,17 @@ ${existingSpecsStr}
 RULES — follow all of them strictly:
 1. KEYWORD: Pick the single most searched SEO keyword for this item (based on photos + info). It must appear in both the new title and as <h2> in the description.
 2. NEW TITLE: Maximum 80 characters total. The series of digits at the very end of the current title MUST be kept unchanged and placed at the end of the new title. Include the keyword naturally.
-3. DESCRIPTION: Minimum 160 words. English only. Flowing prose, no bullet points. Tone: refined, knowledgeable, evocative of French brocante culture. Wrap the ENTIRE description in a <div style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">. Inside it, the H2 must be styled as <h2 style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">keyword</h2>. IMPORTANT: if dimensions are mentioned anywhere (title, description, item specifics, or visible in photos), you MUST include them explicitly in the description text. Must end EXACTLY with this sentence: "95% of my items are tariff-free to the US."
+3. DESCRIPTION: Minimum 160 words. English only. Tone: refined, knowledgeable, evocative of French brocante culture.
+Structure the description as follows — each block separated by a blank line:
+- Start with: <h2 style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">keyword</h2>
+- Then 3 to 4 distinct <p> paragraphs (each 2-4 sentences). Do NOT merge everything into one block.
+- Paragraph 1: introduce the item, its nature and origin
+- Paragraph 2: describe the visual details, style, craftsmanship
+- Paragraph 3: include dimensions if known, condition, any notable details
+- Paragraph 4 (optional): suggest use, decorating context, collectible value
+- End with a final <p> containing EXACTLY this sentence: "95% of my items are tariff-free to the US."
+Wrap everything in: <div style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">
+IMPORTANT: if dimensions are mentioned anywhere (title, current description, item specifics, or visible in photos), you MUST include them in paragraph 3.
 4. ITEM SPECIFICS: Return a complete set. Keep correct existing values, overwrite wrong ones using photo evidence, add all missing relevant fields (e.g. Material, Style, Period/Era, Country of Origin, Color, Type, Dimensions if visible, Condition, Theme...).
 
 Respond ONLY with a valid JSON object — no markdown, no backticks, no extra text:
