@@ -176,7 +176,12 @@ async function loadListings() {
 
   try {
     // Use eBay REST Inventory API
-    const data = await ebayREST('/sell/inventory/v1/inventory_item?limit=200', 'GET', keys.token, null);
+    const resp = await ebayREST('/sell/inventory/v1/inventory_item?limit=200', 'GET', keys.token, null);
+    // Afficher la réponse brute pour debug
+    let dbx = document.getElementById('debug-xml');
+    if (!dbx) { dbx = document.createElement('textarea'); dbx.id='debug-xml'; dbx.style.cssText='width:100%;height:180px;font-size:10px;font-family:monospace;margin-top:12px;padding:8px;border:1px solid #d4c9b0;background:#f5f0e8;'; document.getElementById('status').insertAdjacentElement('afterend', dbx); }
+    dbx.value = 'HTTP ' + resp.status + '\n' + resp.body;
+    const data = resp.json || {};
     const items = data.inventoryItems || [];
     listings = items.map(item => ({
       id: item.sku || '',
@@ -186,7 +191,7 @@ async function loadListings() {
       newDescription: null,
       keyword: null
     }));
-    if (listings.length === 0) { setStatus('Aucun article trouvé via REST API. Réponse: ' + JSON.stringify(data).substring(0,200), 'error'); return; }
+    if (listings.length === 0) { setStatus('Aucun article trouvé. HTTP ' + resp.status + ' — voir réponse ci-dessous', 'error'); return; }
     counts.total = listings.length;
     updateCounts();
     setStatus(`${listings.length} articles chargés.`, 'success');
