@@ -155,15 +155,27 @@ function getKeys() {
   };
 }
 
-async function ebayREST(path, method, token, body) {
-  const resp = await fetch('/ebay_rest', {
+async function ebayXML(callName, xmlBody) {
+  const keys = getKeys();
+  const resp = await fetch('/ebay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, method, token, body })
+    body: JSON.stringify({
+      headers: {
+        'X-EBAY-API-SITEID': '0',
+        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+        'X-EBAY-API-CALL-NAME': callName,
+        'X-EBAY-API-APP-NAME': keys.appId,
+        'X-EBAY-API-DEV-NAME': '',
+        'X-EBAY-API-CERT-NAME': keys.certId,
+        'Content-Type': 'text/xml'
+      },
+      body: xmlBody
+    })
   });
   const data = await resp.json();
   if (data.error) throw new Error(data.error);
-  return data;
+  return new DOMParser().parseFromString(data.body, 'text/xml');
 }
 
 async function loadListings() {
@@ -175,23 +187,39 @@ async function loadListings() {
   setStatus('Connexion à eBay...', 'info');
 
   try {
-    // Use eBay REST Inventory API
-    const resp = await ebayREST('/sell/inventory/v1/inventory_item?limit=200', 'GET', keys.token, null);
-    // Afficher la réponse brute pour debug
+    // Use Trading API GetSellerList with date range covering active listings
+    const now = new Date();
+    const endFrom = now.toISOString().split('.')[0] + 'Z';
+    const endTo = new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000).toISOString().split('.')[0] + 'Z';
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
+  <DetailLevel>ReturnAll</DetailLevel>
+  <EndTimeFrom>${endFrom}</EndTimeFrom>
+  <EndTimeTo>${endTo}</EndTimeTo>
+  <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
+  <IncludeWatchCount>false</IncludeWatchCount>
+</GetSellerListRequest>`;
+    const doc = await ebayXML('GetSellerList', xml);
+    const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
+    // Show raw XML for debug
     let dbx = document.getElementById('debug-xml');
     if (!dbx) { dbx = document.createElement('textarea'); dbx.id='debug-xml'; dbx.style.cssText='width:100%;height:180px;font-size:10px;font-family:monospace;margin-top:12px;padding:8px;border:1px solid #d4c9b0;background:#f5f0e8;'; document.getElementById('status').insertAdjacentElement('afterend', dbx); }
-    dbx.value = 'HTTP ' + resp.status + '\n' + resp.body;
-    const data = resp.json || {};
-    const items = data.inventoryItems || [];
-    listings = items.map(item => ({
-      id: item.sku || '',
-      title: item.product?.title || '',
-      description: item.product?.description || '',
+    dbx.value = new XMLSerializer().serializeToString(doc);
+    if (ack !== 'Success' && ack !== 'Warning') {
+      throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
+    }
+    const items = doc.getElementsByTagName('Item');
+    listings = Array.from(items).map(item => ({
+      id: item.getElementsByTagName('ItemID')[0]?.textContent || '',
+      title: item.getElementsByTagName('Title')[0]?.textContent || '',
+      description: item.getElementsByTagName('Description')[0]?.textContent || '',
       status: 'pending',
       newDescription: null,
       keyword: null
     }));
-    if (listings.length === 0) { setStatus('Aucun article trouvé. HTTP ' + resp.status + ' — voir réponse ci-dessous', 'error'); return; }
+    const total = doc.getElementsByTagName('TotalNumberOfEntries')[0]?.textContent || '?';
+    if (listings.length === 0) { setStatus('Aucun article trouvé. Total eBay: ' + total + ' — voir XML ci-dessous', 'error'); return; }
     counts.total = listings.length;
     updateCounts();
     setStatus(`${listings.length} articles chargés.`, 'success');
@@ -332,7 +360,7 @@ async function pushOne(i) {
   <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
   <Item><ItemID>${listings[i].id}</ItemID><Description><![CDATA[${listings[i].newDescription}]]></Description></Item>
 </ReviseItemRequest>`;
-  const doc = await ebayCall('ReviseItem', xml);
+  const doc = await ebayXML('ReviseItem', xml);
   const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
   if (ack !== 'Success' && ack !== 'Warning') {
     throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
