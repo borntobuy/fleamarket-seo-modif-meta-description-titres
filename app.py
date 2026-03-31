@@ -72,5 +72,21 @@ def anthropic_proxy():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/fetch_image', methods=['POST'])
+def fetch_image():
+    """Récupère une image distante et la renvoie en base64 pour éviter les CORS."""
+    import base64
+    data = request.json
+    url = data.get('url', '')
+    if not url:
+        return jsonify({'error': 'No URL provided'}), 400
+    try:
+        resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
+        content_type = resp.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        b64 = base64.b64encode(resp.content).decode('utf-8')
+        return jsonify({'base64': b64, 'mediaType': content_type})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
