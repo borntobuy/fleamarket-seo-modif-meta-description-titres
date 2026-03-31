@@ -25,6 +25,29 @@ def ebay_proxy():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/ebay_rest', methods=['POST'])
+def ebay_rest_proxy():
+    data = request.json
+    path = data.get('path', '')
+    method = data.get('method', 'GET')
+    token = data.get('token', '')
+    body = data.get('body', None)
+    try:
+        resp = requests.request(
+            method,
+            f'https://api.ebay.com{path}',
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            json=body,
+            timeout=30
+        )
+        return jsonify({'status': resp.status_code, 'body': resp.text, 'json': resp.json() if resp.text else {}})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/anthropic', methods=['POST'])
 def anthropic_proxy():
     data = request.json
