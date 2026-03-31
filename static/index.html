@@ -470,7 +470,13 @@ Respond ONLY with a valid JSON object — no markdown, no backticks, no extra te
       })
     });
 
-    const data = await resp.json();
+    let data;
+    try {
+      data = await resp.json();
+    } catch(e) {
+      throw new Error(`Réponse invalide du serveur (HTTP ${resp.status}) — vérifiez que app.py est bien déployé sur Render.`);
+    }
+
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
     let raw = data.content[0].text.trim()
