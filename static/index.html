@@ -121,6 +121,7 @@
       </div>
       <div class="ornament">· · ·</div>
       <button class="btn-primary" onclick="loadListings()">Connect &amp; Load Listings</button>
+      <div style="text-align:center;margin-top:12px"><button onclick="clearCredentials()" style="background:none;border:none;font-family:'DM Mono',monospace;font-size:10px;color:var(--border);cursor:pointer;letter-spacing:1px;text-decoration:underline;">Effacer les identifiants sauvegardés</button></div>
     </div>
   </div>
 
@@ -148,8 +149,35 @@
 <script>
 // ── Marqueur invisible ajouté dans chaque description publiée ──────────────
 const MARKER = '<!-- fmf-optimised -->';
+const LS_KEY = 'fmf_credentials';
 
-// ── État global ────────────────────────────────────────────────────────────
+function saveCredentials() {
+  const d = {
+    appId:     document.getElementById('ebay-app-id').value.trim(),
+    certId:    document.getElementById('ebay-cert-id').value.trim(),
+    token:     document.getElementById('ebay-token').value.trim(),
+    anthropic: document.getElementById('anthropic-key').value.trim()
+  };
+  localStorage.setItem(LS_KEY, JSON.stringify(d));
+}
+
+function loadCredentials() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if (d.appId)     document.getElementById('ebay-app-id').value   = d.appId;
+    if (d.certId)    document.getElementById('ebay-cert-id').value  = d.certId;
+    if (d.token)     document.getElementById('ebay-token').value    = d.token;
+    if (d.anthropic) document.getElementById('anthropic-key').value = d.anthropic;
+  } catch(e) {}
+}
+
+function clearCredentials() {
+  localStorage.removeItem(LS_KEY);
+  ['ebay-app-id','ebay-cert-id','ebay-token','anthropic-key']
+    .forEach(id => document.getElementById(id).value = '');
+  setStatus('Identifiants effacés du navigateur.', 'info');
+}
+
 let listings = [];
 let counts = { total: 0, generated: 0, pushed: 0, skipped: 0 };
 
@@ -211,6 +239,7 @@ async function loadListings() {
     setStatus('Veuillez remplir tous les champs.', 'error');
     return;
   }
+  saveCredentials();
 
   const now    = new Date();
   const endFrom = now.toISOString().split('.')[0] + 'Z';
@@ -450,7 +479,7 @@ ${existingSpecsStr}
 RULES — follow all of them strictly:
 1. KEYWORD: Pick the single most searched SEO keyword for this item (based on photos + info). It must appear in both the new title and as <h2> in the description.
 2. NEW TITLE: Maximum 80 characters total. The series of digits at the very end of the current title MUST be kept unchanged and placed at the end of the new title. Include the keyword naturally.
-3. DESCRIPTION: Minimum 160 words. English only. Flowing prose, no bullet points. Tone: refined, knowledgeable, evocative of French brocante culture. Must include <h2>keyword</h2> near the start. Must end EXACTLY with this sentence: "95% of my items are tariff-free to the US."
+3. DESCRIPTION: Minimum 160 words. English only. Flowing prose, no bullet points. Tone: refined, knowledgeable, evocative of French brocante culture. Wrap the ENTIRE description in a <div style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">. Inside it, the H2 must be styled as <h2 style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">keyword</h2>. IMPORTANT: if dimensions are mentioned anywhere (title, description, item specifics, or visible in photos), you MUST include them explicitly in the description text. Must end EXACTLY with this sentence: "95% of my items are tariff-free to the US."
 4. ITEM SPECIFICS: Return a complete set. Keep correct existing values, overwrite wrong ones using photo evidence, add all missing relevant fields (e.g. Material, Style, Period/Era, Country of Origin, Color, Type, Dimensions if visible, Condition, Theme...).
 
 Respond ONLY with a valid JSON object — no markdown, no backticks, no extra text:
@@ -611,6 +640,8 @@ function escapeHTML(str) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+window.addEventListener('DOMContentLoaded', loadCredentials);
 </script>
 </body>
 </html>
