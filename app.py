@@ -44,7 +44,11 @@ def ebay_rest_proxy():
             json=body,
             timeout=30
         )
-        return jsonify({'status': resp.status_code, 'body': resp.text, 'json': resp.json() if resp.text else {}})
+        try:
+            json_data = resp.json()
+        except Exception:
+            json_data = {'raw': resp.text[:500]}
+        return jsonify({'status': resp.status_code, 'body': resp.text[:2000], 'json': json_data})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
