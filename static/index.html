@@ -6,85 +6,101 @@
 <title>Fleamarketfrance — eBay SEO Rewriter</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --cream: #f5f0e8;
-    --dark: #1a1612;
-    --gold: #c9a84c;
-    --gold-light: #e8d5a3;
-    --rust: #8b3a2a;
-    --sage: #4a5c4e;
-    --border: #d4c9b0;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--cream); color: var(--dark); font-family: 'DM Mono', monospace; min-height: 100vh; padding: 40px 20px; }
-  .grain { position: fixed; inset: 0; pointer-events: none; z-index: 999; opacity: 0.03; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"); }
-  .container { max-width: 900px; margin: 0 auto; }
-  header { border-bottom: 2px solid var(--gold); padding-bottom: 24px; margin-bottom: 40px; display: flex; align-items: baseline; gap: 16px; }
-  header h1 { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
-  header span { font-size: 11px; color: var(--gold); letter-spacing: 3px; text-transform: uppercase; }
-  .card { background: white; border: 1px solid var(--border); border-radius: 2px; padding: 28px; margin-bottom: 20px; }
-  .card-h2 { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 400; font-style: italic; color: var(--rust); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
-  .card-h2::before { content: ''; display: inline-block; width: 20px; height: 1px; background: var(--rust); }
-  .field { margin-bottom: 16px; }
-  label { display: block; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--sage); margin-bottom: 6px; }
-  input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); background: var(--cream); font-family: 'DM Mono', monospace; font-size: 12px; color: var(--dark); border-radius: 2px; outline: none; transition: border-color 0.2s; }
-  input:focus { border-color: var(--gold); }
-  input[type="password"] { letter-spacing: 2px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  button { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; padding: 14px 28px; border: none; border-radius: 2px; cursor: pointer; transition: all 0.2s; }
-  .btn-primary { background: var(--dark); color: var(--cream); width: 100%; }
-  .btn-primary:hover { background: var(--rust); }
-  .btn-primary:disabled { background: var(--border); cursor: not-allowed; color: #999; }
-  .btn-danger { background: var(--rust); color: white; width: 100%; }
-  .btn-danger:hover { background: #6e2e20; }
-  .btn-danger:disabled { background: var(--border); cursor: not-allowed; color: #999; }
-  .btn-small { background: var(--sage); color: white; font-size: 10px; padding: 8px 16px; }
-  .btn-small:hover { background: var(--dark); }
-  .btn-skip { background: transparent; color: #999; border: 1px solid var(--border); font-size: 10px; padding: 8px 16px; }
-  .btn-skip:hover { border-color: var(--dark); color: var(--dark); }
-  #status { padding: 14px; border-radius: 2px; font-size: 11px; margin-bottom: 20px; display: none; }
-  #status.info    { background: #e8f0e9; border: 1px solid var(--sage);  color: var(--sage);  display: block; }
-  #status.error   { background: #f5e8e6; border: 1px solid var(--rust);  color: var(--rust);  display: block; }
-  #status.success { background: #e8f0e9; border: 1px solid var(--sage);  color: var(--sage);  display: block; }
-  .listings-grid { display: flex; flex-direction: column; gap: 16px; }
-  .listing-item { border: 1px solid var(--border); border-radius: 2px; overflow: hidden; }
-  .listing-header { background: var(--cream); padding: 14px 18px; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); gap: 12px; }
-  .listing-titles { flex: 1; }
-  .listing-title-old  { font-size: 11px; color: #aaa; text-decoration: line-through; margin-bottom: 4px; }
-  .listing-title-new  { font-size: 12px; font-weight: 600; color: var(--dark); }
-  .listing-title-only { font-size: 12px; }
-  .char-count      { font-size: 10px; color: var(--sage); margin-top: 3px; }
-  .char-count.warn { color: var(--rust); }
-  .listing-id { font-size: 10px; color: var(--gold); white-space: nowrap; margin-top: 3px; }
-  .listing-body { padding: 18px; }
-  .section-label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--border); margin-bottom: 8px; }
-  .desc-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-  .desc-box p { font-size: 11px; line-height: 1.7; color: #555; max-height: 150px; overflow-y: auto; padding: 10px; background: var(--cream); border: 1px solid var(--border); border-radius: 2px; }
-  .desc-box.new p { border-color: var(--gold-light); background: #fffdf5; color: var(--dark); }
-  .specifics-wrap { margin-top: 12px; }
-  .specifics-row  { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .spec-tag     { font-size: 10px; padding: 3px 8px; border-radius: 2px; border: 1px solid var(--border); background: var(--cream); }
-  .spec-tag.new { border-color: var(--gold); background: #fffdf5; color: #7a6020; }
-  .badge { display: inline-block; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 8px; border-radius: 2px; white-space: nowrap; }
-  .badge-pending    { background: var(--gold-light); color: #7a6020; }
-  .badge-generating { background: var(--gold-light); color: #7a6020; }
-  .badge-generated  { background: #ddeeff; color: #2255aa; }
-  .badge-skipped    { background: #eee; color: #999; }
-  .badge-updated    { background: #d4ead6; color: var(--sage); }
-  .progress-bar  { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 20px; overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.4s ease; }
-  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .summary-bar { display: flex; gap: 24px; padding: 14px 18px; background: var(--dark); color: var(--cream); font-size: 11px; margin-bottom: 20px; border-radius: 2px; flex-wrap: wrap; }
-  .summary-bar span { color: var(--gold); }
-  .keyword-tag { display: inline-block; background: var(--gold-light); color: #7a6020; font-size: 10px; padding: 2px 8px; border-radius: 2px; margin: 2px; }
-  .step { display: none; }
-  .step.active { display: block; }
-  .ornament { text-align: center; color: var(--gold); font-size: 18px; margin: 10px 0; letter-spacing: 8px; }
-  .action-bar { display: flex; gap: 10px; margin-bottom: 20px; }
-  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-  .thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 2px; border: 1px solid var(--border); }
-  .item-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  :root { --cream:#f5f0e8; --dark:#1a1612; --gold:#c9a84c; --gold-light:#e8d5a3; --rust:#8b3a2a; --sage:#4a5c4e; --border:#d4c9b0; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--cream); color:var(--dark); font-family:'DM Mono',monospace; min-height:100vh; padding:40px 20px; }
+  .grain { position:fixed; inset:0; pointer-events:none; z-index:999; opacity:0.03; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"); }
+  .container { max-width:960px; margin:0 auto; }
+  header { border-bottom:2px solid var(--gold); padding-bottom:24px; margin-bottom:40px; display:flex; align-items:baseline; gap:16px; }
+  header h1 { font-family:'Playfair Display',serif; font-size:28px; font-weight:700; }
+  header span { font-size:11px; color:var(--gold); letter-spacing:3px; text-transform:uppercase; }
+  .card { background:white; border:1px solid var(--border); border-radius:2px; padding:28px; margin-bottom:20px; }
+  .card-h2 { font-family:'Playfair Display',serif; font-size:16px; font-weight:400; font-style:italic; color:var(--rust); margin-bottom:20px; display:flex; align-items:center; gap:10px; }
+  .card-h2::before { content:''; display:inline-block; width:20px; height:1px; background:var(--rust); }
+  .field { margin-bottom:16px; }
+  label { display:block; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--sage); margin-bottom:6px; }
+  input { width:100%; padding:10px 14px; border:1px solid var(--border); background:var(--cream); font-family:'DM Mono',monospace; font-size:12px; color:var(--dark); border-radius:2px; outline:none; transition:border-color 0.2s; }
+  input:focus { border-color:var(--gold); }
+  input[type="password"] { letter-spacing:2px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  button { font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; padding:12px 20px; border:none; border-radius:2px; cursor:pointer; transition:all 0.2s; }
+  .btn-primary { background:var(--dark); color:var(--cream); }
+  .btn-primary:hover { background:var(--rust); }
+  .btn-primary:disabled { background:var(--border); cursor:not-allowed; color:#999; }
+  .btn-danger { background:var(--rust); color:white; }
+  .btn-danger:hover { background:#6e2e20; }
+  .btn-danger:disabled { background:var(--border); cursor:not-allowed; color:#999; }
+  .btn-sage { background:var(--sage); color:white; }
+  .btn-sage:hover { background:#2d3d30; }
+  .btn-sage:disabled { background:var(--border); cursor:not-allowed; color:#999; }
+  .btn-gold { background:var(--gold); color:var(--dark); }
+  .btn-gold:hover { background:#a8862e; }
+  .btn-small { font-size:10px; padding:7px 14px; }
+  .btn-outline { background:transparent; color:#999; border:1px solid var(--border); }
+  .btn-outline:hover { border-color:var(--dark); color:var(--dark); }
+  .btn-publish { background:#2255aa; color:white; font-size:10px; padding:7px 14px; }
+  .btn-publish:hover { background:#1a3d88; }
+  #status { padding:14px; border-radius:2px; font-size:11px; margin-bottom:20px; display:none; }
+  #status.info    { background:#e8f0e9; border:1px solid var(--sage); color:var(--sage); display:block; }
+  #status.error   { background:#f5e8e6; border:1px solid var(--rust); color:var(--rust); display:block; }
+  #status.success { background:#e8f0e9; border:1px solid var(--sage); color:var(--sage); display:block; }
+  .step { display:none; } .step.active { display:block; }
+  .ornament { text-align:center; color:var(--gold); font-size:18px; margin:10px 0; letter-spacing:8px; }
+  /* Summary bar */
+  .summary-bar { display:flex; gap:20px; padding:14px 18px; background:var(--dark); color:var(--cream); font-size:11px; margin-bottom:16px; border-radius:2px; flex-wrap:wrap; }
+  .summary-bar span { color:var(--gold); }
+  /* Progress */
+  .progress-bar { height:3px; background:var(--border); border-radius:2px; margin-bottom:16px; overflow:hidden; }
+  .progress-fill { height:100%; background:var(--gold); border-radius:2px; transition:width 0.4s ease; }
+  /* Action bar */
+  .action-bar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+  .action-bar button { flex:1; min-width:140px; }
+  /* Search bar */
+  .search-bar { display:flex; gap:8px; margin-bottom:16px; }
+  .search-bar input { flex:1; }
+  .search-bar button { flex:none; }
+  /* Pagination */
+  .pagination { display:flex; align-items:center; gap:8px; justify-content:center; margin:20px 0; flex-wrap:wrap; }
+  .pagination button { padding:8px 14px; font-size:10px; min-width:36px; }
+  .pagination button.active { background:var(--gold); color:var(--dark); }
+  .pagination-info { font-size:10px; color:var(--sage); }
+  /* Listing cards */
+  .listings-grid { display:flex; flex-direction:column; gap:14px; }
+  .listing-item { border:1px solid var(--border); border-radius:2px; overflow:hidden; }
+  .listing-item.already-done { border-color:var(--sage); opacity:0.85; }
+  .listing-header { background:var(--cream); padding:12px 16px; display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid var(--border); gap:12px; }
+  .listing-titles { flex:1; }
+  .listing-title-old  { font-size:11px; color:#aaa; text-decoration:line-through; margin-bottom:3px; }
+  .listing-title-new  { font-size:12px; font-weight:600; color:var(--dark); }
+  .listing-title-only { font-size:12px; }
+  .char-count      { font-size:10px; color:var(--sage); margin-top:3px; }
+  .char-count.warn { color:var(--rust); }
+  .listing-meta { text-align:right; }
+  .listing-id { font-size:10px; color:var(--gold); }
+  .listing-body { padding:16px; }
+  .section-label { font-size:9px; letter-spacing:2px; text-transform:uppercase; color:var(--border); margin-bottom:6px; }
+  .desc-compare { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .desc-box p { font-size:11px; line-height:1.7; color:#555; max-height:130px; overflow-y:auto; padding:10px; background:var(--cream); border:1px solid var(--border); border-radius:2px; }
+  .desc-box.new p { border-color:var(--gold-light); background:#fffdf5; color:var(--dark); }
+  .specifics-wrap { margin-top:10px; }
+  .specifics-row  { display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+  .spec-tag     { font-size:10px; padding:3px 8px; border-radius:2px; border:1px solid var(--border); background:var(--cream); }
+  .spec-tag.new { border-color:var(--gold); background:#fffdf5; color:#7a6020; }
+  .badge { display:inline-block; font-size:9px; letter-spacing:1px; text-transform:uppercase; padding:3px 8px; border-radius:2px; white-space:nowrap; }
+  .badge-pending    { background:var(--gold-light); color:#7a6020; }
+  .badge-generating { background:var(--gold-light); color:#7a6020; }
+  .badge-generated  { background:#ddeeff; color:#2255aa; }
+  .badge-skipped    { background:#eee; color:#999; }
+  .badge-updated    { background:#d4ead6; color:var(--sage); }
+  .badge-done       { background:#d4ead6; color:var(--sage); }
+  .spinner { display:inline-block; width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--gold); border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .keyword-tag { display:inline-block; background:var(--gold-light); color:#7a6020; font-size:10px; padding:2px 8px; border-radius:2px; margin:2px; }
+  .thumbs { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px; }
+  .thumb { width:50px; height:50px; object-fit:cover; border-radius:2px; border:1px solid var(--border); }
+  .item-actions { display:flex; gap:6px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+  /* Etsy connect */
+  #etsy-connect-bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
 </style>
 </head>
 <body>
@@ -94,109 +110,112 @@
     <h1>Fleamarketfrance</h1>
     <span>eBay SEO Rewriter</span>
   </header>
-
   <div id="status"></div>
 
-  <!-- ÉTAPE 1 : credentials -->
+  <!-- ÉTAPE 1 : Credentials -->
   <div class="step active" id="step-keys">
     <div class="card">
       <div class="card-h2">API Credentials</div>
       <div class="row">
-        <div class="field">
-          <label>eBay App ID (Client ID)</label>
-          <input type="password" id="ebay-app-id" placeholder="XXXX-PRD-XXXX">
-        </div>
-        <div class="field">
-          <label>eBay Cert ID (Client Secret)</label>
-          <input type="password" id="ebay-cert-id" placeholder="PRD-XXXX">
-        </div>
+        <div class="field"><label>eBay App ID</label><input type="password" id="ebay-app-id" placeholder="XXXX-PRD-XXXX"></div>
+        <div class="field"><label>eBay Cert ID</label><input type="password" id="ebay-cert-id" placeholder="PRD-XXXX"></div>
       </div>
-      <div class="field">
-        <label>eBay User Token</label>
-        <input type="password" id="ebay-token" placeholder="AgAAAA... ou v^1.1#i^1...">
-      </div>
-      <div class="field">
-        <label>Anthropic API Key</label>
-        <input type="password" id="anthropic-key" placeholder="sk-ant-...">
+      <div class="field"><label>eBay User Token</label><input type="password" id="ebay-token" placeholder="AgAAAA..."></div>
+      <div class="field"><label>Anthropic API Key</label><input type="password" id="anthropic-key" placeholder="sk-ant-..."></div>
+      <div class="field"><label>Etsy API Key</label><input type="password" id="etsy-api-key" placeholder="xxxxxxxxxxxxxxxx"></div>
+      <div class="field"><label>Etsy Shop ID</label><input type="text" id="etsy-shop-id" placeholder="FleamarketFrance"></div>
+      <div id="etsy-connect-bar">
+        <button class="btn-sage btn-small" onclick="connectEtsy()">Connecter Etsy</button>
+        <span id="etsy-status-label" style="font-size:10px;color:var(--border);">Non connecté</span>
       </div>
       <div class="ornament">· · ·</div>
-      <button class="btn-primary" onclick="loadListings()">Connect &amp; Load Listings</button>
-      <div style="text-align:center;margin-top:12px"><button onclick="clearCredentials()" style="background:none;border:none;font-family:'DM Mono',monospace;font-size:10px;color:var(--border);cursor:pointer;letter-spacing:1px;text-decoration:underline;">Effacer les identifiants sauvegardés</button></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button class="btn-primary" style="flex:1" onclick="loadListings(false)">Charger articles non traités</button>
+        <button class="btn-outline" style="flex:1" onclick="loadListings(true)">Tout réimporter (inclus modifiés)</button>
+      </div>
+      <div style="text-align:center;margin-top:8px">
+        <button onclick="clearCredentials()" style="background:none;border:none;font-family:'DM Mono',monospace;font-size:10px;color:var(--border);cursor:pointer;text-decoration:underline;">Effacer les identifiants sauvegardés</button>
+      </div>
     </div>
   </div>
 
-  <!-- ÉTAPE 2 : listings -->
+  <!-- ÉTAPE 2 : Listings -->
   <div class="step" id="step-listings">
     <div class="summary-bar">
-      <div>À traiter : <span id="count-total">0</span></div>
+      <div>Total chargés : <span id="count-total">0</span></div>
       <div>Générés : <span id="count-generated">0</span></div>
       <div>Publiés : <span id="count-pushed">0</span></div>
       <div>Ignorés : <span id="count-skipped">0</span></div>
+      <div>Erreurs : <span id="count-errors" style="color:var(--rust)">0</span></div>
     </div>
     <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-    <div class="action-bar">
-      <button class="btn-primary" id="generate-all-btn" onclick="generateAll()" style="flex:1">
-        ① Générer toutes les descriptions
-      </button>
-      <button class="btn-danger" id="push-all-btn" onclick="pushAll()" style="flex:1;display:none;">
-        ② Valider &amp; Envoyer tout sur eBay
-      </button>
+
+    <!-- Recherche eBay -->
+    <div class="search-bar">
+      <input type="text" id="search-input" placeholder="Rechercher un article dans toute votre boutique eBay..." onkeydown="if(event.key==='Enter')searchEbay()">
+      <button class="btn-primary btn-small" onclick="searchEbay()">Rechercher</button>
+      <button class="btn-outline btn-small" onclick="clearSearch()">Effacer</button>
     </div>
+
+    <!-- Boutons d'action globaux -->
+    <div class="action-bar">
+      <button class="btn-primary" id="generate-all-btn" onclick="generateAll()">① Générer tout</button>
+      <button class="btn-danger" id="push-all-btn" onclick="pushAll()" style="display:none;">② Publier tout sur eBay</button>
+      <button class="btn-sage" id="push-etsy-btn" onclick="pushAllEtsy()" style="display:none;">③ Publier tout sur Etsy</button>
+      <button class="btn-gold btn-small" onclick="exportReport()">📄 Rapport</button>
+      <button class="btn-danger btn-small" id="stop-btn" onclick="requestStop()" style="display:none;">⏹ Stop</button>
+      <button class="btn-outline btn-small" onclick="goToStep('step-keys')">← Paramètres</button>
+    </div>
+
+    <!-- Pagination haut -->
+    <div id="pagination-top"></div>
+
+    <!-- Grille articles -->
     <div class="listings-grid" id="listings-grid"></div>
+
+    <!-- Pagination bas -->
+    <div id="pagination-bottom"></div>
   </div>
 </div>
 
 <script>
-// ── Marqueur invisible ajouté dans chaque description publiée ──────────────
-const MARKER = '<!-- fmf-optimised -->';
-const LS_KEY = 'fmf_credentials';
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTES & ÉTAT GLOBAL
+// ═══════════════════════════════════════════════════════════════
+const MARKER   = '<!-- fmf-optimised -->';
+const LS_KEY   = 'fmf_credentials';
+const PER_PAGE = 100;
+
+let stopRequested = false; // flag d'arrêt
+let listings     = [];   // tous les articles chargés
+let filtered     = [];   // articles affichés (après recherche)
+let currentPage  = 1;
+let errorLog     = [];   // journal des erreurs pour le rapport
+let counts       = { total:0, generated:0, pushed:0, skipped:0, errors:0 };
+
+// ═══════════════════════════════════════════════════════════════
+// CREDENTIALS (localStorage)
+// ═══════════════════════════════════════════════════════════════
+const FIELDS = ['ebay-app-id','ebay-cert-id','ebay-token','anthropic-key','etsy-api-key','etsy-shop-id'];
 
 function saveCredentials() {
-  const d = {
-    appId:     document.getElementById('ebay-app-id').value.trim(),
-    certId:    document.getElementById('ebay-cert-id').value.trim(),
-    token:     document.getElementById('ebay-token').value.trim(),
-    anthropic: document.getElementById('anthropic-key').value.trim()
-  };
+  const d = {};
+  FIELDS.forEach(id => d[id] = document.getElementById(id).value.trim());
   localStorage.setItem(LS_KEY, JSON.stringify(d));
 }
 
 function loadCredentials() {
   try {
     const d = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-    if (d.appId)     document.getElementById('ebay-app-id').value   = d.appId;
-    if (d.certId)    document.getElementById('ebay-cert-id').value  = d.certId;
-    if (d.token)     document.getElementById('ebay-token').value    = d.token;
-    if (d.anthropic) document.getElementById('anthropic-key').value = d.anthropic;
+    FIELDS.forEach(id => { if (d[id]) document.getElementById(id).value = d[id]; });
   } catch(e) {}
+  checkEtsyStatus();
 }
 
 function clearCredentials() {
   localStorage.removeItem(LS_KEY);
-  ['ebay-app-id','ebay-cert-id','ebay-token','anthropic-key']
-    .forEach(id => document.getElementById(id).value = '');
-  setStatus('Identifiants effacés du navigateur.', 'info');
-}
-
-let listings = [];
-let counts = { total: 0, generated: 0, pushed: 0, skipped: 0 };
-
-// ── Helpers UI ─────────────────────────────────────────────────────────────
-function setStatus(msg, type = 'info') {
-  const el = document.getElementById('status');
-  el.textContent = msg;
-  el.className = type;
-}
-
-function updateCounts() {
-  document.getElementById('count-total').textContent     = counts.total;
-  document.getElementById('count-generated').textContent = counts.generated;
-  document.getElementById('count-pushed').textContent    = counts.pushed;
-  document.getElementById('count-skipped').textContent   = counts.skipped;
-  if (counts.total > 0) {
-    document.getElementById('progress-fill').style.width =
-      (counts.pushed / counts.total * 100) + '%';
-  }
+  FIELDS.forEach(id => document.getElementById(id).value = '');
+  setStatus('Identifiants effacés.', 'info');
 }
 
 function getKeys() {
@@ -204,11 +223,91 @@ function getKeys() {
     appId:     document.getElementById('ebay-app-id').value.trim(),
     certId:    document.getElementById('ebay-cert-id').value.trim(),
     token:     document.getElementById('ebay-token').value.trim(),
-    anthropic: document.getElementById('anthropic-key').value.trim()
+    anthropic: document.getElementById('anthropic-key').value.trim(),
+    etsyKey:   document.getElementById('etsy-api-key').value.trim(),
+    etsyShop:  document.getElementById('etsy-shop-id').value.trim()
   };
 }
 
-// ── Proxy eBay XML ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════
+function setStatus(msg, type='info') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className   = type;
+}
+
+function goToStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function updateCounts() {
+  document.getElementById('count-total').textContent     = counts.total;
+  document.getElementById('count-generated').textContent = counts.generated;
+  document.getElementById('count-pushed').textContent    = counts.pushed;
+  document.getElementById('count-skipped').textContent   = counts.skipped;
+  document.getElementById('count-errors').textContent    = counts.errors;
+  if (counts.total > 0)
+    document.getElementById('progress-fill').style.width = (counts.pushed / counts.total * 100) + '%';
+}
+
+function escapeXML(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+function escapeHTML(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RAPPORT D'ERREURS
+// ═══════════════════════════════════════════════════════════════
+function logError(source, itemId, itemTitle, message) {
+  counts.errors++;
+  updateCounts();
+  errorLog.push({
+    ts:      new Date().toISOString(),
+    source,  // 'eBay' | 'Etsy' | 'Claude'
+    itemId,
+    itemTitle,
+    message
+  });
+}
+
+function exportReport() {
+  if (errorLog.length === 0) {
+    alert('Aucune erreur enregistrée dans cette session.');
+    return;
+  }
+  const lines = [
+    'RAPPORT D\'ERREURS — Fleamarketfrance SEO Rewriter',
+    'Généré le : ' + new Date().toLocaleString('fr-FR'),
+    '='.repeat(60),
+    ''
+  ];
+  errorLog.forEach((e, i) => {
+    lines.push(`[${i+1}] ${e.ts}`);
+    lines.push(`  Source  : ${e.source}`);
+    lines.push(`  Article : #${e.itemId} — ${e.itemTitle}`);
+    lines.push(`  Erreur  : ${e.message}`);
+    lines.push('');
+  });
+  lines.push('='.repeat(60));
+  lines.push(`Total erreurs : ${errorLog.length}`);
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `fmf-rapport-${Date.now()}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROXY EBAY XML
+// ═══════════════════════════════════════════════════════════════
 async function ebayXML(callName, xmlBody) {
   const keys = getKeys();
   const resp = await fetch('/ebay', {
@@ -227,23 +326,58 @@ async function ebayXML(callName, xmlBody) {
       body: xmlBody
     })
   });
-  const data = await resp.json();
+  let data;
+  try { data = await resp.json(); } catch(e) { throw new Error('Réponse invalide du serveur (app.py non déployé ?)'); }
   if (data.error) throw new Error(data.error);
   return new DOMParser().parseFromString(data.body, 'text/xml');
 }
 
-// ── Charger les annonces (toutes pages, exclure déjà traités) ──────────────
-async function loadListings() {
+// ═══════════════════════════════════════════════════════════════
+// PARSE UN ÉLÉMENT XML eBay → objet listing
+// ═══════════════════════════════════════════════════════════════
+function parseEbayItem(item, forceInclude) {
+  const desc = item.getElementsByTagName('Description')[0]?.textContent || '';
+  const alreadyDone = desc.includes(MARKER);
+  if (alreadyDone && !forceInclude) return null;
+
+  const pictures = Array.from(item.getElementsByTagName('PictureURL'))
+    .map(p => p.textContent.trim()).filter(Boolean);
+
+  const existingSpecifics = {};
+  Array.from(item.getElementsByTagName('NameValueList')).forEach(nvl => {
+    const n = nvl.getElementsByTagName('Name')[0]?.textContent || '';
+    const v = nvl.getElementsByTagName('Value')[0]?.textContent || '';
+    if (n && v) existingSpecifics[n] = v;
+  });
+
+  return {
+    id: item.getElementsByTagName('ItemID')[0]?.textContent || '',
+    title: item.getElementsByTagName('Title')[0]?.textContent || '',
+    description: desc,
+    pictures,
+    existingSpecifics,
+    alreadyDone,
+    status: alreadyDone ? 'done' : 'pending',
+    newTitle: null, newDescription: null,
+    keyword: null, newSpecifics: {},
+    etsyTags: [], altTexts: [], etsyListingId: null
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CHARGER LES LISTINGS (pagination eBay, filtre marker)
+// ═══════════════════════════════════════════════════════════════
+async function loadListings(forceAll) {
   const keys = getKeys();
   if (!keys.appId || !keys.certId || !keys.token || !keys.anthropic) {
-    setStatus('Veuillez remplir tous les champs.', 'error');
+    setStatus('Veuillez remplir tous les champs obligatoires.', 'error');
     return;
   }
   saveCredentials();
 
   const now    = new Date();
   const endFrom = now.toISOString().split('.')[0] + 'Z';
-  const endTo   = new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000).toISOString().split('.')[0] + 'Z';
+  const endTo   = new Date(now.getTime() + 120*24*60*60*1000).toISOString().split('.')[0] + 'Z';
 
   let allItems = [];
   let page = 1, totalPages = 1;
@@ -251,7 +385,6 @@ async function loadListings() {
   try {
     do {
       setStatus(`Chargement page ${page} / ${totalPages}…`, 'info');
-
       const xml = `<?xml version="1.0" encoding="utf-8"?>
 <GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
@@ -263,78 +396,179 @@ async function loadListings() {
 </GetSellerListRequest>`;
 
       const doc = await ebayXML('GetSellerList', xml);
-
       if (page === 1) {
         const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
-        if (ack !== 'Success' && ack !== 'Warning') {
+        if (ack !== 'Success' && ack !== 'Warning')
           throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
-        }
         totalPages = parseInt(doc.getElementsByTagName('TotalNumberOfPages')[0]?.textContent || '1', 10);
       }
 
       Array.from(doc.getElementsByTagName('Item')).forEach(item => {
-        const desc = item.getElementsByTagName('Description')[0]?.textContent || '';
-
-        // Exclure les articles déjà traités par l'outil
-        if (desc.includes(MARKER)) return;
-
-        // Photos
-        const pictures = Array.from(item.getElementsByTagName('PictureURL'))
-          .map(p => p.textContent.trim()).filter(Boolean);
-
-        // Item Specifics existants
-        const existingSpecifics = {};
-        Array.from(item.getElementsByTagName('NameValueList')).forEach(nvl => {
-          const n = nvl.getElementsByTagName('Name')[0]?.textContent || '';
-          const v = nvl.getElementsByTagName('Value')[0]?.textContent || '';
-          if (n && v) existingSpecifics[n] = v;
-        });
-
-        allItems.push({
-          id: item.getElementsByTagName('ItemID')[0]?.textContent || '',
-          title: item.getElementsByTagName('Title')[0]?.textContent || '',
-          description: desc,
-          pictures,
-          existingSpecifics,
-          status: 'pending',
-          newTitle: null,
-          newDescription: null,
-          keyword: null,
-          newSpecifics: {}
-        });
+        const parsed = parseEbayItem(item, forceAll);
+        if (parsed) allItems.push(parsed);
       });
-
       page++;
     } while (page <= totalPages);
 
     if (allItems.length === 0) {
-      setStatus('Tous vos articles ont déjà été optimisés par cet outil (marqueur fmf-optimised détecté).', 'success');
+      setStatus(forceAll ? 'Aucun article trouvé.' : 'Tous vos articles ont déjà le marqueur fmf-optimised. Utilisez "Tout réimporter" pour les recharger.', 'info');
       return;
     }
 
-    listings = allItems;
-    counts = { total: listings.length, generated: 0, pushed: 0, skipped: 0 };
+    listings   = allItems;
+    filtered   = [...listings];
+    currentPage = 1;
+    errorLog   = [];
+    counts     = { total: listings.length, generated:0, pushed:0, skipped:0, errors:0 };
     updateCounts();
-    setStatus(`${listings.length} article(s) non traité(s) récupérés sur ${totalPages} page(s).`, 'success');
-    document.getElementById('step-keys').classList.remove('active');
-    document.getElementById('step-listings').classList.add('active');
-    renderListings();
 
-  } catch (err) {
+    const doneCount = listings.filter(l => l.alreadyDone).length;
+    setStatus(`${listings.length} article(s) chargés (${doneCount} déjà optimisés inclus).`, 'success');
+    goToStep('step-listings');
+    renderPage();
+
+  } catch(err) {
     setStatus('Erreur : ' + err.message, 'error');
   }
 }
 
-// ── Rendu de la liste ──────────────────────────────────────────────────────
-function renderListings() {
-  const grid = document.getElementById('listings-grid');
-  grid.innerHTML = '';
-  listings.forEach((item, i) => grid.appendChild(buildCard(item, i)));
+// ═══════════════════════════════════════════════════════════════
+// RECHERCHE DANS TOUTE LA BOUTIQUE eBay
+// ═══════════════════════════════════════════════════════════════
+async function searchEbay() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) { clearSearch(); return; }
+
+  const keys = getKeys();
+  setStatus('Recherche dans votre boutique eBay…', 'info');
+
+  try {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
+  <ActiveList>
+    <Include>true</Include>
+    <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
+  </ActiveList>
+  <DetailLevel>ReturnAll</DetailLevel>
+</GetMyeBaySellingRequest>`;
+
+    // Utiliser GetSellerList avec recherche par titre côté client
+    // (eBay Trading API ne supporte pas la recherche plein texte sur GetSellerList)
+    // On filtre dans les listings déjà chargés + on cherche dans eBay via keywords
+    const qLower = q.toLowerCase();
+    const results = listings.filter(l =>
+      l.title.toLowerCase().includes(qLower) ||
+      l.id.includes(q) ||
+      (l.newTitle && l.newTitle.toLowerCase().includes(qLower))
+    );
+
+    if (results.length === 0) {
+      // Recherche étendue via GetSellerList avec filtre titre
+      setStatus(`Aucun résultat local pour "${q}". Recherche étendue…`, 'info');
+      const now = new Date();
+      const endFrom = now.toISOString().split('.')[0] + 'Z';
+      const endTo   = new Date(now.getTime() + 120*24*60*60*1000).toISOString().split('.')[0] + 'Z';
+      const xmlSearch = `<?xml version="1.0" encoding="utf-8"?>
+<GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
+  <DetailLevel>ReturnAll</DetailLevel>
+  <EndTimeFrom>${endFrom}</EndTimeFrom>
+  <EndTimeTo>${endTo}</EndTimeTo>
+  <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
+</GetSellerListRequest>`;
+      const doc2 = await ebayXML('GetSellerList', xmlSearch);
+      const found = [];
+      Array.from(doc2.getElementsByTagName('Item')).forEach(item => {
+        const t = item.getElementsByTagName('Title')[0]?.textContent || '';
+        const id = item.getElementsByTagName('ItemID')[0]?.textContent || '';
+        if (t.toLowerCase().includes(qLower) || id.includes(q)) {
+          const parsed = parseEbayItem(item, true);
+          if (parsed) {
+            // Mettre à jour ou ajouter
+            const existing = listings.find(l => l.id === parsed.id);
+            if (existing) { found.push(existing); }
+            else { listings.push(parsed); found.push(parsed); }
+          }
+        }
+      });
+      if (found.length === 0) { setStatus(`Aucun article trouvé pour "${q}".`, 'error'); return; }
+      filtered = found;
+    } else {
+      filtered = results;
+    }
+
+    currentPage = 1;
+    setStatus(`${filtered.length} article(s) trouvé(s) pour "${q}".`, 'success');
+    renderPage();
+
+  } catch(err) {
+    setStatus('Erreur recherche : ' + err.message, 'error');
+  }
 }
 
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  filtered    = [...listings];
+  currentPage = 1;
+  setStatus('', 'info');
+  document.getElementById('status').style.display = 'none';
+  renderPage();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PAGINATION & RENDU
+// ═══════════════════════════════════════════════════════════════
+function totalPages() { return Math.max(1, Math.ceil(filtered.length / PER_PAGE)); }
+
+function renderPage() {
+  const start = (currentPage - 1) * PER_PAGE;
+  const page  = filtered.slice(start, start + PER_PAGE);
+  const grid  = document.getElementById('listings-grid');
+  grid.innerHTML = '';
+  page.forEach(item => {
+    const i = listings.indexOf(item);
+    grid.appendChild(buildCard(item, i));
+  });
+  renderPagination();
+  // Afficher bouton push si des articles sont générés
+  const hasGenerated = listings.some(l => l.status === 'generated');
+  document.getElementById('push-all-btn').style.display  = hasGenerated ? 'block' : 'none';
+  document.getElementById('push-etsy-btn').style.display = hasGenerated ? 'block' : 'none';
+}
+
+function renderPagination() {
+  const tp   = totalPages();
+  const html = buildPaginationHTML(tp);
+  document.getElementById('pagination-top').innerHTML    = html;
+  document.getElementById('pagination-bottom').innerHTML = html;
+}
+
+function buildPaginationHTML(tp) {
+  if (tp <= 1) return '';
+  let html = `<div class="pagination"><span class="pagination-info">Page ${currentPage}/${tp} — ${filtered.length} articles</span>`;
+  if (currentPage > 1) html += `<button class="btn-outline btn-small" onclick="goPage(1)">«</button><button class="btn-outline btn-small" onclick="goPage(${currentPage-1})">‹</button>`;
+  // Pages autour de la courante
+  for (let p = Math.max(1, currentPage-2); p <= Math.min(tp, currentPage+2); p++) {
+    html += `<button class="btn-outline btn-small ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  }
+  if (currentPage < tp) html += `<button class="btn-outline btn-small" onclick="goPage(${currentPage+1})">›</button><button class="btn-outline btn-small" onclick="goPage(${tp})">»</button>`;
+  html += '</div>';
+  return html;
+}
+
+function goPage(p) {
+  currentPage = p;
+  renderPage();
+  window.scrollTo(0, document.getElementById('step-listings').offsetTop - 20);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONSTRUCTION D'UNE CARTE ARTICLE
+// ═══════════════════════════════════════════════════════════════
 function buildCard(item, i) {
   const div = document.createElement('div');
-  div.className = 'listing-item';
+  div.className = 'listing-item' + (item.alreadyDone && item.status !== 'generated' ? ' already-done' : '');
   div.id = 'item-' + i;
 
   const badgeMap = {
@@ -342,103 +576,101 @@ function buildCard(item, i) {
     generating: '<span class="badge badge-generating"><span class="spinner"></span>Génération…</span>',
     generated:  '<span class="badge badge-generated">Généré</span>',
     skipped:    '<span class="badge badge-skipped">Ignoré</span>',
-    updated:    '<span class="badge badge-updated">✓ Publié</span>'
+    updated:    '<span class="badge badge-updated">✓ Publié eBay</span>',
+    done:       '<span class="badge badge-done">✓ Déjà optimisé</span>'
   };
 
-  // ── Titre ──
+  // Titre
   let titleHTML = '';
   if (item.newTitle) {
     const warn = item.newTitle.length > 80 ? 'warn' : '';
-    titleHTML = `
-      <div class="listing-titles">
-        <div class="listing-title-old">${escapeHTML(item.title)}</div>
-        <div class="listing-title-new">${escapeHTML(item.newTitle)}</div>
-        <div class="char-count ${warn}">${item.newTitle.length} / 80 car.</div>
-      </div>`;
+    titleHTML = `<div class="listing-titles">
+      <div class="listing-title-old">${escapeHTML(item.title)}</div>
+      <div class="listing-title-new">${escapeHTML(item.newTitle)}</div>
+      <div class="char-count ${warn}">${item.newTitle.length}/80 car.</div>
+    </div>`;
   } else {
     titleHTML = `<div class="listing-titles"><div class="listing-title-only">${escapeHTML(item.title)}</div></div>`;
   }
 
-  // ── Miniatures ──
+  // Miniatures
   const thumbsHTML = item.pictures.length
-    ? `<div class="thumbs">${item.pictures.slice(0, 5).map(u =>
-        `<img class="thumb" src="${u}" onerror="this.style.display='none'">`).join('')}</div>`
+    ? `<div class="thumbs">${item.pictures.slice(0,5).map(u => `<img class="thumb" src="${u}" onerror="this.style.display='none'">`).join('')}</div>`
     : '';
 
-  // ── Description ──
-  const oldText = item.description
-    ? item.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g,' ').substring(0, 400) + '…'
-    : 'Aucune description';
-
+  // Description
+  const oldText = (item.description || '').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').substring(0,400) + '…';
   const newDescHTML = item.newDescription
-    ? `<div class="desc-box new">
-         <div class="section-label">Nouvelle description</div>
-         <p>${item.newDescription.replace(/\n/g,'<br>')}</p>
-         ${item.keyword ? `<div style="margin-top:8px"><span class="keyword-tag">🔑 ${escapeHTML(item.keyword)}</span></div>` : ''}
-       </div>`
-    : `<div class="desc-box new">
-         <div class="section-label">Nouvelle description</div>
-         <p style="color:var(--border);font-style:italic">Pas encore générée</p>
-       </div>`;
+    ? `<div class="desc-box new"><div class="section-label">Nouvelle description</div><p>${item.newDescription.replace(/\n/g,'<br>')}</p>${item.keyword ? `<div style="margin-top:6px"><span class="keyword-tag">🔑 ${escapeHTML(item.keyword)}</span></div>` : ''}</div>`
+    : `<div class="desc-box new"><div class="section-label">Nouvelle description</div><p style="color:var(--border);font-style:italic">Pas encore générée</p></div>`;
 
-  // ── Item Specifics ──
+  // Item Specifics
   const allKeys = new Set([...Object.keys(item.existingSpecifics), ...Object.keys(item.newSpecifics)]);
   let specificsHTML = '';
   if (allKeys.size > 0) {
     const tags = Array.from(allKeys).map(k => {
       const isNew = item.newSpecifics[k] !== undefined && item.newSpecifics[k] !== item.existingSpecifics[k];
-      const val = item.newSpecifics[k] !== undefined ? item.newSpecifics[k] : item.existingSpecifics[k];
-      return `<span class="spec-tag ${isNew ? 'new' : ''}">${escapeHTML(k)}: ${escapeHTML(String(val))}</span>`;
+      const val   = item.newSpecifics[k] !== undefined ? item.newSpecifics[k] : item.existingSpecifics[k];
+      return `<span class="spec-tag ${isNew?'new':''}">${escapeHTML(k)}: ${escapeHTML(String(val))}</span>`;
     }).join('');
-    const hasNew = Object.keys(item.newSpecifics).length > 0;
-    specificsHTML = `<div class="specifics-wrap">
-      <div class="section-label">Item Specifics${hasNew ? ' — 🟡 modifiés/ajoutés en jaune' : ''}</div>
-      <div class="specifics-row">${tags}</div>
-    </div>`;
+    specificsHTML = `<div class="specifics-wrap"><div class="section-label">Item Specifics</div><div class="specifics-row">${tags}</div></div>`;
   }
 
-  // ── Boutons individuels ──
+  // Tags Etsy
+  let etsyHTML = '';
+  if (item.etsyTags && item.etsyTags.length > 0) {
+    const tags = item.etsyTags.map(t => `<span class="spec-tag new">${escapeHTML(t)}</span>`).join('');
+    etsyHTML = `<div class="specifics-wrap"><div class="section-label">Tags Etsy (${item.etsyTags.length}/13)</div><div class="specifics-row">${tags}</div></div>`;
+  }
+
+  // Boutons d'action
   let actionsHTML = '';
-  if (item.status === 'pending') {
+  if (item.status === 'pending' || item.status === 'done') {
     actionsHTML = `<div class="item-actions">
-      <button class="btn-skip" onclick="skipItem(${i})">Ignorer</button>
+      <button class="btn-outline btn-small" onclick="skipItem(${i})">Ignorer</button>
       <button class="btn-small" onclick="generateOne(${i})">Générer</button>
     </div>`;
   } else if (item.status === 'generated') {
     actionsHTML = `<div class="item-actions">
-      <button class="btn-skip" onclick="skipItem(${i})">Ignorer cet article</button>
+      <button class="btn-outline btn-small" onclick="skipItem(${i})">Ignorer</button>
+      <button class="btn-small" onclick="generateOne(${i})">Regénérer</button>
+      <button class="btn-publish" onclick="publishOne(${i})">Publier sur eBay</button>
+    </div>`;
+  } else if (item.status === 'updated') {
+    actionsHTML = `<div class="item-actions">
+      <button class="btn-small" onclick="generateOne(${i})">Regénérer</button>
     </div>`;
   }
 
   div.innerHTML = `
     <div class="listing-header">
       ${titleHTML}
-      <div style="text-align:right">
-        <div>${badgeMap[item.status] || ''}</div>
+      <div class="listing-meta">
+        ${badgeMap[item.status] || ''}
         <div class="listing-id">#${item.id}</div>
       </div>
     </div>
     <div class="listing-body">
       ${thumbsHTML}
       <div class="desc-compare">
-        <div class="desc-box">
-          <div class="section-label">Description actuelle</div>
-          <p>${oldText}</p>
-        </div>
+        <div class="desc-box"><div class="section-label">Description actuelle</div><p>${oldText}</p></div>
         ${newDescHTML}
       </div>
       ${specificsHTML}
+      ${etsyHTML}
       ${actionsHTML}
     </div>`;
-
   return div;
 }
 
 function refreshCard(i) {
-  document.getElementById('item-' + i).replaceWith(buildCard(listings[i], i));
+  const el = document.getElementById('item-' + i);
+  if (el) el.replaceWith(buildCard(listings[i], i));
 }
 
-// ── Générer un article (photos + texte → Claude) ───────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// GÉNÉRER UN ARTICLE (Claude)
+// ═══════════════════════════════════════════════════════════════
 async function generateOne(i) {
   const keys = getKeys();
   listings[i].status = 'generating';
@@ -446,122 +678,108 @@ async function generateOne(i) {
 
   try {
     const userContent = [];
-
-    // Charger les photos en base64 via le proxy /fetch_image (max 4)
     for (const url of listings[i].pictures.slice(0, 4)) {
       try {
-        const r = await fetch('/fetch_image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url })
-        });
+        const r = await fetch('/fetch_image', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url}) });
         if (r.ok) {
           const d = await r.json();
-          if (d.base64 && d.mediaType) {
-            userContent.push({ type: 'image', source: { type: 'base64', media_type: d.mediaType, data: d.base64 } });
-          }
+          if (d.base64 && d.mediaType)
+            userContent.push({ type:'image', source:{ type:'base64', media_type:d.mediaType, data:d.base64 } });
         }
-      } catch (e) { /* image inaccessible, on ignore */ }
+      } catch(e) {}
     }
 
-    const existingSpecsStr = Object.entries(listings[i].existingSpecifics)
-      .map(([k, v]) => `${k}: ${v}`).join('\n') || 'Aucun';
+    const existingSpecsStr = Object.entries(listings[i].existingSpecifics).map(([k,v]) => `${k}: ${v}`).join('\n') || 'Aucun';
 
-    userContent.push({ type: 'text', text:
+    userContent.push({ type:'text', text:
 `You are an SEO expert for a French vintage/antiques shop called Fleamarketfrance selling on eBay.
 Analyze the product photos (if provided) AND the information below, then generate fully optimized content.
 
 CURRENT TITLE: ${listings[i].title}
-CURRENT DESCRIPTION: ${listings[i].description ? listings[i].description.replace(/<[^>]+>/g,' ').substring(0,1000) : 'No description'}
+CURRENT DESCRIPTION: ${(listings[i].description||'').replace(/<[^>]+>/g,' ').substring(0,1000)}
 EXISTING ITEM SPECIFICS:
 ${existingSpecsStr}
 
-RULES — follow all of them strictly:
-1. KEYWORD: Pick the single most searched SEO keyword for this item (based on photos + info). It must appear in both the new title and as <h2> in the description.
-2. NEW TITLE: Maximum 80 characters total. The series of digits at the very end of the current title MUST be kept unchanged and placed at the end of the new title. Include the keyword naturally.
-3. DESCRIPTION: Minimum 160 words. English only. Tone: refined, knowledgeable, evocative of French brocante culture.
-Structure the description as follows — each block separated by a blank line:
-- Start with: <h2 style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">keyword</h2>
-- Then 3 to 4 distinct <p> paragraphs (each 2-4 sentences). Do NOT merge everything into one block.
-- Paragraph 1: introduce the item, its nature and origin
-- Paragraph 2: describe the visual details, style, craftsmanship
-- Paragraph 3: include dimensions if known, condition, any notable details
-- Paragraph 4 (optional): suggest use, decorating context, collectible value
-- End with a final <p> containing EXACTLY this sentence: "95% of my items are tariff-free to the US."
-Wrap everything in: <div style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">
-IMPORTANT: if dimensions are mentioned anywhere (title, current description, item specifics, or visible in photos), you MUST include them in paragraph 3.
-4. ITEM SPECIFICS: Return a complete set. Keep correct existing values, overwrite wrong ones using photo evidence, add all missing relevant fields (e.g. Material, Style, Period/Era, Country of Origin, Color, Type, Dimensions if visible, Condition, Theme...).
+RULES — follow all strictly:
+1. KEYWORD: Best single SEO keyword (from photos + info). Must appear in new title AND as <h2> in description.
+2. NEW TITLE: Max 80 characters. Keep the digits at the very END of the current title unchanged and at the end. Include keyword naturally.
+3. DESCRIPTION: Minimum 160 words. English. Wrap ALL content in <div style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">. Structure:
+   - <h2 style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">keyword</h2>
+   - <p> Intro: nature and origin of item </p>
+   - <p> Visual details, style, craftsmanship </p>
+   - <p> MUST include dimensions if known anywhere (title, description, specifics, photos). Condition and notable details. </p>
+   - <p> (optional) Decorative use, collectible value </p>
+   - <p> EXACTLY: "95% of my items are tariff-free to the US." </p>
+4. ITEM SPECIFICS: Complete set. Keep correct existing values, overwrite wrong ones from photos, add missing fields (Material, Style, Period/Era, Country of Origin, Color, Type, Dimensions, Condition, Theme…).
+5. ETSY TAGS: Exactly 13 tags, each max 20 characters, optimized for Etsy search. Mix specific and broad.
+6. ALT TEXTS: One descriptive alt text per photo (max 250 chars each).
 
-Respond ONLY with a valid JSON object — no markdown, no backticks, no extra text:
-{"keyword":"...","newTitle":"...","description":"...","itemSpecifics":{"Name":"Value",...}}`
+Respond ONLY with valid JSON — no markdown, no backticks:
+{"keyword":"...","newTitle":"...","description":"...","itemSpecifics":{"Name":"Value"},"etsyTags":["tag1",...],"altTexts":["alt1",...]}`
     });
 
     const resp = await fetch('/anthropic', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: keys.anthropic,
-        payload: {
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1500,
-          messages: [{ role: 'user', content: userContent }]
-        }
-      })
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ api_key: keys.anthropic, payload: { model:'claude-sonnet-4-20250514', max_tokens:1500, messages:[{role:'user', content:userContent}] } })
     });
 
     let data;
-    try {
-      data = await resp.json();
-    } catch(e) {
-      throw new Error(`Réponse invalide du serveur (HTTP ${resp.status}) — vérifiez que app.py est bien déployé sur Render.`);
-    }
-
+    try { data = await resp.json(); } catch(e) { throw new Error(`Réponse invalide du serveur (HTTP ${resp.status})`); }
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
-    let raw = data.content[0].text.trim()
-      .replace(/^```json\s*/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-
+    let raw = data.content[0].text.trim().replace(/^```json\s*/i,'').replace(/^```/,'').replace(/```$/,'').trim();
     const parsed = JSON.parse(raw);
 
     listings[i].keyword        = parsed.keyword        || '';
     listings[i].newTitle       = parsed.newTitle        || listings[i].title;
     listings[i].newDescription = parsed.description     || '';
     listings[i].newSpecifics   = parsed.itemSpecifics   || {};
-    listings[i].status         = 'generated';
-    counts.generated++;
+    listings[i].etsyTags       = parsed.etsyTags        || [];
+    listings[i].altTexts       = parsed.altTexts        || [];
+
+    const wasGenerated = listings[i].status === 'generated';
+    if (!wasGenerated) counts.generated++;
+    listings[i].status = 'generated';
     updateCounts();
 
-    // Afficher le bouton push dès qu'au moins un article est généré
-    document.getElementById('push-all-btn').style.display = 'block';
-
-  } catch (err) {
-    listings[i].status = 'pending';
-    setStatus('Erreur #' + listings[i].id + ' : ' + err.message, 'error');
+  } catch(err) {
+    listings[i].status = listings[i].alreadyDone ? 'done' : 'pending';
+    logError('Claude', listings[i].id, listings[i].title, err.message);
+    setStatus('Erreur Claude #' + listings[i].id + ' : ' + err.message, 'error');
   }
 
   refreshCard(i);
+  // Afficher boutons push
+  const hasGenerated = listings.some(l => l.status === 'generated');
+  document.getElementById('push-all-btn').style.display  = hasGenerated ? 'block' : 'none';
+  document.getElementById('push-etsy-btn').style.display = hasGenerated ? 'block' : 'none';
 }
 
-// ── Générer TOUT ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// GÉNÉRER TOUT
+// ═══════════════════════════════════════════════════════════════
 async function generateAll() {
   const btn = document.getElementById('generate-all-btn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Génération en cours…';
+  btn.innerHTML = '<span class="spinner"></span>Génération…';
 
+  startOperation();
   for (let i = 0; i < listings.length; i++) {
-    if (listings[i].status === 'pending') {
+    if (stopRequested) break;
+    if (listings[i].status === 'pending' || listings[i].status === 'done') {
       await generateOne(i);
       await new Promise(r => setTimeout(r, 600));
     }
   }
-
+  endOperation();
   btn.disabled = false;
   btn.textContent = '① Regénérer tout';
-  document.getElementById('push-all-btn').style.display = 'block';
-  setStatus(`${counts.generated} description(s) générée(s). Vérifiez puis cliquez sur ② pour tout publier sur eBay.`, 'success');
+  setStatus(stopRequested ? `Génération arrêtée. ${counts.generated} description(s) générée(s).` : `${counts.generated} description(s) générée(s). Vérifiez puis publiez.`, 'success');
 }
 
-// ── Ignorer un article ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// IGNORER
+// ═══════════════════════════════════════════════════════════════
 function skipItem(i) {
   if (listings[i].status === 'generated') counts.generated--;
   listings[i].status = 'skipped';
@@ -570,17 +788,17 @@ function skipItem(i) {
   refreshCard(i);
 }
 
-// ── Pousser UN article sur eBay ────────────────────────────────────────────
-async function pushOne(i) {
+// ═══════════════════════════════════════════════════════════════
+// PUBLIER UN ARTICLE SUR EBAY
+// ═══════════════════════════════════════════════════════════════
+async function publishOne(i) {
   const keys = getKeys();
-  const item  = listings[i];
+  const item = listings[i];
 
-  // Item Specifics XML
-  const specsXML = Object.entries(item.newSpecifics).map(([name, value]) =>
-    `<NameValueList><Name>${escapeXML(name)}</Name><Value>${escapeXML(String(value))}</Value></NameValueList>`
+  const specsXML = Object.entries(item.newSpecifics).map(([n,v]) =>
+    `<NameValueList><n>${escapeXML(n)}</n><Value>${escapeXML(String(v))}</Value></NameValueList>`
   ).join('');
 
-  // Description finale avec marqueur invisible
   const finalDesc = item.newDescription + '\n' + MARKER;
 
   const xml = `<?xml version="1.0" encoding="utf-8"?>
@@ -594,63 +812,146 @@ async function pushOne(i) {
   </Item>
 </ReviseItemRequest>`;
 
-  const doc = await ebayXML('ReviseItem', xml);
-  const ack  = doc.getElementsByTagName('Ack')[0]?.textContent;
-  if (ack !== 'Success' && ack !== 'Warning') {
-    throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
+  try {
+    const doc = await ebayXML('ReviseItem', xml);
+    const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
+    if (ack !== 'Success' && ack !== 'Warning') {
+      const msg = doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay';
+      throw new Error(msg);
+    }
+    if (listings[i].status === 'generated') { counts.generated--; counts.pushed++; }
+    listings[i].status = 'updated';
+    listings[i].alreadyDone = true;
+    updateCounts();
+    refreshCard(i);
+  } catch(err) {
+    logError('eBay', item.id, item.title, err.message);
+    setStatus('Erreur eBay #' + item.id + ' : ' + err.message, 'error');
   }
-
-  listings[i].status = 'updated';
-  counts.pushed++;
-  if (counts.generated > 0) counts.generated--;
-  updateCounts();
-  refreshCard(i);
 }
 
-// ── Pousser TOUT sur eBay ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// PUBLIER TOUT SUR EBAY
+// ═══════════════════════════════════════════════════════════════
 async function pushAll() {
   const toSend = listings.filter(l => l.status === 'generated').length;
-  if (toSend === 0) { setStatus('Aucun article généré à envoyer.', 'error'); return; }
-
-  const ok = confirm(`Vous êtes sur le point d'envoyer ${toSend} article(s) sur eBay.\nLe titre, la description et les item specifics seront écrasés. Confirmer ?`);
-  if (!ok) return;
+  if (toSend === 0) { setStatus('Aucun article généré à publier.', 'error'); return; }
+  if (!confirm(`Publier ${toSend} article(s) sur eBay ?`)) return;
 
   const btn = document.getElementById('push-all-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Publication en cours…';
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Publication…';
 
-  let success = 0, errors = 0;
+  startOperation();
   for (let i = 0; i < listings.length; i++) {
+    if (stopRequested) break;
     if (listings[i].status === 'generated') {
-      try {
-        await pushOne(i);
-        success++;
-        await new Promise(r => setTimeout(r, 400));
-      } catch (err) {
-        errors++;
-        setStatus('Erreur #' + listings[i].id + ' : ' + err.message, 'error');
-      }
+      await publishOne(i);
+      await new Promise(r => setTimeout(r, 400));
     }
   }
-
-  btn.disabled = false;
-  btn.textContent = '② Valider & Envoyer tout sur eBay';
-  setStatus(`✓ ${success} article(s) mis à jour sur eBay.${errors > 0 ? ' ' + errors + ' erreur(s).' : ''}`, 'success');
+  endOperation();
+  btn.disabled = false; btn.textContent = '② Publier tout sur eBay';
+  setStatus(`✓ Publication eBay terminée. ${counts.errors > 0 ? counts.errors + ' erreur(s) — voir Rapport.' : ''}`, 'success');
 }
 
-// ── Utilitaires ────────────────────────────────────────────────────────────
-function escapeXML(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+// ═══════════════════════════════════════════════════════════════
+// ETSY — OAuth2 PKCE
+// ═══════════════════════════════════════════════════════════════
+async function connectEtsy() {
+  const etsyKey = document.getElementById('etsy-api-key').value.trim();
+  if (!etsyKey) { setStatus('Entrez votre Etsy API Key.', 'error'); return; }
+  saveCredentials();
+  try {
+    const resp = await fetch('/etsy/auth_url', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({api_key:etsyKey}) });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    const popup = window.open(data.auth_url, 'etsy_auth', 'width=600,height=700');
+    window.addEventListener('message', function handler(e) {
+      if (e.data && e.data.etsySuccess) {
+        document.getElementById('etsy-status-label').textContent = '✓ Connecté';
+        document.getElementById('etsy-status-label').style.color = 'var(--sage)';
+        setStatus('Etsy connecté !', 'success');
+        window.removeEventListener('message', handler);
+      } else if (e.data && e.data.etsyError) {
+        setStatus('Erreur Etsy : ' + e.data.etsyError, 'error');
+        window.removeEventListener('message', handler);
+      }
+    });
+  } catch(err) { setStatus('Erreur Etsy : ' + err.message, 'error'); }
 }
 
-function escapeHTML(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+async function checkEtsyStatus() {
+  try {
+    const resp = await fetch('/etsy/status');
+    const data = await resp.json();
+    const label = document.getElementById('etsy-status-label');
+    if (label && data.connected) { label.textContent = '✓ Connecté'; label.style.color = 'var(--sage)'; }
+  } catch(e) {}
 }
 
+// ═══════════════════════════════════════════════════════════════
+// PUBLIER UN ARTICLE SUR ETSY
+// ═══════════════════════════════════════════════════════════════
+async function publishOneEtsy(i) {
+  const item = listings[i];
+  if (!item.etsyListingId) throw new Error('Pas de Listing ID Etsy — liaison eBay↔Etsy manuelle requise.');
+  const resp = await fetch('/etsy/update_listing', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ listing_id:item.etsyListingId, title:item.newTitle||item.title, description:item.newDescription||'', tags:item.etsyTags||[] })
+  });
+  const data = await resp.json();
+  if (!data.success) throw new Error(JSON.stringify(data.error || data));
+}
+
+async function pushAllEtsy() {
+  const toSend = listings.filter(l => l.status === 'generated' || l.status === 'updated').length;
+  if (toSend === 0) { setStatus('Aucun article à publier sur Etsy.', 'error'); return; }
+  if (!confirm(`Publier ${toSend} article(s) sur Etsy ?`)) return;
+
+  const btn = document.getElementById('push-etsy-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Etsy…';
+
+  let success = 0, skipped = 0;
+  startOperation();
+  for (let i = 0; i < listings.length; i++) {
+    if (stopRequested) break;
+    if (listings[i].status === 'generated' || listings[i].status === 'updated') {
+      if (!listings[i].etsyListingId) { skipped++; continue; }
+      try { await publishOneEtsy(i); success++; await new Promise(r => setTimeout(r, 400)); }
+      catch(err) { logError('Etsy', listings[i].id, listings[i].title, err.message); setStatus('Erreur Etsy #' + listings[i].id + ' : ' + err.message, 'error'); }
+    }
+  }
+  endOperation();
+  btn.disabled = false; btn.textContent = '③ Publier tout sur Etsy';
+  setStatus(`✓ ${success} article(s) mis à jour sur Etsy.${skipped > 0 ? ' '+skipped+' ignorés (pas de Listing ID Etsy).' : ''}${counts.errors > 0 ? ' Voir Rapport.' : ''}`, 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STOP
+// ═══════════════════════════════════════════════════════════════
+function requestStop() {
+  stopRequested = true;
+  document.getElementById('stop-btn').textContent = '⏹ Arrêt…';
+  document.getElementById('stop-btn').disabled = true;
+}
+
+function startOperation(label) {
+  stopRequested = false;
+  const btn = document.getElementById('stop-btn');
+  btn.style.display = 'block';
+  btn.textContent   = '⏹ Stop';
+  btn.disabled      = false;
+}
+
+function endOperation() {
+  stopRequested = false;
+  const btn = document.getElementById('stop-btn');
+  btn.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', loadCredentials);
 </script>
 </body>
