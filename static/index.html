@@ -1151,55 +1151,56 @@ async function shopifyReload(forceAll) {
   if (!ebListings.length) { setStatus('shopify', 'Chargez d\'abord vos articles eBay.', 'error'); return; }
   setStatus('shopify', 'Chargement des produits Shopify...', 'info');
   try {
-    var allShopify = [];
-    var pageInfo = null;
-    var visitedPages = new Set();
-    var firstCall = true;
-    while (true) {
-      var path = '/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,tags,body_html' + (pageInfo ? '&page_info=' + pageInfo : '');
-      // Eviter les boucles infinies
-      if (visitedPages.has(pageInfo)) break;
-      visitedPages.add(pageInfo);
-      var resp = await callShopifyAPI('GET', path, null);
-      var batch = resp.products || [];
-      allShopify = allShopify.concat(batch);
-      setStatus('shopify', 'Chargement... ' + allShopify.length + ' produits récupérés', 'info');
-      // S'arrêter si pas de page suivante OU si la batch est vide OU si on a tout eu
-      pageInfo = resp.next_page_info || null;
-      if (!pageInfo || batch.length === 0) break;
-      // S'arrêter aussi si on a déjà vu cette page_info
-      if (visitedPages.has(pageInfo)) break;
-    }
+    var fetchResp = await fetch('/shopify/products', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({force_all: forceAll})
+    });
+    var fetchData = await fetchResp.json();
+    if (fetchData.error) throw new Error(fetchData.error);
+    var allShopify = fetchData.products || [];
+    setStatus('shopify', allShopify.length + ' produit(s) Shopify charges.', 'info');
 
+        // Construire les paires en matchant eBay <-> Shopify par SKU
     shPairs = [];
     ebListings.forEach(function(eb) {
       var match = allShopify.find(function(sh) {
-        return sh.variants && sh.variants.some(function(v) { return v.sku && eb.sku && v.sku === eb.sku; });
+        return sh.sku && eb.sku && sh.sku === eb.sku;
       });
-      if (!match && !forceAll) return; // ignorer si pas de correspondance et pas forceAll
+      if (!match && !forceAll) return;
 
-      var seoTitle = match ? (match.metafields_global_title_tag || '') : '';
-      var seoDesc  = match ? (match.metafields_global_description_tag || '') : '';
+      var seoTitle = match ? (match.seoTitle || '') : '';
+      var seoDesc  = match ? (match.seoDesc  || '') : '';
       var diffs    = [];
       if (match) {
         if (eb.title !== match.title) diffs.push('title');
-        // Comparer prix via variant
-        var shPrice = match.variants && match.variants[0] ? match.variants[0].price : null;
-        if (eb.price && shPrice && parseFloat(eb.price).toFixed(2) !== parseFloat(shPrice).toFixed(2)) diffs.push('price');
+        if (eb.price && match.price && parseFloat(eb.price).toFixed(2) !== parseFloat(match.price).toFixed(2)) diffs.push('price');
       }
       var hasSeo = seoTitle.length > 0 && seoDesc.length > 0;
       shPairs.push({
-        ebay:    eb,
-        shopify: match || null,
-        diffs:   diffs,
-        seoTitle: seoTitle,
-        seoDesc:  seoDesc,
-        hasSeo:   hasSeo,
+        ebay:        eb,
+        shopify:     match || null,
+        diffs:       diffs,
+        seoTitle:    seoTitle,
+        seoDesc:     seoDesc,
+        hasSeo:      hasSeo,
         newSeoTitle: null,
         newSeoDesc:  null,
-        checked: false,
-        status:  match ? (diffs.length ? 'diff' : (hasSeo ? 'ok' : 'noseo')) : 'missing'
+        checked:     false,
+        status:      match ? (diffs.length ? 'diff' : (hasSeo ? 'ok' : 'noseo')) : 'missing'
       });
+    });
+    // Ajouter aussi les produits Shopify sans correspondance eBay
+    allShopify.forEach(function(sh) {
+      var exists = shPairs.find(function(p) { return p.shopify && p.shopify.id === sh.id; });
+      if (!exists) {
+        shPairs.push({
+          ebay: null, shopify: sh, diffs: [],
+          seoTitle: sh.seoTitle || '', seoDesc: sh.seoDesc || '',
+          hasSeo: sh.hasSeo, newSeoTitle: null, newSeoDesc: null,
+          checked: false, status: sh.hasSeo ? 'ok' : 'noseo'
+        });
+      }
     });
 
     shFiltered = shPairs.slice();
@@ -1371,12 +1372,19 @@ async function shopifyExportSelected() {
     var pair = shPairs[i];
     if (!pair.checked || !pair.shopify) continue;
     try {
-      var payload = {product: {}};
-      if (pair.diffs.includes('title')) payload.product.title = pair.ebay.title;
-      if (pair.newSeoTitle) payload.product.metafields_global_title_tag = pair.newSeoTitle;
-      if (pair.newSeoDesc)  payload.product.metafields_global_description_tag = pair.newSeoDesc;
-      if (Object.keys(payload.product).length) {
-        await callShopifyAPI('PUT', '/products/' + pair.shopify.id + '.json', payload);
+      var tasks = [];
+      if (pair.diffs.includes('title') || pair.diffs.includes('price')) {
+        var titlePayload = {product: {id: pair.shopify.id}};
+        if (pair.diffs.includes('title') && pair.ebay) titlePayload.product.title = pair.ebay.title;
+        await callShopifyAPI('PUT', '/products/' + pair.shopify.id + '.json', titlePayload);
+      }
+      if (pair.newSeoTitle || pair.newSeoDesc) {
+        var seoResp = await fetch('/shopify/update_seo', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({product_id: pair.shopify.id, seoTitle: pair.newSeoTitle || pair.seoTitle, seoDesc: pair.newSeoDesc || pair.seoDesc})
+        });
+        var seoData = await seoResp.json();
+        if (!seoData.success) throw new Error(seoData.error || 'Erreur update SEO');
       }
       pair.status  = 'exported';
       pair.checked = false;
