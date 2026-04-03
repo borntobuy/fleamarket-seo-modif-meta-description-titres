@@ -12,7 +12,8 @@ CORS(app)
 
 # Stockage temporaire en mémoire (tokens Etsy, PKCE state)
 etsy_state_store = {}  # state -> {verifier, ...}
-etsy_token_store = {}  # 'current' -> {access_token, refresh_token, expires_at}
+_etsy_tok = _load_token('etsy')
+etsy_token_store = {'current': _etsy_tok} if _etsy_tok else {}  # 'current' -> {access_token, refresh_token, expires_at}
 
 # ── Page principale ────────────────────────────────────────────────────────
 @app.route('/')
@@ -219,13 +220,17 @@ def etsy_callback():
 
         # Stocker les tokens en mémoire
         import time
-        etsy_token_store['current'] = {
+        _etsy_data = {
             'access_token':  token_data['access_token'],
             'refresh_token': token_data.get('refresh_token', ''),
             'expires_at':    time.time() + token_data.get('expires_in', 3600) - 60,
             'api_key':       api_key
         }
-        return "<script>window.opener.postMessage({etsySuccess:true}, '*'); window.close();</script>"
+        etsy_token_store['current'] = _etsy_data
+        _save_token('etsy', _etsy_data)
+        return '''<html><body><p style="font-family:monospace;padding:20px;color:green">✓ Etsy connecté !</p>
+        <script>try{window.opener.postMessage({etsySuccess:true},'*');}catch(e){}
+        setTimeout(function(){window.close();},1500);</script></body></html>'''
     except Exception as e:
         return f"<script>window.opener.postMessage({{etsyError:'{str(e)}'}}, '*'); window.close();</script>"
 
@@ -359,8 +364,31 @@ SHOPIFY_REDIRECT_URI  = 'https://fleamarket-seo-modif-meta-description.onrender.
 SHOPIFY_SCOPES        = 'read_products,write_products'
 SHOPIFY_SHOP          = 'psangg-3f.myshopify.com'
 
-shopify_state_store = {}   # state -> True
-shopify_token_store = {}   # 'current' -> access_token
+shopify_state_store = {}   # state -> True (en mémoire, éphémère OK)
+
+# Persistance tokens dans fichier pour survivre aux redémarrages Render
+import os as _os
+
+def _token_path(name):
+    return _os.path.join('/tmp', 'fmf_' + name + '_token.json')
+
+def _save_token(name, data):
+    try:
+        with open(_token_path(name), 'w') as _f:
+            json.dump(data, _f)
+    except Exception:
+        pass
+
+def _load_token(name):
+    try:
+        with open(_token_path(name), 'r') as _f:
+            return json.load(_f)
+    except Exception:
+        return None
+
+# Charger les tokens au démarrage
+_shopify_tok = _load_token('shopify')
+shopify_token_store = {'current': _shopify_tok} if _shopify_tok else {}
 
 @app.route('/shopify/auth_url', methods=['POST'])
 def shopify_auth_url():
@@ -405,9 +433,13 @@ def shopify_callback():
             return "<script>window.opener.postMessage({shopifyError:'" + str(data) + "'}, '*'); window.close();</script>"
 
         shopify_token_store['current'] = data['access_token']
-        return "<script>window.opener.postMessage({shopifySuccess:true}, '*'); window.close();</script>"
+        _save_token('shopify', data['access_token'])
+        return '''<html><body><p style="font-family:monospace;padding:20px;color:green">✓ Connecté !</p>
+        <script>try{window.opener.postMessage({shopifySuccess:true},'*');}catch(e){}
+        setTimeout(function(){window.close();},1500);</script></body></html>'''
     except Exception as e:
-        return "<script>window.opener.postMessage({shopifyError:'" + str(e) + "'}, '*'); window.close();</script>"
+        err = str(e).replace("'", "")
+        return '<html><body><p style="font-family:monospace;padding:20px;color:red">Erreur: ' + err + '</p><script>try{window.opener.postMessage({shopifyError:"' + err + '"},"*");}catch(e){}setTimeout(function(){window.close();},3000);</script></body></html>'
 
 @app.route('/shopify/status', methods=['GET'])
 def shopify_status():
