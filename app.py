@@ -366,6 +366,93 @@ def shopify_callback():
 def shopify_status():
     return jsonify({'connected': 'current' in shopify_token_store})
 
+
+SHOPIFY_MARKER = 'fmf-seo-done'
+
+@app.route('/shopify/products', methods=['POST'])
+def shopify_get_products():
+    import re as _re
+    data      = request.json
+    force_all = data.get('force_all', False)
+    token     = shopify_token_store.get('current')
+    if not token:
+        return jsonify({'error': 'Non connecte a Shopify'}), 401
+
+    all_products = []
+    url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,tags,body_html'
+
+    try:
+        while url:
+            resp = requests.get(
+                url,
+                headers={'X-Shopify-Access-Token': token},
+                timeout=30
+            )
+            if resp.status_code != 200:
+                return jsonify({'error': 'Shopify HTTP ' + str(resp.status_code) + ': ' + resp.text[:200]}), resp.status_code
+
+            products = resp.json().get('products', [])
+            for p in products:
+                seo_title    = p.get('metafields_global_title_tag') or ''
+                seo_desc     = p.get('metafields_global_description_tag') or ''
+                already_done = SHOPIFY_MARKER in (seo_title + seo_desc)
+                if not force_all and already_done:
+                    continue
+                sku   = p['variants'][0].get('sku', '')   if p.get('variants') else ''
+                price = p['variants'][0].get('price', '') if p.get('variants') else ''
+                all_products.append({
+                    'id':          p['id'],
+                    'title':       p.get('title', ''),
+                    'handle':      p.get('handle', ''),
+                    'sku':         sku,
+                    'price':       price,
+                    'seoTitle':    seo_title,
+                    'seoDesc':     seo_desc,
+                    'hasSeo':      bool(seo_title and seo_desc),
+                    'alreadyDone': already_done,
+                    'bodyHtml':    (p.get('body_html') or '')[:300]
+                })
+
+            # Pagination via header Link
+            url  = None
+            link = resp.headers.get('Link', '')
+            if 'rel="next"' in link:
+                m = _re.search(r'<([^>]+)>;\s*rel="next"', link)
+                if m:
+                    url = m.group(1)
+
+        return jsonify({'products': all_products, 'total': len(all_products)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/shopify/update_seo', methods=['POST'])
+def shopify_update_seo():
+    data       = request.json
+    product_id = data.get('product_id')
+    seo_title  = data.get('seoTitle', '')
+    seo_desc   = data.get('seoDesc', '')
+    token      = shopify_token_store.get('current')
+    if not token:
+        return jsonify({'error': 'Non connecte a Shopify'}), 401
+    try:
+        marked_title = seo_title if SHOPIFY_MARKER in seo_title else seo_title + ' ' + SHOPIFY_MARKER
+        payload = {'product': {
+            'id': product_id,
+            'metafields_global_title_tag':       marked_title,
+            'metafields_global_description_tag': seo_desc
+        }}
+        resp = requests.put(
+            'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json',
+            headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+            json=payload,
+            timeout=30
+        )
+        if resp.status_code not in (200, 201):
+            return jsonify({'error': resp.text[:300]}), resp.status_code
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/shopify/api', methods=['POST'])
 def shopify_proxy():
     data   = request.json
