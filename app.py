@@ -383,6 +383,11 @@ def shopify_proxy():
             json=body,
             timeout=30
         )
+        # Log détaillé pour debug
+        import sys
+        print('SHOPIFY DEBUG: status=' + str(resp.status_code) + ' url=' + url, file=sys.stderr)
+        print('SHOPIFY DEBUG: response=' + resp.text[:300], file=sys.stderr)
+
         if not resp.content:
             return jsonify({'error': 'Réponse vide Shopify (HTTP ' + str(resp.status_code) + ')'}), 502
         try:
