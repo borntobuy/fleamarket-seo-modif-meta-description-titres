@@ -379,14 +379,14 @@ def shopify_get_products():
         return jsonify({'error': 'Non connecte a Shopify'}), 401
 
     all_products = []
-    url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,tags,body_html'
+    url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle'
 
     try:
         while url:
             resp = requests.get(
                 url,
                 headers={'X-Shopify-Access-Token': token},
-                timeout=30
+                timeout=90
             )
             if resp.status_code != 200:
                 return jsonify({'error': 'Shopify HTTP ' + str(resp.status_code) + ': ' + resp.text[:200]}), resp.status_code
