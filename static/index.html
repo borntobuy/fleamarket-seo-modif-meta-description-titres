@@ -3,984 +3,1478 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fleamarketfrance — eBay SEO Rewriter</title>
+<title>Fleamarketfrance — SEO Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  :root { --cream:#f5f0e8; --dark:#1a1612; --gold:#c9a84c; --gold-light:#e8d5a3; --rust:#8b3a2a; --sage:#4a5c4e; --border:#d4c9b0; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { background:var(--cream); color:var(--dark); font-family:'DM Mono',monospace; min-height:100vh; padding:40px 20px; }
-  .grain { position:fixed; inset:0; pointer-events:none; z-index:999; opacity:0.03; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"); }
-  .container { max-width:960px; margin:0 auto; }
-  header { border-bottom:2px solid var(--gold); padding-bottom:24px; margin-bottom:40px; display:flex; align-items:baseline; gap:16px; }
-  header h1 { font-family:'Playfair Display',serif; font-size:28px; font-weight:700; }
-  header span { font-size:11px; color:var(--gold); letter-spacing:3px; text-transform:uppercase; }
-  .card { background:white; border:1px solid var(--border); border-radius:2px; padding:28px; margin-bottom:20px; }
-  .card-h2 { font-family:'Playfair Display',serif; font-size:16px; font-weight:400; font-style:italic; color:var(--rust); margin-bottom:20px; display:flex; align-items:center; gap:10px; }
-  .card-h2::before { content:''; display:inline-block; width:20px; height:1px; background:var(--rust); }
-  .field { margin-bottom:16px; }
-  label { display:block; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--sage); margin-bottom:6px; }
-  input { width:100%; padding:10px 14px; border:1px solid var(--border); background:var(--cream); font-family:'DM Mono',monospace; font-size:12px; color:var(--dark); border-radius:2px; outline:none; transition:border-color 0.2s; }
-  input:focus { border-color:var(--gold); }
-  input[type="password"] { letter-spacing:2px; }
-  .row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  button { font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; padding:12px 20px; border:none; border-radius:2px; cursor:pointer; transition:all 0.2s; }
-  .btn-primary { background:var(--dark); color:var(--cream); }
-  .btn-primary:hover { background:var(--rust); }
-  .btn-primary:disabled { background:var(--border); cursor:not-allowed; color:#999; }
-  .btn-danger { background:var(--rust); color:white; }
-  .btn-danger:hover { background:#6e2e20; }
-  .btn-danger:disabled { background:var(--border); cursor:not-allowed; color:#999; }
-  .btn-sage { background:var(--sage); color:white; }
-  .btn-sage:hover { background:#2d3d30; }
-  .btn-sage:disabled { background:var(--border); cursor:not-allowed; color:#999; }
-  .btn-gold { background:var(--gold); color:var(--dark); }
-  .btn-gold:hover { background:#a8862e; }
-  .btn-small { font-size:10px; padding:7px 14px; }
-  .btn-outline { background:transparent; color:#999; border:1px solid var(--border); }
-  .btn-outline:hover { border-color:var(--dark); color:var(--dark); }
-  .btn-publish { background:#2255aa; color:white; font-size:10px; padding:7px 14px; }
-  .btn-publish:hover { background:#1a3d88; }
-  #status { padding:14px; border-radius:2px; font-size:11px; margin-bottom:20px; display:none; }
-  #status.info    { background:#e8f0e9; border:1px solid var(--sage); color:var(--sage); display:block; }
-  #status.error   { background:#f5e8e6; border:1px solid var(--rust); color:var(--rust); display:block; }
-  #status.success { background:#e8f0e9; border:1px solid var(--sage); color:var(--sage); display:block; }
-  .step { display:none; } .step.active { display:block; }
-  .ornament { text-align:center; color:var(--gold); font-size:18px; margin:10px 0; letter-spacing:8px; }
-  /* Summary bar */
-  .summary-bar { display:flex; gap:20px; padding:14px 18px; background:var(--dark); color:var(--cream); font-size:11px; margin-bottom:16px; border-radius:2px; flex-wrap:wrap; }
-  .summary-bar span { color:var(--gold); }
-  /* Progress */
-  .progress-bar { height:3px; background:var(--border); border-radius:2px; margin-bottom:16px; overflow:hidden; }
-  .progress-fill { height:100%; background:var(--gold); border-radius:2px; transition:width 0.4s ease; }
-  /* Action bar */
-  .action-bar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
-  .action-bar button { flex:1; min-width:140px; }
-  /* Search bar */
-  .search-bar { display:flex; gap:8px; margin-bottom:16px; }
-  .search-bar input { flex:1; }
-  .search-bar button { flex:none; }
-  /* Pagination */
-  .pagination { display:flex; align-items:center; gap:8px; justify-content:center; margin:20px 0; flex-wrap:wrap; }
-  .pagination button { padding:8px 14px; font-size:10px; min-width:36px; }
-  .pagination button.active { background:var(--gold); color:var(--dark); }
-  .pagination-info { font-size:10px; color:var(--sage); }
-  /* Listing cards */
-  .listings-grid { display:flex; flex-direction:column; gap:14px; }
-  .listing-item { border:1px solid var(--border); border-radius:2px; overflow:hidden; }
-  .listing-item.already-done { border-color:var(--sage); opacity:0.85; }
-  .listing-header { background:var(--cream); padding:12px 16px; display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid var(--border); gap:12px; }
-  .listing-titles { flex:1; }
-  .listing-title-old  { font-size:11px; color:#aaa; text-decoration:line-through; margin-bottom:3px; }
-  .listing-title-new  { font-size:12px; font-weight:600; color:var(--dark); }
-  .listing-title-only { font-size:12px; }
-  .char-count      { font-size:10px; color:var(--sage); margin-top:3px; }
-  .char-count.warn { color:var(--rust); }
-  .listing-meta { text-align:right; }
-  .listing-id { font-size:10px; color:var(--gold); }
-  .listing-body { padding:16px; }
-  .section-label { font-size:9px; letter-spacing:2px; text-transform:uppercase; color:var(--border); margin-bottom:6px; }
-  .desc-compare { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
-  .desc-box p { font-size:11px; line-height:1.7; color:#555; max-height:130px; overflow-y:auto; padding:10px; background:var(--cream); border:1px solid var(--border); border-radius:2px; }
-  .desc-box.new p { border-color:var(--gold-light); background:#fffdf5; color:var(--dark); }
-  .specifics-wrap { margin-top:10px; }
-  .specifics-row  { display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
-  .spec-tag     { font-size:10px; padding:3px 8px; border-radius:2px; border:1px solid var(--border); background:var(--cream); }
-  .spec-tag.new { border-color:var(--gold); background:#fffdf5; color:#7a6020; }
-  .badge { display:inline-block; font-size:9px; letter-spacing:1px; text-transform:uppercase; padding:3px 8px; border-radius:2px; white-space:nowrap; }
-  .badge-pending    { background:var(--gold-light); color:#7a6020; }
-  .badge-generating { background:var(--gold-light); color:#7a6020; }
-  .badge-generated  { background:#ddeeff; color:#2255aa; }
-  .badge-skipped    { background:#eee; color:#999; }
-  .badge-updated    { background:#d4ead6; color:var(--sage); }
-  .badge-done       { background:#d4ead6; color:var(--sage); }
-  .spinner { display:inline-block; width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--gold); border-radius:50%; animation:spin 0.8s linear infinite; vertical-align:middle; margin-right:6px; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  .keyword-tag { display:inline-block; background:var(--gold-light); color:#7a6020; font-size:10px; padding:2px 8px; border-radius:2px; margin:2px; }
-  .thumbs { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px; }
-  .thumb { width:50px; height:50px; object-fit:cover; border-radius:2px; border:1px solid var(--border); }
-  .item-actions { display:flex; gap:6px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
-  /* Etsy connect */
-  #etsy-connect-bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+:root{--cream:#f5f0e8;--dark:#1a1612;--gold:#c9a84c;--gold-light:#e8d5a3;--rust:#8b3a2a;--sage:#4a5c4e;--border:#d4c9b0;--blue:#2255aa;--etsy:#f56400;--shopify:#96bf48}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--cream);color:var(--dark);font-family:'DM Mono',monospace;min-height:100vh;padding:0}
+.grain{position:fixed;inset:0;pointer-events:none;z-index:999;opacity:0.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")}
+
+/* Header */
+.app-header{background:var(--dark);color:var(--cream);padding:16px 32px;display:flex;align-items:center;gap:20px;border-bottom:3px solid var(--gold)}
+.app-header h1{font-family:'Playfair Display',serif;font-size:22px;font-weight:700}
+.app-header span{font-size:10px;color:var(--gold);letter-spacing:3px;text-transform:uppercase}
+
+/* Tabs */
+.tabs{display:flex;background:white;border-bottom:2px solid var(--border);padding:0 32px}
+.tab{padding:14px 24px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all 0.2s;color:#999}
+.tab:hover{color:var(--dark)}
+.tab.active{color:var(--dark);border-bottom-color:var(--gold)}
+.tab.ebay-tab.active{border-bottom-color:var(--blue)}
+.tab.etsy-tab.active{border-bottom-color:var(--etsy)}
+.tab.shopify-tab.active{border-bottom-color:var(--shopify)}
+.tab .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--border)}
+.tab.ebay-tab .dot{background:var(--blue)}
+.tab.etsy-tab .dot{background:var(--etsy)}
+.tab.shopify-tab .dot{background:var(--shopify)}
+
+/* Content */
+.tab-content{display:none;padding:24px 32px;max-width:1100px;margin:0 auto}
+.tab-content.active{display:block}
+
+/* Cards */
+.card{background:white;border:1px solid var(--border);border-radius:2px;padding:24px;margin-bottom:16px}
+.card-title{font-family:'Playfair Display',serif;font-size:15px;font-style:italic;color:var(--rust);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-title::before{content:'';display:inline-block;width:16px;height:1px;background:var(--rust)}
+.field{margin-bottom:14px}
+label{display:block;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--sage);margin-bottom:5px}
+input,select{width:100%;padding:9px 12px;border:1px solid var(--border);background:var(--cream);font-family:'DM Mono',monospace;font-size:12px;color:var(--dark);border-radius:2px;outline:none;transition:border-color 0.2s}
+input:focus,select:focus{border-color:var(--gold)}
+input[type="password"]{letter-spacing:2px}
+input[type="checkbox"]{width:auto;cursor:pointer}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+
+/* Buttons */
+button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:10px 18px;border:none;border-radius:2px;cursor:pointer;transition:all 0.2s;white-space:nowrap}
+.btn-dark{background:var(--dark);color:var(--cream)}
+.btn-dark:hover{background:var(--rust)}
+.btn-dark:disabled{background:var(--border);cursor:not-allowed;color:#999}
+.btn-blue{background:var(--blue);color:white}
+.btn-blue:hover{background:#1a3d88}
+.btn-blue:disabled{background:var(--border);cursor:not-allowed;color:#999}
+.btn-etsy{background:var(--etsy);color:white}
+.btn-etsy:hover{background:#d45500}
+.btn-etsy:disabled{background:var(--border);cursor:not-allowed;color:#999}
+.btn-shopify{background:var(--shopify);color:white}
+.btn-shopify:hover{background:#7a9a38}
+.btn-shopify:disabled{background:var(--border);cursor:not-allowed;color:#999}
+.btn-sage{background:var(--sage);color:white}
+.btn-sage:hover{background:#2d3d30}
+.btn-sage:disabled{background:var(--border);cursor:not-allowed;color:#999}
+.btn-danger{background:var(--rust);color:white}
+.btn-danger:hover{background:#6e2e20}
+.btn-outline{background:transparent;color:#999;border:1px solid var(--border)}
+.btn-outline:hover{border-color:var(--dark);color:var(--dark)}
+.btn-sm{padding:6px 12px;font-size:9px}
+.btn-full{width:100%}
+
+/* Status */
+.status-bar{padding:12px 16px;border-radius:2px;font-size:11px;margin-bottom:16px;display:none}
+.status-bar.info{background:#e8f0e9;border:1px solid var(--sage);color:var(--sage);display:block}
+.status-bar.error{background:#f5e8e6;border:1px solid var(--rust);color:var(--rust);display:block}
+.status-bar.success{background:#e8f0e9;border:1px solid var(--sage);color:var(--sage);display:block}
+
+/* Summary */
+.summary-bar{display:flex;gap:20px;padding:12px 16px;background:var(--dark);color:var(--cream);font-size:11px;border-radius:2px;margin-bottom:14px;flex-wrap:wrap}
+.summary-bar span{color:var(--gold)}
+
+/* Progress */
+.progress-bar{height:3px;background:var(--border);border-radius:2px;margin-bottom:14px;overflow:hidden}
+.progress-fill{height:100%;background:var(--gold);border-radius:2px;transition:width 0.4s ease}
+
+/* Action bar */
+.action-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+
+/* Search */
+.search-bar{display:flex;gap:8px;margin-bottom:14px}
+.search-bar input{flex:1}
+
+/* Pagination */
+.pagination{display:flex;align-items:center;gap:6px;justify-content:center;margin:16px 0;flex-wrap:wrap}
+.pagination button{padding:6px 12px;font-size:9px;min-width:32px}
+.pagination button.active{background:var(--gold);color:var(--dark);border:none}
+.pagination-info{font-size:10px;color:var(--sage)}
+
+/* Listing items */
+.listings-grid{display:flex;flex-direction:column;gap:12px}
+.listing-card{border:1px solid var(--border);border-radius:2px;overflow:hidden;transition:border-color 0.2s}
+.listing-card.has-diff{border-color:var(--gold)}
+.listing-card.already-done{opacity:0.7}
+.listing-header{padding:12px 16px;background:var(--cream);border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
+.listing-checkbox{margin-top:3px;flex-shrink:0}
+.listing-info{flex:1}
+.listing-title{font-size:12px;font-weight:600;margin-bottom:3px}
+.listing-subtitle{font-size:10px;color:#999}
+.listing-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.listing-meta{text-align:right;flex-shrink:0}
+.listing-id{font-size:10px;color:var(--gold)}
+.listing-body{padding:14px 16px}
+
+/* Compare grid */
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.compare-col h4{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--border);margin-bottom:8px}
+.compare-field{margin-bottom:8px}
+.compare-field label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--sage);margin-bottom:3px;display:block}
+.compare-field .val{font-size:11px;padding:6px 10px;background:var(--cream);border:1px solid var(--border);border-radius:2px;min-height:28px;line-height:1.5}
+.compare-field .val.diff{border-color:var(--gold);background:#fffdf5;color:var(--dark)}
+.compare-field .val.missing{border-color:var(--rust);background:#fff5f5;color:#999;font-style:italic}
+
+/* Tags & Specifics */
+.tags-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.tag{font-size:10px;padding:2px 8px;border-radius:2px;border:1px solid var(--border);background:var(--cream)}
+.tag.new{border-color:var(--gold);background:#fffdf5;color:#7a6020}
+.tag.missing{border-color:var(--rust);background:#fff5f5;color:var(--rust)}
+
+/* Badges */
+.badge{display:inline-block;font-size:9px;letter-spacing:1px;text-transform:uppercase;padding:2px 7px;border-radius:2px;white-space:nowrap}
+.badge-pending{background:var(--gold-light);color:#7a6020}
+.badge-generating{background:var(--gold-light);color:#7a6020}
+.badge-ok{background:#d4ead6;color:var(--sage)}
+.badge-diff{background:#fff3cd;color:#856404}
+.badge-missing{background:#f5e8e6;color:var(--rust)}
+.badge-done{background:#d4ead6;color:var(--sage)}
+
+/* Spinner */
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Thumbs */
+.thumbs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.thumb{width:48px;height:48px;object-fit:cover;border-radius:2px;border:1px solid var(--border)}
+
+/* Connection status */
+.conn-status{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:6px 12px;border-radius:2px;background:white;border:1px solid var(--border)}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:var(--border)}
+.conn-dot.connected{background:#4caf50}
+
+.ornament{text-align:center;color:var(--gold);font-size:16px;margin:8px 0;letter-spacing:8px}
+.section-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--border);margin-bottom:6px}
+.keyword-tag{display:inline-block;background:var(--gold-light);color:#7a6020;font-size:10px;padding:2px 8px;border-radius:2px;margin:2px}
 </style>
 </head>
 <body>
 <div class="grain"></div>
-<div class="container">
-  <header>
-    <h1>Fleamarketfrance</h1>
-    <span>eBay SEO Rewriter</span>
-  </header>
-  <div id="status"></div>
 
-  <!-- ÉTAPE 1 : Credentials -->
-  <div class="step active" id="step-keys">
-    <div class="card">
-      <div class="card-h2">API Credentials</div>
-      <div class="row">
-        <div class="field"><label>eBay App ID</label><input type="password" id="ebay-app-id" placeholder="XXXX-PRD-XXXX"></div>
-        <div class="field"><label>eBay Cert ID</label><input type="password" id="ebay-cert-id" placeholder="PRD-XXXX"></div>
-      </div>
-      <div class="field"><label>eBay User Token</label><input type="password" id="ebay-token" placeholder="AgAAAA..."></div>
-      <div class="field"><label>Anthropic API Key</label><input type="password" id="anthropic-key" placeholder="sk-ant-..."></div>
-      <div class="field"><label>Etsy API Key</label><input type="password" id="etsy-api-key" placeholder="xxxxxxxxxxxxxxxx"></div>
-      <div class="field"><label>Etsy Shop ID</label><input type="text" id="etsy-shop-id" placeholder="FleamarketFrance"></div>
-      <div id="etsy-connect-bar">
-        <button class="btn-sage btn-small" onclick="connectEtsy()">Connecter Etsy</button>
-        <span id="etsy-status-label" style="font-size:10px;color:var(--border);">Non connecté</span>
-      </div>
-      <div class="field"><label>Etsy API Key</label><input type="password" id="etsy-api-key" placeholder="xxxxxxxxxxxxxxxx"></div>
-      <div class="field"><label>Etsy Shop ID</label><input type="text" id="etsy-shop-id" placeholder="FleamarketFrance"></div>
-      <div id="etsy-connect-bar" style="display:flex;align-items:center;gap:12px;margin-bottom:16px;"><button class="btn-sage btn-small" onclick="connectEtsy()">Connecter Etsy</button><span id="etsy-status-label" style="font-size:10px;color:var(--border);">Non connecté</span></div>
-      <div class="ornament">· · ·</div>
-      <div style="display:flex;gap:8px;margin-bottom:10px;">
-        <button class="btn-primary" style="flex:1" onclick="loadListings(false)">Charger articles non traités</button>
-        <button class="btn-outline" style="flex:1" onclick="loadListings(true)">Tout réimporter (inclus modifiés)</button>
-      </div>
-      <div style="text-align:center;margin-top:8px">
-        <button onclick="clearCredentials()" style="background:none;border:none;font-family:'DM Mono',monospace;font-size:10px;color:var(--border);cursor:pointer;text-decoration:underline;">Effacer les identifiants sauvegardés</button>
-      </div>
+<div class="app-header">
+  <h1>Fleamarketfrance</h1>
+  <span>SEO Manager</span>
+  <div style="margin-left:auto;display:flex;gap:12px;align-items:center">
+    <div class="conn-status" id="ebay-conn"><div class="conn-dot" id="ebay-dot"></div>eBay</div>
+    <div class="conn-status" id="etsy-conn"><div class="conn-dot" id="etsy-dot"></div>Etsy</div>
+    <div class="conn-status" id="shopify-conn"><div class="conn-dot" id="shopify-dot"></div>Shopify</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab ebay-tab active" onclick="switchTab('ebay')"><span class="dot"></span>eBay SEO</button>
+  <button class="tab etsy-tab" onclick="switchTab('etsy')"><span class="dot"></span>Etsy Sync</button>
+  <button class="tab shopify-tab" onclick="switchTab('shopify')"><span class="dot"></span>Shopify SEO</button>
+  <button class="tab" onclick="switchTab('settings')" style="margin-left:auto"><span class="dot" style="background:var(--border)"></span>Paramètres</button>
+</div>
+
+<!-- ═══════════════════════════════ SETTINGS ═══════════════════════════════ -->
+<div class="tab-content active" id="tab-settings">
+  <div class="card">
+    <div class="card-title">eBay Credentials</div>
+    <div class="row">
+      <div class="field"><label>App ID (Client ID)</label><input type="password" id="s-ebay-app" placeholder="XXXX-PRD-XXXX"></div>
+      <div class="field"><label>Cert ID (Client Secret)</label><input type="password" id="s-ebay-cert" placeholder="PRD-XXXX"></div>
+    </div>
+    <div class="field"><label>User Token</label><input type="password" id="s-ebay-token" placeholder="AgAAAA..."></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Etsy Credentials</div>
+    <div class="row">
+      <div class="field"><label>Etsy API Key</label><input type="password" id="s-etsy-key" placeholder="xxxxxxxxxxxxxxxx"></div>
+      <div class="field"><label>Etsy Shop ID</label><input type="text" id="s-etsy-shop" placeholder="FleamarketFrance"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn-etsy" onclick="connectEtsy()">Connecter Etsy OAuth</button>
+      <span id="etsy-status-label" style="font-size:11px;color:var(--border)">Non connecté</span>
     </div>
   </div>
+  <div class="card">
+    <div class="card-title">Shopify</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn-shopify" onclick="connectShopify()">Connecter Shopify OAuth</button>
+      <span id="shopify-status-label" style="font-size:11px;color:var(--border)">Non connecté</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Anthropic API Key</div>
+    <div class="field"><input type="password" id="s-anthropic" placeholder="sk-ant-..."></div>
+  </div>
+  <div class="ornament">· · ·</div>
+  <div style="display:flex;gap:8px">
+    <button class="btn-dark btn-full" onclick="saveAndConnect()">Sauvegarder &amp; Connecter</button>
+    <button class="btn-outline" onclick="clearAllCredentials()" style="flex-shrink:0">Effacer</button>
+  </div>
+</div>
 
-  <!-- ÉTAPE 2 : Listings -->
-  <div class="step" id="step-listings">
+<!-- ═══════════════════════════════ EBAY TAB ════════════════════════════════ -->
+<div class="tab-content" id="tab-ebay">
+  <div id="ebay-status" class="status-bar"></div>
+  <div id="ebay-main" style="display:none">
     <div class="summary-bar">
-      <div>Total chargés : <span id="count-total">0</span></div>
-      <div>Générés : <span id="count-generated">0</span></div>
-      <div>Publiés : <span id="count-pushed">0</span></div>
-      <div>Ignorés : <span id="count-skipped">0</span></div>
-      <div>Erreurs : <span id="count-errors" style="color:var(--rust)">0</span></div>
+      <div>Total : <span id="eb-total">0</span></div>
+      <div>Générés : <span id="eb-generated">0</span></div>
+      <div>Publiés : <span id="eb-pushed">0</span></div>
+      <div>Erreurs : <span id="eb-errors" style="color:#f87">0</span></div>
     </div>
-    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-
-    <!-- Recherche eBay -->
+    <div class="progress-bar"><div class="progress-fill" id="eb-progress" style="width:0%"></div></div>
     <div class="search-bar">
-      <input type="text" id="search-input" placeholder="Rechercher un article dans toute votre boutique eBay..." onkeydown="if(event.key==='Enter')searchEbay()">
-      <button class="btn-primary btn-small" onclick="searchEbay()">Rechercher</button>
-      <button class="btn-outline btn-small" onclick="clearSearch()">Effacer</button>
+      <input type="text" id="eb-search" placeholder="Rechercher dans toute votre boutique eBay..." onkeydown="if(event.key==='Enter')ebaySearch()">
+      <button class="btn-dark btn-sm" onclick="ebaySearch()">Rechercher</button>
+      <button class="btn-outline btn-sm" onclick="ebayClearSearch()">Effacer</button>
     </div>
-
-    <!-- Boutons d'action globaux -->
     <div class="action-bar">
-      <button class="btn-primary" id="generate-all-btn" onclick="generateAll()">① Générer tout</button>
-      <button class="btn-danger" id="push-all-btn" onclick="pushAll()" style="display:none;">② Publier tout sur eBay</button>
-      <button class="btn-sage" id="push-etsy-btn" onclick="pushAllEtsy()" style="display:none;">③ Publier tout sur Etsy</button>
-      <button class="btn-sage" id="push-etsy-btn" onclick="pushAllEtsy()" style="display:none;">③ Publier tout sur Etsy</button>
-      <button class="btn-gold btn-small" onclick="exportReport()">📄 Rapport</button>
-      <button class="btn-outline btn-small" onclick="goToStep('step-keys')">← Paramètres</button>
-      <button class="btn-danger btn-small" id="stop-btn" onclick="requestStop()" style="display:none;">⏹ Stop</button>
-      <button class="btn-outline btn-small" id="etsy-mode-btn" onclick="toggleEtsyMode()">🏷 Mode Etsy</button>
+      <button class="btn-dark" id="eb-gen-all" onclick="ebayGenerateAll()">① Générer tout</button>
+      <button class="btn-blue" id="eb-push-all" onclick="ebayPushAll()" style="display:none">② Publier tout eBay</button>
+      <button class="btn-sage btn-sm" onclick="ebayReload(true)">↺ Tout réimporter</button>
+      <button class="btn-outline btn-sm" id="eb-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
+      <button class="btn-outline btn-sm" id="eb-etsy-mode" onclick="toggleEtsyMode()">🏷 Mode Etsy</button>
+      <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
+    <div id="eb-pagination-top"></div>
+    <div class="listings-grid" id="eb-grid"></div>
+    <div id="eb-pagination-bot"></div>
+  </div>
+  <div id="ebay-connect-prompt" class="card">
+    <div class="card-title">Connexion eBay requise</div>
+    <p style="font-size:12px;margin-bottom:16px">Configurez vos identifiants eBay dans l'onglet Paramètres puis cliquez ci-dessous.</p>
+    <div style="display:flex;gap:8px">
+      <button class="btn-dark" onclick="ebayReload(false)">Charger articles non traités</button>
+      <button class="btn-outline" onclick="ebayReload(true)">Tout réimporter</button>
+    </div>
+  </div>
+</div>
 
-    <!-- Pagination haut -->
-    <div id="pagination-top"></div>
+<!-- ═══════════════════════════════ ETSY TAB ════════════════════════════════ -->
+<div class="tab-content" id="tab-etsy">
+  <div id="etsy-status" class="status-bar"></div>
+  <div id="etsy-main" style="display:none">
+    <div class="summary-bar">
+      <div>Comparés : <span id="et-total">0</span></div>
+      <div>Différences : <span id="et-diffs">0</span></div>
+      <div>Tags manquants : <span id="et-notags">0</span></div>
+      <div>Exportés : <span id="et-pushed">0</span></div>
+    </div>
+    <div class="action-bar">
+      <button class="btn-etsy" id="et-export-all" onclick="etsyExportSelected()">→ Exporter sélectionnés vers Etsy</button>
+      <button class="btn-sage btn-sm" id="et-gen-tags-all" onclick="etsyGenerateAllTags()">🏷 Générer tags manquants</button>
+      <button class="btn-outline btn-sm" onclick="etsyReload()">↺ Recharger</button>
+      <button class="btn-outline btn-sm" id="et-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
+      <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
+    </div>
+    <div class="search-bar">
+      <input type="text" id="et-search" placeholder="Filtrer les articles..." oninput="etsyFilter()">
+      <select id="et-filter" onchange="etsyFilter()" style="flex:none;width:180px">
+        <option value="all">Tous</option>
+        <option value="diff">Avec différences</option>
+        <option value="notags">Tags manquants</option>
+        <option value="checked">Sélectionnés</option>
+      </select>
+    </div>
+    <div id="et-pagination-top"></div>
+    <div class="listings-grid" id="et-grid"></div>
+    <div id="et-pagination-bot"></div>
+  </div>
+  <div id="etsy-connect-prompt" class="card">
+    <div class="card-title">Connexion Etsy requise</div>
+    <p style="font-size:12px;margin-bottom:16px">Connectez Etsy via l'onglet Paramètres. eBay doit aussi être chargé pour la comparaison.</p>
+    <button class="btn-etsy" onclick="etsyReload()">Comparer eBay ↔ Etsy</button>
+  </div>
+</div>
 
-    <!-- Grille articles -->
-    <div class="listings-grid" id="listings-grid"></div>
-
-    <!-- Pagination bas -->
-    <div id="pagination-bottom"></div>
+<!-- ══════════════════════════════ SHOPIFY TAB ══════════════════════════════ -->
+<div class="tab-content" id="tab-shopify">
+  <div id="shopify-status" class="status-bar"></div>
+  <div id="shopify-main" style="display:none">
+    <div class="summary-bar">
+      <div>Comparés : <span id="sh-total">0</span></div>
+      <div>Différences : <span id="sh-diffs">0</span></div>
+      <div>SEO manquant : <span id="sh-noseo">0</span></div>
+      <div>Exportés : <span id="sh-pushed">0</span></div>
+    </div>
+    <div class="action-bar">
+      <button class="btn-shopify" id="sh-export-all" onclick="shopifyExportSelected()">→ Exporter sélectionnés vers Shopify</button>
+      <button class="btn-sage btn-sm" id="sh-gen-seo-all" onclick="shopifyGenerateAllSeo()">🔍 Générer SEO manquant</button>
+      <button class="btn-outline btn-sm" onclick="shopifyReload(false)">↺ Recharger non traités</button>
+      <button class="btn-outline btn-sm" onclick="shopifyReload(true)">↺ Tout réimporter</button>
+      <button class="btn-outline btn-sm" id="sh-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
+      <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
+    </div>
+    <div class="search-bar">
+      <input type="text" id="sh-search" placeholder="Filtrer les articles..." oninput="shopifyFilter()">
+      <select id="sh-filter" onchange="shopifyFilter()" style="flex:none;width:180px">
+        <option value="all">Tous</option>
+        <option value="diff">Avec différences</option>
+        <option value="noseo">SEO manquant</option>
+        <option value="checked">Sélectionnés</option>
+      </select>
+    </div>
+    <div id="sh-pagination-top"></div>
+    <div class="listings-grid" id="sh-grid"></div>
+    <div id="sh-pagination-bot"></div>
+  </div>
+  <div id="shopify-connect-prompt" class="card">
+    <div class="card-title">Connexion Shopify requise</div>
+    <p style="font-size:12px;margin-bottom:16px">Configurez vos identifiants Shopify dans l'onglet Paramètres.</p>
+    <div style="display:flex;gap:8px">
+      <button class="btn-shopify" onclick="shopifyReload(false)">Charger articles non traités</button>
+      <button class="btn-outline" onclick="shopifyReload(true)">Tout réimporter</button>
+    </div>
   </div>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════
-// CONSTANTES & ÉTAT GLOBAL
+// CONSTANTES
 // ═══════════════════════════════════════════════════════════════
 const MARKER   = '<!-- fmf-optimised -->';
-const LS_KEY   = 'fmf_credentials';
+const LS_KEY   = 'fmf_v2_creds';
 const PER_PAGE = 100;
 
-let stopRequested = false;
-let abortController = null;
-let etsyOnlyMode  = false;
-let listings     = [];   // tous les articles chargés
-let filtered     = [];   // articles affichés (après recherche)
-let currentPage  = 1;
-let errorLog     = [];   // journal des erreurs pour le rapport
-let counts       = { total:0, generated:0, pushed:0, skipped:0, errors:0 };
+// ═══════════════════════════════════════════════════════════════
+// ÉTAT GLOBAL
+// ═══════════════════════════════════════════════════════════════
+let stopRequested  = false;
+let abortCtrl      = null;
+let etsyOnlyMode   = false;
+let etsyConnected   = false;
+let shopifyConnected = false;
+
+// eBay
+let ebListings     = [];
+let ebFiltered     = [];
+let ebPage         = 1;
+let ebCounts       = {total:0, generated:0, pushed:0, errors:0};
+
+// Etsy
+let etPairs        = [];  // [{ebay, etsy}]
+let etFiltered     = [];
+let etPage         = 1;
+let etCounts       = {total:0, diffs:0, notags:0, pushed:0};
+
+// Shopify
+let shPairs        = [];  // [{ebay, shopify}]
+let shFiltered     = [];
+let shPage         = 1;
+let shCounts       = {total:0, diffs:0, noseo:0, pushed:0};
+
+// Erreurs
+let errorLog       = [];
 
 // ═══════════════════════════════════════════════════════════════
-// CREDENTIALS (localStorage)
+// TABS
 // ═══════════════════════════════════════════════════════════════
-const FIELDS = ['ebay-app-id','ebay-cert-id','ebay-token','anthropic-key','etsy-api-key','etsy-shop-id'];
-
-function saveCredentials() {
-  const d = {};
-  FIELDS.forEach(id => d[id] = document.getElementById(id).value.trim());
-  localStorage.setItem(LS_KEY, JSON.stringify(d));
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+  document.querySelector('.tab.' + name + '-tab, .tab[onclick*="' + name + '"]').classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
 }
 
-function loadCredentials() {
+// ═══════════════════════════════════════════════════════════════
+// CREDENTIALS
+// ═══════════════════════════════════════════════════════════════
+const CRED_IDS = ['s-ebay-app','s-ebay-cert','s-ebay-token','s-etsy-key','s-etsy-shop','s-anthropic'];
+
+function getCreds() {
+  var d = {};
+  CRED_IDS.forEach(function(id) { d[id] = document.getElementById(id).value.trim(); });
+  return d;
+}
+
+function saveCreds() {
+  localStorage.setItem(LS_KEY, JSON.stringify(getCreds()));
+}
+
+function loadCreds() {
   try {
-    const d = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-    FIELDS.forEach(id => { if (d[id]) document.getElementById(id).value = d[id]; });
+    var d = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    CRED_IDS.forEach(function(id) { if (d[id]) document.getElementById(id).value = d[id]; });
   } catch(e) {}
+}
+
+function clearAllCredentials() {
+  localStorage.removeItem(LS_KEY);
+  CRED_IDS.forEach(function(id) { document.getElementById(id).value = ''; });
+  setStatus('settings', 'Identifiants effacés.', 'info');
+}
+
+function saveAndConnect() {
+  saveCreds();
+  updateConnectionDots();
+  setStatus('settings', 'Identifiants sauvegardés. Allez sur l\'onglet eBay pour charger vos articles.', 'success');
   checkEtsyStatus();
 }
 
-function clearCredentials() {
-  localStorage.removeItem(LS_KEY);
-  FIELDS.forEach(id => document.getElementById(id).value = '');
-  setStatus('Identifiants effacés.', 'info');
-}
-
-function getKeys() {
-  return {
-    appId:     document.getElementById('ebay-app-id').value.trim(),
-    certId:    document.getElementById('ebay-cert-id').value.trim(),
-    token:     document.getElementById('ebay-token').value.trim(),
-    anthropic: document.getElementById('anthropic-key').value.trim(),
-    etsyKey:   document.getElementById('etsy-api-key').value.trim(),
-    etsyShop:  document.getElementById('etsy-shop-id').value.trim()
-  };
+function updateConnectionDots() {
+  var c = getCreds();
+  document.getElementById('ebay-dot').className = 'conn-dot' + (c['s-ebay-token'] ? ' connected' : '');
+  document.getElementById('etsy-dot').className = 'conn-dot' + (etsyConnected ? ' connected' : '');
+  document.getElementById('shopify-dot').className = 'conn-dot' + (shopifyConnected ? ' connected' : '');
 }
 
 // ═══════════════════════════════════════════════════════════════
-// UI HELPERS
+// STATUS HELPERS
 // ═══════════════════════════════════════════════════════════════
-function setStatus(msg, type='info') {
-  const el = document.getElementById('status');
+function setStatus(tab, msg, type) {
+  var ids = {settings:'ebay-status', ebay:'ebay-status', etsy:'etsy-status', shopify:'shopify-status'};
+  var el = document.getElementById(ids[tab] || (tab + '-status'));
+  if (!el) return;
   el.textContent = msg;
-  el.className   = type;
+  el.className   = 'status-bar ' + (type || 'info');
 }
 
-function goToStep(id) {
-  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+function escXML(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 }
-
-function updateCounts() {
-  document.getElementById('count-total').textContent     = counts.total;
-  document.getElementById('count-generated').textContent = counts.generated;
-  document.getElementById('count-pushed').textContent    = counts.pushed;
-  document.getElementById('count-skipped').textContent   = counts.skipped;
-  document.getElementById('count-errors').textContent    = counts.errors;
-  if (counts.total > 0)
-    document.getElementById('progress-fill').style.width = (counts.pushed / counts.total * 100) + '%';
-}
-
-function escapeXML(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-}
-function escapeHTML(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function escHTML(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ═══════════════════════════════════════════════════════════════
-// RAPPORT D'ERREURS
+// STOP / ABORT
 // ═══════════════════════════════════════════════════════════════
-function logError(source, itemId, itemTitle, message) {
-  counts.errors++;
-  updateCounts();
-  errorLog.push({
-    ts:      new Date().toISOString(),
-    source,  // 'eBay' | 'Etsy' | 'Claude'
-    itemId,
-    itemTitle,
-    message
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PROXY EBAY XML
-// ═══════════════════════════════════════════════════════════════
-async function ebayXML(callName, xmlBody) {
-  const keys = getKeys();
-  const resp = await fetch('/ebay', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal: abortController?.signal,
-    body: JSON.stringify({
-      headers: {
-        'X-EBAY-API-SITEID': '0',
-        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
-        'X-EBAY-API-CALL-NAME': callName,
-        'X-EBAY-API-APP-NAME': keys.appId,
-        'X-EBAY-API-DEV-NAME': '',
-        'X-EBAY-API-CERT-NAME': keys.certId,
-        'Content-Type': 'text/xml'
-      },
-      body: xmlBody
-    })
-  });
-  let data;
-  try { data = await resp.json(); } catch(e) { throw new Error('Réponse invalide du serveur (app.py non déployé ?)'); }
-  if (data.error) throw new Error(data.error);
-  return new DOMParser().parseFromString(data.body, 'text/xml');
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PARSE UN ÉLÉMENT XML eBay → objet listing
-// ═══════════════════════════════════════════════════════════════
-function parseEbayItem(item, forceInclude) {
-  const desc = item.getElementsByTagName('Description')[0]?.textContent || '';
-  const alreadyDone = desc.includes(MARKER);
-  if (alreadyDone && !forceInclude) return null;
-
-  const pictures = Array.from(item.getElementsByTagName('PictureURL'))
-    .map(p => p.textContent.trim()).filter(Boolean);
-
-  const existingSpecifics = {};
-  Array.from(item.getElementsByTagName('NameValueList')).forEach(nvl => {
-    const n = nvl.getElementsByTagName('Name')[0]?.textContent || '';
-    const v = nvl.getElementsByTagName('Value')[0]?.textContent || '';
-    if (n && v) existingSpecifics[n] = v;
-  });
-
-  return {
-    id: item.getElementsByTagName('ItemID')[0]?.textContent || '',
-    title: item.getElementsByTagName('Title')[0]?.textContent || '',
-    description: desc,
-    pictures,
-    existingSpecifics,
-    alreadyDone,
-    status: alreadyDone ? 'done' : 'pending',
-    newTitle: null, newDescription: null,
-    keyword: null, newSpecifics: {},
-    etsyTags: [], altTexts: [], etsyListingId: null
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CHARGER LES LISTINGS (pagination eBay, filtre marker)
-// ═══════════════════════════════════════════════════════════════
-async function loadListings(forceAll) {
-  const keys = getKeys();
-  if (!keys.appId || !keys.certId || !keys.token || !keys.anthropic) {
-    setStatus('Veuillez remplir tous les champs obligatoires.', 'error');
-    return;
-  }
-  saveCredentials();
-
-  const now    = new Date();
-  const endFrom = now.toISOString().split('.')[0] + 'Z';
-  const endTo   = new Date(now.getTime() + 120*24*60*60*1000).toISOString().split('.')[0] + 'Z';
-
-  let allItems = [];
-  let page = 1, totalPages = 1;
-
-  try {
-    do {
-      setStatus(`Chargement page ${page} / ${totalPages}…`, 'info');
-      const xml = `<?xml version="1.0" encoding="utf-8"?>
-<GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
-  <DetailLevel>ReturnAll</DetailLevel>
-  <EndTimeFrom>${endFrom}</EndTimeFrom>
-  <EndTimeTo>${endTo}</EndTimeTo>
-  <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>${page}</PageNumber></Pagination>
-  <IncludeWatchCount>false</IncludeWatchCount>
-</GetSellerListRequest>`;
-
-      const doc = await ebayXML('GetSellerList', xml);
-      if (page === 1) {
-        const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
-        if (ack !== 'Success' && ack !== 'Warning')
-          throw new Error(doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay');
-        totalPages = parseInt(doc.getElementsByTagName('TotalNumberOfPages')[0]?.textContent || '1', 10);
-      }
-
-      Array.from(doc.getElementsByTagName('Item')).forEach(item => {
-        const parsed = parseEbayItem(item, forceAll);
-        if (parsed) allItems.push(parsed);
-      });
-      page++;
-    } while (page <= totalPages);
-
-    if (allItems.length === 0) {
-      setStatus(forceAll ? 'Aucun article trouvé.' : 'Tous vos articles ont déjà le marqueur fmf-optimised. Utilisez "Tout réimporter" pour les recharger.', 'info');
-      return;
-    }
-
-    listings   = allItems;
-    filtered   = [...listings];
-    currentPage = 1;
-    errorLog   = [];
-    counts     = { total: listings.length, generated:0, pushed:0, skipped:0, errors:0 };
-    updateCounts();
-
-    const doneCount = listings.filter(l => l.alreadyDone).length;
-    setStatus(`${listings.length} article(s) chargés (${doneCount} déjà optimisés inclus).`, 'success');
-    goToStep('step-listings');
-    renderPage();
-
-  } catch(err) {
-    setStatus('Erreur : ' + err.message, 'error');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// RECHERCHE DANS TOUTE LA BOUTIQUE eBay
-// ═══════════════════════════════════════════════════════════════
-async function searchEbay() {
-  const q = document.getElementById('search-input').value.trim();
-  if (!q) { clearSearch(); return; }
-
-  const keys = getKeys();
-  setStatus('Recherche dans votre boutique eBay…', 'info');
-
-  try {
-    const xml = `<?xml version="1.0" encoding="utf-8"?>
-<GetMyeBaySellingRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
-  <ActiveList>
-    <Include>true</Include>
-    <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
-  </ActiveList>
-  <DetailLevel>ReturnAll</DetailLevel>
-</GetMyeBaySellingRequest>`;
-
-    // Utiliser GetSellerList avec recherche par titre côté client
-    // (eBay Trading API ne supporte pas la recherche plein texte sur GetSellerList)
-    // On filtre dans les listings déjà chargés + on cherche dans eBay via keywords
-    const qLower = q.toLowerCase();
-    const results = listings.filter(l =>
-      l.title.toLowerCase().includes(qLower) ||
-      l.id.includes(q) ||
-      (l.newTitle && l.newTitle.toLowerCase().includes(qLower))
-    );
-
-    if (results.length === 0) {
-      // Recherche étendue via GetSellerList avec filtre titre
-      setStatus(`Aucun résultat local pour "${q}". Recherche étendue…`, 'info');
-      const now = new Date();
-      const endFrom = now.toISOString().split('.')[0] + 'Z';
-      const endTo   = new Date(now.getTime() + 120*24*60*60*1000).toISOString().split('.')[0] + 'Z';
-      const xmlSearch = `<?xml version="1.0" encoding="utf-8"?>
-<GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
-  <DetailLevel>ReturnAll</DetailLevel>
-  <EndTimeFrom>${endFrom}</EndTimeFrom>
-  <EndTimeTo>${endTo}</EndTimeTo>
-  <Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>1</PageNumber></Pagination>
-</GetSellerListRequest>`;
-      const doc2 = await ebayXML('GetSellerList', xmlSearch);
-      const found = [];
-      Array.from(doc2.getElementsByTagName('Item')).forEach(item => {
-        const t = item.getElementsByTagName('Title')[0]?.textContent || '';
-        const id = item.getElementsByTagName('ItemID')[0]?.textContent || '';
-        if (t.toLowerCase().includes(qLower) || id.includes(q)) {
-          const parsed = parseEbayItem(item, true);
-          if (parsed) {
-            // Mettre à jour ou ajouter
-            const existing = listings.find(l => l.id === parsed.id);
-            if (existing) { found.push(existing); }
-            else { listings.push(parsed); found.push(parsed); }
-          }
-        }
-      });
-      if (found.length === 0) { setStatus(`Aucun article trouvé pour "${q}".`, 'error'); return; }
-      filtered = found;
-    } else {
-      filtered = results;
-    }
-
-    currentPage = 1;
-    setStatus(`${filtered.length} article(s) trouvé(s) pour "${q}".`, 'success');
-    renderPage();
-
-  } catch(err) {
-    setStatus('Erreur recherche : ' + err.message, 'error');
-  }
-}
-
-function clearSearch() {
-  document.getElementById('search-input').value = '';
-  filtered    = [...listings];
-  currentPage = 1;
-  setStatus('', 'info');
-  document.getElementById('status').style.display = 'none';
-  renderPage();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PAGINATION & RENDU
-// ═══════════════════════════════════════════════════════════════
-function totalPages() { return Math.max(1, Math.ceil(filtered.length / PER_PAGE)); }
-
-function renderPage() {
-  const start = (currentPage - 1) * PER_PAGE;
-  const page  = filtered.slice(start, start + PER_PAGE);
-  const grid  = document.getElementById('listings-grid');
-  grid.innerHTML = '';
-  page.forEach(item => {
-    const i = listings.indexOf(item);
-    grid.appendChild(buildCard(item, i));
-  });
-  renderPagination();
-  // Afficher bouton push si des articles sont générés
-  const hasGenerated = listings.some(l => l.status === 'generated');
-  document.getElementById('push-all-btn').style.display  = hasGenerated ? 'block' : 'none';
-  document.getElementById('push-etsy-btn').style.display = hasGenerated ? 'block' : 'none';
-}
-
-function renderPagination() {
-  const tp   = totalPages();
-  const html = buildPaginationHTML(tp);
-  document.getElementById('pagination-top').innerHTML    = html;
-  document.getElementById('pagination-bottom').innerHTML = html;
-}
-
-function buildPaginationHTML(tp) {
-  if (tp <= 1) return '';
-  let html = `<div class="pagination"><span class="pagination-info">Page ${currentPage}/${tp} — ${filtered.length} articles</span>`;
-  if (currentPage > 1) html += `<button class="btn-outline btn-small" onclick="goPage(1)">«</button><button class="btn-outline btn-small" onclick="goPage(${currentPage-1})">‹</button>`;
-  // Pages autour de la courante
-  for (let p = Math.max(1, currentPage-2); p <= Math.min(tp, currentPage+2); p++) {
-    html += `<button class="btn-outline btn-small ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
-  }
-  if (currentPage < tp) html += `<button class="btn-outline btn-small" onclick="goPage(${currentPage+1})">›</button><button class="btn-outline btn-small" onclick="goPage(${tp})">»</button>`;
-  html += '</div>';
-  return html;
-}
-
-function goPage(p) {
-  currentPage = p;
-  renderPage();
-  window.scrollTo(0, document.getElementById('step-listings').offsetTop - 20);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CONSTRUCTION D'UNE CARTE ARTICLE
-// ═══════════════════════════════════════════════════════════════
-function buildCard(item, i) {
-  const div = document.createElement('div');
-  div.className = 'listing-item' + (item.alreadyDone && item.status !== 'generated' ? ' already-done' : '');
-  div.id = 'item-' + i;
-
-  const badgeMap = {
-    pending:    '<span class="badge badge-pending">En attente</span>',
-    generating: '<span class="badge badge-generating"><span class="spinner"></span>Génération…</span>',
-    generated:  '<span class="badge badge-generated">Généré</span>',
-    skipped:    '<span class="badge badge-skipped">Ignoré</span>',
-    updated:    '<span class="badge badge-updated">✓ Publié eBay</span>',
-    done:       '<span class="badge badge-done">✓ Déjà optimisé</span>'
-  };
-
-  // Titre
-  let titleHTML = '';
-  if (item.newTitle) {
-    const warn = item.newTitle.length > 80 ? 'warn' : '';
-    titleHTML = `<div class="listing-titles">
-      <div class="listing-title-old">${escapeHTML(item.title)}</div>
-      <div class="listing-title-new">${escapeHTML(item.newTitle)}</div>
-      <div class="char-count ${warn}">${item.newTitle.length}/80 car.</div>
-    </div>`;
-  } else {
-    titleHTML = `<div class="listing-titles"><div class="listing-title-only">${escapeHTML(item.title)}</div></div>`;
-  }
-
-  // Miniatures
-  const thumbsHTML = item.pictures.length
-    ? `<div class="thumbs">${item.pictures.slice(0,5).map(u => `<img class="thumb" src="${u}" onerror="this.style.display='none'">`).join('')}</div>`
-    : '';
-
-  // Description
-  const oldText = (item.description || '').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').substring(0,400) + '…';
-  const newDescHTML = item.newDescription
-    ? `<div class="desc-box new"><div class="section-label">Nouvelle description</div><p>${item.newDescription.replace(/\n/g,'<br>')}</p>${item.keyword ? `<div style="margin-top:6px"><span class="keyword-tag">🔑 ${escapeHTML(item.keyword)}</span></div>` : ''}</div>`
-    : `<div class="desc-box new"><div class="section-label">Nouvelle description</div><p style="color:var(--border);font-style:italic">Pas encore générée</p></div>`;
-
-  // Item Specifics
-  const allKeys = new Set([...Object.keys(item.existingSpecifics), ...Object.keys(item.newSpecifics)]);
-  let specificsHTML = '';
-  if (allKeys.size > 0) {
-    const tags = Array.from(allKeys).map(k => {
-      const isNew = item.newSpecifics[k] !== undefined && item.newSpecifics[k] !== item.existingSpecifics[k];
-      const val   = item.newSpecifics[k] !== undefined ? item.newSpecifics[k] : item.existingSpecifics[k];
-      return `<span class="spec-tag ${isNew?'new':''}">${escapeHTML(k)}: ${escapeHTML(String(val))}</span>`;
-    }).join('');
-    specificsHTML = `<div class="specifics-wrap"><div class="section-label">Item Specifics</div><div class="specifics-row">${tags}</div></div>`;
-  }
-
-  // Tags Etsy
-  let etsyHTML = '';
-  if (item.etsyTags && item.etsyTags.length > 0) {
-    const tags = item.etsyTags.map(t => `<span class="spec-tag new">${escapeHTML(t)}</span>`).join('');
-    etsyHTML = `<div class="specifics-wrap"><div class="section-label">Tags Etsy (${item.etsyTags.length}/13)</div><div class="specifics-row">${tags}</div></div>`;
-  }
-
-  // Boutons d'action
-  const genLabel  = etsyOnlyMode ? '🏷 Tags Etsy' : 'Générer';
-  const regenLabel = etsyOnlyMode ? '🏷 Regénérer tags' : 'Regénérer';
-  let actionsHTML = '';
-  if (item.status === 'pending' || item.status === 'done') {
-    actionsHTML = `<div class="item-actions">
-      <button class="btn-outline btn-small" onclick="skipItem(${i})">Ignorer</button>
-      <button class="btn-small" onclick="generateOne(${i})">${genLabel}</button>
-    </div>`;
-  } else if (item.status === 'generated') {
-    actionsHTML = `<div class="item-actions">
-      <button class="btn-outline btn-small" onclick="skipItem(${i})">Ignorer</button>
-      <button class="btn-small" onclick="generateOne(${i})">${regenLabel}</button>
-      <button class="btn-publish" onclick="publishOne(${i})">Publier sur eBay</button>
-    </div>`;
-  } else if (item.status === 'updated') {
-    actionsHTML = `<div class="item-actions">
-      <button class="btn-small" onclick="generateOne(${i})">Regénérer</button>
-    </div>`;
-  }
-
-  div.innerHTML = `
-    <div class="listing-header">
-      ${titleHTML}
-      <div class="listing-meta">
-        ${badgeMap[item.status] || ''}
-        <div class="listing-id">#${item.id}</div>
-      </div>
-    </div>
-    <div class="listing-body">
-      ${thumbsHTML}
-      <div class="desc-compare">
-        <div class="desc-box"><div class="section-label">Description actuelle</div><p>${oldText}</p></div>
-        ${newDescHTML}
-      </div>
-      ${specificsHTML}
-      ${etsyHTML}
-      ${actionsHTML}
-    </div>`;
-  return div;
-}
-
-function refreshCard(i) {
-  const el = document.getElementById('item-' + i);
-  if (el) el.replaceWith(buildCard(listings[i], i));
-}
-
-// ═══════════════════════════════════════════════════════════════
-// GÉNÉRER UN ARTICLE (Claude)
-// ═══════════════════════════════════════════════════════════════
-async function generateOne(i) {
-  const keys = getKeys();
-  listings[i].status = 'generating';
-  refreshCard(i);
-
-  try {
-    const userContent = [];
-    for (const url of listings[i].pictures.slice(0, 4)) {
-      try {
-        const r = await fetch('/fetch_image', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url}), signal: abortController?.signal });
-        if (r.ok) {
-          const d = await r.json();
-          if (d.base64 && d.mediaType)
-            userContent.push({ type:'image', source:{ type:'base64', media_type:d.mediaType, data:d.base64 } });
-        }
-      } catch(e) {}
-    }
-
-    const existingSpecsStr = Object.entries(listings[i].existingSpecifics).map(([k,v]) => `${k}: ${v}`).join('\n') || 'Aucun';
-
-    const prompt = etsyOnlyMode
-      ? `You are an SEO expert for a French vintage shop called Fleamarketfrance. Analyze photos and title below. Generate ONLY Etsy tags and alt texts.
-
-CURRENT TITLE: ${listings[i].title}
-CURRENT DESCRIPTION: ${(listings[i].description||'').replace(/<[^>]+>/g,' ').substring(0,400)}
-
-RULES:
-1. ETSY TAGS: Exactly 13 tags, each max 20 characters, optimized for Etsy search.
-2. ALT TEXTS: One short alt text per photo (max 250 chars each).
-
-Respond ONLY with valid JSON, no markdown: {"etsyTags":["tag1"],"altTexts":["alt1"]}`
-      : `You are an SEO expert for a French vintage/antiques shop called Fleamarketfrance selling on eBay.
-Analyze the product photos (if provided) AND the information below, then generate fully optimized content.
-
-CURRENT TITLE: ${listings[i].title}
-CURRENT DESCRIPTION: ${(listings[i].description||'').replace(/<[^>]+>/g,' ').substring(0,1000)}
-EXISTING ITEM SPECIFICS:
-${existingSpecsStr}
-
-RULES:
-1. KEYWORD: Best single SEO keyword. Must appear in new title AND as h2 in description.
-2. NEW TITLE: Max 80 characters. Keep digits at END of original title. Include keyword.
-3. DESCRIPTION: Min 160 words. English. Wrap in div style font-family Arial 24px text-align center. Structure: h2 keyword, p intro, p visual details, p dimensions+condition, p optional decor value, p EXACTLY "95% of my items are tariff-free to the US."
-4. ITEM SPECIFICS: Complete set. Add missing fields (Material, Style, Period, Country, Color, Type, Dimensions, Condition).
-5. ETSY TAGS: Exactly 13 tags, max 20 chars each.
-6. ALT TEXTS: One alt text per photo, max 250 chars.
-
-Respond ONLY with valid JSON, no markdown: {"keyword":"...","newTitle":"...","description":"...","itemSpecifics":{"k":"v"},"etsyTags":["t1"],"altTexts":["a1"]}`;
-
-    userContent.push({ type:'text', text: prompt });
-
-    const resp = await fetch('/anthropic', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      signal: abortController?.signal,
-      body: JSON.stringify({ api_key: keys.anthropic, payload: { model: etsyOnlyMode ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514', max_tokens:1500, messages:[{role:'user', content:userContent}] } })
-    });
-
-    let data;
-    try { data = await resp.json(); } catch(e) { throw new Error(`Réponse invalide du serveur (HTTP ${resp.status})`); }
-    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-
-    let raw = data.content[0].text.trim().replace(/^```json\s*/i,'').replace(/^```/,'').replace(/```$/,'').trim();
-    const parsed = JSON.parse(raw);
-
-    listings[i].etsyTags  = parsed.etsyTags  || [];
-    listings[i].altTexts  = parsed.altTexts  || [];
-    if (!etsyOnlyMode) {
-      listings[i].keyword        = parsed.keyword       || '';
-      listings[i].newTitle       = parsed.newTitle      || listings[i].title;
-      listings[i].newDescription = parsed.description   || '';
-      listings[i].newSpecifics   = parsed.itemSpecifics || {};
-    }
-
-    const wasGenerated = listings[i].status === 'generated';
-    if (!wasGenerated) counts.generated++;
-    listings[i].status = 'generated';
-    updateCounts();
-
-  } catch(err) {
-    listings[i].status = listings[i].alreadyDone ? 'done' : 'pending';
-    if (err.name !== 'AbortError' && err.message !== '__STOPPED__') {
-      logError('Claude', listings[i].id, listings[i].title, err.message);
-      setStatus('Erreur Claude #' + listings[i].id + ' : ' + err.message, 'error');
-    }
-  }
-
-  refreshCard(i);
-  // Afficher boutons push
-  const hasGen = listings.some(function(l) { return l.status === 'generated'; });
-  document.getElementById('push-all-btn').style.display  = hasGen ? 'block' : 'none';
-  document.getElementById('push-etsy-btn').style.display = hasGen ? 'block' : 'none';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// GÉNÉRER TOUT
-// ═══════════════════════════════════════════════════════════════
-async function generateAll() {
-  const btn = document.getElementById('generate-all-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Génération…';
-
-  startOperation();
-  for (let i = 0; i < listings.length; i++) {
-    if (stopRequested) break;
-    if (listings[i].status === 'pending' || listings[i].status === 'done') {
-      await generateOne(i);
-      await new Promise(r => setTimeout(r, 600));
-    }
-  }
-  endOperation();
-  btn.disabled = false;
-  btn.textContent = '① Regénérer tout';
-  setStatus(`${counts.generated} description(s) générée(s). Vérifiez puis publiez.`, 'success');
-}
-
-// ═══════════════════════════════════════════════════════════════
-// IGNORER
-// ═══════════════════════════════════════════════════════════════
-function skipItem(i) {
-  if (listings[i].status === 'generated') counts.generated--;
-  listings[i].status = 'skipped';
-  counts.skipped++;
-  updateCounts();
-  refreshCard(i);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PUBLIER UN ARTICLE SUR EBAY
-// ═══════════════════════════════════════════════════════════════
-async function publishOne(i) {
-  const keys = getKeys();
-  const item = listings[i];
-
-  const specsXML = Object.entries(item.newSpecifics).map(([n,v]) =>
-    `<NameValueList><n>${escapeXML(n)}</n><Value>${escapeXML(String(v))}</Value></NameValueList>`
-  ).join('');
-
-  const finalDesc = item.newDescription + '\n' + MARKER;
-
-  const xml = `<?xml version="1.0" encoding="utf-8"?>
-<ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
-  <RequesterCredentials><eBayAuthToken>${keys.token}</eBayAuthToken></RequesterCredentials>
-  <Item>
-    <ItemID>${item.id}</ItemID>
-    <Title>${escapeXML(item.newTitle || item.title)}</Title>
-    <Description><![CDATA[${finalDesc}]]></Description>
-    ${specsXML ? `<ItemSpecifics>${specsXML}</ItemSpecifics>` : ''}
-  </Item>
-</ReviseItemRequest>`;
-
-  try {
-    const doc = await ebayXML('ReviseItem', xml);
-    const ack = doc.getElementsByTagName('Ack')[0]?.textContent;
-    if (ack !== 'Success' && ack !== 'Warning') {
-      const msg = doc.getElementsByTagName('ShortMessage')[0]?.textContent || 'Erreur eBay';
-      throw new Error(msg);
-    }
-    if (listings[i].status === 'generated') { counts.generated--; counts.pushed++; }
-    listings[i].status = 'updated';
-    listings[i].alreadyDone = true;
-    updateCounts();
-    refreshCard(i);
-  } catch(err) {
-    logError('eBay', item.id, item.title, err.message);
-    setStatus('Erreur eBay #' + item.id + ' : ' + err.message, 'error');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PUBLIER TOUT SUR EBAY
-// ═══════════════════════════════════════════════════════════════
-async function pushAll() {
-  const toSend = listings.filter(l => l.status === 'generated').length;
-  if (toSend === 0) { setStatus('Aucun article généré à publier.', 'error'); return; }
-  if (!confirm(`Publier ${toSend} article(s) sur eBay ?`)) return;
-
-  const btn = document.getElementById('push-all-btn');
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Publication…';
-
-  startOperation();
-  for (let i = 0; i < listings.length; i++) {
-    if (stopRequested) break;
-    if (listings[i].status === 'generated') {
-      await publishOne(i);
-      await new Promise(r => setTimeout(r, 400));
-    }
-  }
-  endOperation();
-  btn.disabled = false; btn.textContent = '② Publier tout sur eBay';
-  setStatus(`✓ Publication eBay terminée. ${counts.errors > 0 ? counts.errors + ' erreur(s) — voir Rapport.' : ''}`, 'success');
-}
-
-// ═══════════════════════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════════════════════
-// ── Stop ──────────────────────────────────────────────────────────────────
 function requestStop() {
   stopRequested = true;
-  if (abortController) abortController.abort();
-  const btn = document.getElementById('stop-btn');
-  btn.textContent = '⏹ Arret...';
-  btn.disabled = true;
-}
-function startOperation() {
-  stopRequested   = false;
-  abortController = new AbortController();
-  const btn = document.getElementById('stop-btn');
-  btn.style.display = 'block';
-  btn.textContent   = '⏹ Stop';
-  btn.disabled      = false;
-}
-function endOperation() {
-  stopRequested   = false;
-  abortController = null;
-  const btn = document.getElementById('stop-btn');
-  btn.style.display = 'none';
-}
-
-// ── Mode Etsy ──────────────────────────────────────────────────────────────
-function toggleEtsyMode() {
-  etsyOnlyMode = !etsyOnlyMode;
-  const btn = document.getElementById('etsy-mode-btn');
-  if (etsyOnlyMode) {
-    btn.textContent = '🏷 Mode Etsy : ON';
-    btn.style.background = 'var(--sage)';
-    btn.style.color = 'white';
-    btn.style.border = 'none';
-    setStatus('Mode Etsy active : generation tags + alt texts uniquement.', 'info');
-  } else {
-    btn.textContent = '🏷 Mode Etsy';
-    btn.style.background = '';
-    btn.style.color = '';
-    btn.style.border = '';
-    setStatus('Mode Etsy desactive : generation complete.', 'info');
-  }
-  renderPage();
-}
-
-// ── Etsy OAuth2 ────────────────────────────────────────────────────────────
-async function connectEtsy() {
-  const etsyKey = document.getElementById('etsy-api-key').value.trim();
-  if (!etsyKey) { setStatus('Entrez votre Etsy API Key.', 'error'); return; }
-  saveCredentials();
-  try {
-    const resp = await fetch('/etsy/auth_url', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({api_key:etsyKey}) });
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
-    const popup = window.open(data.auth_url, 'etsy_auth', 'width=600,height=700');
-    window.addEventListener('message', function handler(e) {
-      if (e.data && e.data.etsySuccess) {
-        document.getElementById('etsy-status-label').textContent = '✓ Connecte';
-        document.getElementById('etsy-status-label').style.color = 'var(--sage)';
-        setStatus('Etsy connecte !', 'success');
-        window.removeEventListener('message', handler);
-      } else if (e.data && e.data.etsyError) {
-        setStatus('Erreur Etsy : ' + e.data.etsyError, 'error');
-        window.removeEventListener('message', handler);
-      }
-    });
-  } catch(err) { setStatus('Erreur Etsy : ' + err.message, 'error'); }
-}
-
-async function checkEtsyStatus() {
-  try {
-    const resp = await fetch('/etsy/status');
-    const data = await resp.json();
-    const label = document.getElementById('etsy-status-label');
-    if (label && data.connected) { label.textContent = '✓ Connecte'; label.style.color = 'var(--sage)'; }
-  } catch(e) {}
-}
-
-async function publishOneEtsy(i) {
-  const item = listings[i];
-  if (!item.etsyListingId) throw new Error('Pas de Listing ID Etsy.');
-  const resp = await fetch('/etsy/update_listing', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ listing_id:item.etsyListingId, title:item.newTitle||item.title, description:item.newDescription||'', tags:item.etsyTags||[] })
+  if (abortCtrl) abortCtrl.abort();
+  ['eb-stop','et-stop','sh-stop'].forEach(function(id) {
+    var btn = document.getElementById(id);
+    if (btn) { btn.textContent = '⏹ Arrêt...'; btn.disabled = true; }
   });
-  const data = await resp.json();
-  if (!data.success) throw new Error(JSON.stringify(data.error || data));
 }
 
-async function pushAllEtsy() {
-  const toSend = listings.filter(function(l) { return l.status === 'generated' || l.status === 'updated'; }).length;
-  if (toSend === 0) { setStatus('Aucun article a publier sur Etsy.', 'error'); return; }
-  if (!confirm('Publier ' + toSend + ' article(s) sur Etsy ?')) return;
-  const btn = document.getElementById('push-etsy-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Etsy...';
-  startOperation();
-  let success = 0, skipped = 0;
-  for (let i = 0; i < listings.length; i++) {
-    if (stopRequested) break;
-    if (listings[i].status === 'generated' || listings[i].status === 'updated') {
-      if (!listings[i].etsyListingId) { skipped++; continue; }
-      try { await publishOneEtsy(i); success++; await new Promise(function(r) { setTimeout(r, 400); }); }
-      catch(err) { logError('Etsy', listings[i].id, listings[i].title, err.message); }
-    }
-  }
-  endOperation();
-  btn.disabled = false;
-  btn.textContent = '③ Publier tout sur Etsy';
-  setStatus('✓ ' + success + ' article(s) mis a jour sur Etsy.' + (skipped > 0 ? ' ' + skipped + ' ignores.' : ''), 'success');
+function startOp(stopBtnId) {
+  stopRequested = false;
+  abortCtrl     = new AbortController();
+  var btn = document.getElementById(stopBtnId);
+  if (btn) { btn.style.display = 'block'; btn.textContent = '⏹ Stop'; btn.disabled = false; }
 }
 
-// ── Rapport ────────────────────────────────────────────────────────────────
+function endOp(stopBtnId) {
+  stopRequested = false;
+  abortCtrl     = null;
+  var btn = document.getElementById(stopBtnId);
+  if (btn) btn.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RAPPORT
+// ═══════════════════════════════════════════════════════════════
+function logError(source, id, title, msg) {
+  errorLog.push({ ts: new Date().toISOString(), source: source, itemId: id, itemTitle: title, message: msg });
+  var el = document.getElementById('eb-errors');
+  if (el) el.textContent = errorLog.length;
+}
+
 function exportReport() {
-  if (errorLog.length === 0) { alert('Aucune erreur dans cette session.'); return; }
-  const nl = String.fromCharCode(10);
-  const sep = '============================================================';
-  let txt = "RAPPORT D'ERREURS - Fleamarketfrance SEO Rewriter" + nl;
-  txt += 'Genere le : ' + new Date().toLocaleString('fr-FR') + nl;
-  txt += sep + nl + nl;
+  if (!errorLog.length) { alert('Aucune erreur dans cette session.'); return; }
+  var nl = String.fromCharCode(10);
+  var sep = '============================================================';
+  var txt = "RAPPORT D'ERREURS - Fleamarketfrance SEO Manager" + nl;
+  txt += 'Genere le : ' + new Date().toLocaleString('fr-FR') + nl + sep + nl + nl;
   errorLog.forEach(function(e, i) {
     txt += '[' + (i+1) + '] ' + e.ts + nl;
     txt += '  Source  : ' + e.source + nl;
     txt += '  Article : #' + e.itemId + ' - ' + e.itemTitle + nl;
     txt += '  Erreur  : ' + e.message + nl + nl;
   });
-  txt += sep + nl + 'Total erreurs : ' + errorLog.length;
-  const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
+  txt += sep + nl + 'Total : ' + errorLog.length;
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([txt], {type:'text/plain;charset=utf-8'}));
   a.download = 'fmf-rapport-' + Date.now() + '.txt';
   a.click();
-  URL.revokeObjectURL(url);
 }
 
-window.addEventListener('DOMContentLoaded', loadCredentials);
+// ═══════════════════════════════════════════════════════════════
+// PROXY CALLS
+// ═══════════════════════════════════════════════════════════════
+async function callEbayXML(callName, xmlBody) {
+  var c = getCreds();
+  var resp = await fetch('/ebay', {
+    method:'POST', signal: abortCtrl ? abortCtrl.signal : undefined,
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      headers: {
+        'X-EBAY-API-SITEID':'0','X-EBAY-API-COMPATIBILITY-LEVEL':'967',
+        'X-EBAY-API-CALL-NAME': callName,
+        'X-EBAY-API-APP-NAME': c['s-ebay-app'],
+        'X-EBAY-API-DEV-NAME': '',
+        'X-EBAY-API-CERT-NAME': c['s-ebay-cert'],
+        'Content-Type':'text/xml'
+      },
+      body: xmlBody
+    })
+  });
+  var data = await resp.json();
+  if (data.error) throw new Error(data.error);
+  return new DOMParser().parseFromString(data.body, 'text/xml');
+}
+
+async function callClaude(messages, useHaiku) {
+  var c = getCreds();
+  var resp = await fetch('/anthropic', {
+    method:'POST', signal: abortCtrl ? abortCtrl.signal : undefined,
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      api_key: c['s-anthropic'],
+      payload: {
+        model: useHaiku ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages: messages
+      }
+    })
+  });
+  var data = await resp.json();
+  if (!resp.ok || data.error) throw new Error((data.error && data.error.message) || JSON.stringify(data.error));
+  var raw = data.content[0].text.trim().replace(/^```json\s*/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  return JSON.parse(raw);
+}
+
+async function fetchImageB64(url) {
+  try {
+    var r = await fetch('/fetch_image', {
+      method:'POST', signal: abortCtrl ? abortCtrl.signal : undefined,
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url:url})
+    });
+    if (!r.ok) return null;
+    var d = await r.json();
+    return (d.base64 && d.mediaType) ? d : null;
+  } catch(e) { return null; }
+}
+
+async function callEtsyAPI(method, path, body) {
+  var resp = await fetch('/etsy/api', {
+    method:'POST', signal: abortCtrl ? abortCtrl.signal : undefined,
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({method:method, path:path, body:body||null})
+  });
+  var data = await resp.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+async function callShopifyAPI(method, path, body) {
+  var resp = await fetch('/shopify/api', {
+    method:'POST', signal: abortCtrl ? abortCtrl.signal : undefined,
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({method:method, path:path, body:body||null})
+  });
+  var data = await resp.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PAGINATION HELPER
+// ═══════════════════════════════════════════════════════════════
+function buildPagination(current, total, cb) {
+  if (total <= 1) return '';
+  var html = '<div class="pagination"><span class="pagination-info">Page ' + current + '/' + total + '</span>';
+  if (current > 1) html += '<button class="btn-outline btn-sm" onclick="' + cb + '(1)">«</button><button class="btn-outline btn-sm" onclick="' + cb + '(' + (current-1) + ')">‹</button>';
+  for (var p = Math.max(1, current-2); p <= Math.min(total, current+2); p++) {
+    html += '<button class="btn-outline btn-sm' + (p===current?' active':'') + '" onclick="' + cb + '(' + p + ')">' + p + '</button>';
+  }
+  if (current < total) html += '<button class="btn-outline btn-sm" onclick="' + cb + '(' + (current+1) + ')">›</button><button class="btn-outline btn-sm" onclick="' + cb + '(' + total + ')">»</button>';
+  html += '</div>';
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ██████████████████████████  EBAY TAB  ████████████████████████
+// ═══════════════════════════════════════════════════════════════
+function ebayShowMain() {
+  document.getElementById('ebay-connect-prompt').style.display = 'none';
+  document.getElementById('ebay-main').style.display = 'block';
+}
+
+function ebayUpdateCounts() {
+  document.getElementById('eb-total').textContent     = ebCounts.total;
+  document.getElementById('eb-generated').textContent = ebCounts.generated;
+  document.getElementById('eb-pushed').textContent    = ebCounts.pushed;
+  document.getElementById('eb-errors').textContent    = ebCounts.errors;
+  if (ebCounts.total > 0)
+    document.getElementById('eb-progress').style.width = (ebCounts.pushed / ebCounts.total * 100) + '%';
+}
+
+async function ebayReload(forceAll) {
+  var c = getCreds();
+  if (!c['s-ebay-token']) {
+    setStatus('ebay', 'Token eBay manquant. Configurez vos identifiants dans Paramètres.', 'error');
+    switchTab('settings');
+    return;
+  }
+  saveCreds();
+  var now    = new Date();
+  var endFrom = now.toISOString().split('.')[0] + 'Z';
+  var endTo   = new Date(now.getTime() + 120*24*60*60*1000).toISOString().split('.')[0] + 'Z';
+  var allItems = [];
+  var page = 1, totalPages = 1;
+  try {
+    do {
+      setStatus('ebay', 'Chargement page ' + page + ' / ' + totalPages + '...', 'info');
+      var xml = '<?xml version="1.0" encoding="utf-8"?><GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><DetailLevel>ReturnAll</DetailLevel><EndTimeFrom>' + endFrom + '</EndTimeFrom><EndTimeTo>' + endTo + '</EndTimeTo><Pagination><EntriesPerPage>200</EntriesPerPage><PageNumber>' + page + '</PageNumber></Pagination><IncludeWatchCount>false</IncludeWatchCount></GetSellerListRequest>';
+      var doc = await callEbayXML('GetSellerList', xml);
+      if (page === 1) {
+        var ack = doc.getElementsByTagName('Ack')[0];
+        if (ack && ack.textContent !== 'Success' && ack.textContent !== 'Warning')
+          throw new Error(doc.getElementsByTagName('ShortMessage')[0] ? doc.getElementsByTagName('ShortMessage')[0].textContent : 'Erreur eBay');
+        var tp = doc.getElementsByTagName('TotalNumberOfPages')[0];
+        totalPages = tp ? parseInt(tp.textContent) : 1;
+      }
+      Array.from(doc.getElementsByTagName('Item')).forEach(function(item) {
+        var desc = item.getElementsByTagName('Description')[0] ? item.getElementsByTagName('Description')[0].textContent : '';
+        if (!forceAll && desc.includes(MARKER)) return;
+        var pics = Array.from(item.getElementsByTagName('PictureURL')).map(function(p) { return p.textContent.trim(); }).filter(Boolean);
+        var specs = {};
+        Array.from(item.getElementsByTagName('NameValueList')).forEach(function(nvl) {
+          var n = nvl.getElementsByTagName('Name')[0] ? nvl.getElementsByTagName('Name')[0].textContent : '';
+          var v = nvl.getElementsByTagName('Value')[0] ? nvl.getElementsByTagName('Value')[0].textContent : '';
+          if (n && v) specs[n] = v;
+        });
+        var sku = item.getElementsByTagName('SKU')[0] ? item.getElementsByTagName('SKU')[0].textContent : '';
+        var price = item.getElementsByTagName('CurrentPrice')[0] ? item.getElementsByTagName('CurrentPrice')[0].textContent : '';
+        var qty = item.getElementsByTagName('Quantity')[0] ? item.getElementsByTagName('Quantity')[0].textContent : '';
+        allItems.push({
+          id: item.getElementsByTagName('ItemID')[0] ? item.getElementsByTagName('ItemID')[0].textContent : '',
+          title: item.getElementsByTagName('Title')[0] ? item.getElementsByTagName('Title')[0].textContent : '',
+          description: desc, pictures: pics, existingSpecifics: specs,
+          sku: sku, price: price, qty: qty,
+          alreadyDone: desc.includes(MARKER),
+          status: desc.includes(MARKER) ? 'done' : 'pending',
+          newTitle: null, newDescription: null, keyword: null,
+          newSpecifics: {}, etsyTags: [], altTexts: []
+        });
+      });
+      page++;
+    } while (page <= totalPages);
+
+    if (!allItems.length) { setStatus('ebay', forceAll ? 'Aucun article trouvé.' : 'Tous les articles ont déjà été optimisés. Utilisez "Tout réimporter".', 'info'); return; }
+    ebListings = allItems;
+    ebFiltered = allItems.slice();
+    ebPage     = 1;
+    ebCounts   = {total: allItems.length, generated:0, pushed:0, errors:0};
+    ebayUpdateCounts();
+    var done = allItems.filter(function(l) { return l.alreadyDone; }).length;
+    setStatus('ebay', allItems.length + ' article(s) chargés (' + done + ' déjà optimisés).', 'success');
+    ebayShowMain();
+    ebayRenderPage();
+  } catch(e) {
+    setStatus('ebay', 'Erreur : ' + e.message, 'error');
+  }
+}
+
+async function ebaySearch() {
+  var q = document.getElementById('eb-search').value.trim().toLowerCase();
+  if (!q) { ebayClearSearch(); return; }
+  ebFiltered = ebListings.filter(function(l) {
+    return l.title.toLowerCase().includes(q) || l.id.includes(q) || (l.newTitle && l.newTitle.toLowerCase().includes(q));
+  });
+  ebPage = 1;
+  setStatus('ebay', ebFiltered.length + ' résultat(s) pour "' + q + '".', ebFiltered.length ? 'success' : 'error');
+  ebayRenderPage();
+}
+
+function ebayClearSearch() {
+  document.getElementById('eb-search').value = '';
+  ebFiltered = ebListings.slice();
+  ebPage = 1;
+  document.getElementById('ebay-status').style.display = 'none';
+  ebayRenderPage();
+}
+
+function ebayGoPage(p) { ebPage = p; ebayRenderPage(); window.scrollTo(0, 0); }
+
+function ebayRenderPage() {
+  var start = (ebPage - 1) * PER_PAGE;
+  var items = ebFiltered.slice(start, start + PER_PAGE);
+  var grid  = document.getElementById('eb-grid');
+  grid.innerHTML = '';
+  items.forEach(function(item) { grid.appendChild(ebayBuildCard(item, ebListings.indexOf(item))); });
+  var tp = Math.max(1, Math.ceil(ebFiltered.length / PER_PAGE));
+  var pag = buildPagination(ebPage, tp, 'ebayGoPage');
+  document.getElementById('eb-pagination-top').innerHTML = pag;
+  document.getElementById('eb-pagination-bot').innerHTML = pag;
+  var hasGen = ebListings.some(function(l) { return l.status === 'generated'; });
+  document.getElementById('eb-push-all').style.display = hasGen ? 'block' : 'none';
+}
+
+function ebayBuildCard(item, i) {
+  var div = document.createElement('div');
+  div.className = 'listing-card' + (item.alreadyDone && item.status !== 'generated' ? ' already-done' : '');
+  div.id = 'eb-item-' + i;
+
+  var badgeMap = {
+    pending:    '<span class="badge badge-pending">En attente</span>',
+    generating: '<span class="badge badge-generating"><span class="spinner"></span>Génération...</span>',
+    generated:  '<span class="badge" style="background:#ddeeff;color:#2255aa">Généré</span>',
+    skipped:    '<span class="badge" style="background:#eee;color:#999">Ignoré</span>',
+    updated:    '<span class="badge badge-ok">✓ Publié</span>',
+    done:       '<span class="badge badge-done">✓ Optimisé</span>'
+  };
+
+  var genLabel   = etsyOnlyMode ? '🏷 Tags Etsy' : 'Générer';
+  var regenLabel = etsyOnlyMode ? '🏷 Regénérer tags' : 'Regénérer';
+
+  var titleHTML = item.newTitle
+    ? '<div class="listing-title" style="text-decoration:line-through;color:#aaa;font-size:11px">' + escHTML(item.title) + '</div><div class="listing-title">' + escHTML(item.newTitle) + ' <span style="font-size:9px;color:' + (item.newTitle.length > 80 ? 'var(--rust)' : 'var(--sage)') + '">' + item.newTitle.length + '/80</span></div>'
+    : '<div class="listing-title">' + escHTML(item.title) + '</div>';
+
+  var thumbsHTML = item.pictures.length
+    ? '<div class="thumbs">' + item.pictures.slice(0,4).map(function(u) { return '<img class="thumb" src="' + u + '" onerror="this.style.display=\'none\'">'; }).join('') + '</div>'
+    : '';
+
+  var descOld = (item.description || '').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').substring(0,300) + '...';
+  var descNew = item.newDescription
+    ? '<div class="compare-field"><div class="val diff">' + item.newDescription.replace(/\n/g,'<br>').substring(0,400) + '</div></div>'
+    : '<div class="compare-field"><div class="val missing">Pas encore générée</div></div>';
+
+  var specsHTML = '';
+  var allKeys = Object.keys(Object.assign({}, item.existingSpecifics, item.newSpecifics));
+  if (allKeys.length) {
+    var tags = allKeys.map(function(k) {
+      var isNew = item.newSpecifics[k] !== undefined && item.newSpecifics[k] !== item.existingSpecifics[k];
+      var val   = item.newSpecifics[k] !== undefined ? item.newSpecifics[k] : item.existingSpecifics[k];
+      return '<span class="tag' + (isNew ? ' new' : '') + '">' + escHTML(k) + ': ' + escHTML(String(val)) + '</span>';
+    }).join('');
+    specsHTML = '<div class="section-label">Item Specifics</div><div class="tags-row">' + tags + '</div>';
+  }
+
+  var etsyTagsHTML = '';
+  if (item.etsyTags && item.etsyTags.length) {
+    etsyTagsHTML = '<div class="section-label" style="margin-top:8px">Tags Etsy (' + item.etsyTags.length + '/13)</div><div class="tags-row">' + item.etsyTags.map(function(t) { return '<span class="tag new">' + escHTML(t) + '</span>'; }).join('') + '</div>';
+  }
+
+  var actionsHTML = '';
+  if (item.status === 'pending' || item.status === 'done') {
+    actionsHTML = '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px"><button class="btn-outline btn-sm" onclick="ebaySkip(' + i + ')">Ignorer</button><button class="btn-dark btn-sm" onclick="ebayGenerateOne(' + i + ')">' + genLabel + '</button></div>';
+  } else if (item.status === 'generated') {
+    actionsHTML = '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px"><button class="btn-outline btn-sm" onclick="ebaySkip(' + i + ')">Ignorer</button><button class="btn-outline btn-sm" onclick="ebayGenerateOne(' + i + ')">' + regenLabel + '</button><button class="btn-blue btn-sm" onclick="ebayPublishOne(' + i + ')">Publier eBay</button></div>';
+  } else if (item.status === 'updated') {
+    actionsHTML = '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px"><button class="btn-outline btn-sm" onclick="ebayGenerateOne(' + i + ')">' + regenLabel + '</button></div>';
+  }
+
+  div.innerHTML = '<div class="listing-header">'
+    + '<div class="listing-info">' + titleHTML
+    + '<div class="listing-subtitle">SKU: ' + escHTML(item.sku || '-') + ' | Prix: ' + escHTML(item.price || '-') + ' | Qté: ' + escHTML(item.qty || '-') + '</div>'
+    + '</div>'
+    + '<div class="listing-meta">' + (badgeMap[item.status] || '') + '<div class="listing-id">#' + escHTML(item.id) + '</div></div>'
+    + '</div>'
+    + '<div class="listing-body">' + thumbsHTML
+    + '<div class="compare-grid"><div><h4>Description actuelle</h4><div class="compare-field"><div class="val">' + escHTML(descOld) + '</div></div></div>'
+    + '<div><h4>Nouvelle description</h4>' + descNew + (item.keyword ? '<div style="margin-top:4px"><span class="keyword-tag">🔑 ' + escHTML(item.keyword) + '</span></div>' : '') + '</div></div>'
+    + specsHTML + etsyTagsHTML + actionsHTML
+    + '</div>';
+  return div;
+}
+
+function ebayRefreshCard(i) {
+  var el = document.getElementById('eb-item-' + i);
+  if (el) el.replaceWith(ebayBuildCard(ebListings[i], i));
+}
+
+async function ebayGenerateOne(i) {
+  var c = getCreds();
+  ebListings[i].status = 'generating';
+  ebayRefreshCard(i);
+  try {
+    var userContent = [];
+    for (var pi = 0; pi < Math.min(4, ebListings[i].pictures.length); pi++) {
+      var img = await fetchImageB64(ebListings[i].pictures[pi]);
+      if (img) userContent.push({type:'image', source:{type:'base64', media_type:img.mediaType, data:img.base64}});
+    }
+    var existingSpecsStr = Object.entries(ebListings[i].existingSpecifics).map(function(kv) { return kv[0] + ': ' + kv[1]; }).join('\n') || 'Aucun';
+    var prompt = etsyOnlyMode
+      ? 'You are an SEO expert for Fleamarketfrance. Analyze photos and title. Generate ONLY 13 Etsy tags (max 20 chars each) and alt texts.\nCURRENT TITLE: ' + ebListings[i].title + '\nRespond ONLY with valid JSON: {"etsyTags":["tag1"],"altTexts":["alt1"]}'
+      : 'You are an SEO expert for Fleamarketfrance (French vintage shop on eBay).\nCURRENT TITLE: ' + ebListings[i].title + '\nCURRENT DESCRIPTION: ' + (ebListings[i].description||'').replace(/<[^>]+>/g,' ').substring(0,800) + '\nEXISTING ITEM SPECIFICS:\n' + existingSpecsStr + '\n\nRULES:\n1. KEYWORD: Best SEO keyword. Must appear in new title AND as <h2> in description.\n2. NEW TITLE: Max 80 chars. Keep digits at END of original title. Include keyword.\n3. DESCRIPTION: Min 160 words. English. Wrap in <div style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">. Structure: h2 keyword, p intro, p visual details, p dimensions+condition (INCLUDE dimensions if known), p optional decor, p EXACTLY "95% of my items are tariff-free to the US."\n4. ITEM SPECIFICS: Complete set. Add Material, Style, Period, Country, Color, Type, Dimensions, Condition.\n5. ETSY TAGS: Exactly 13 tags, max 20 chars each.\n6. ALT TEXTS: One per photo, max 250 chars.\n\nRespond ONLY with valid JSON: {"keyword":"...","newTitle":"...","description":"...","itemSpecifics":{"k":"v"},"etsyTags":["t1"],"altTexts":["a1"]}';
+    userContent.push({type:'text', text: prompt});
+    var parsed = await callClaude([{role:'user', content:userContent}], etsyOnlyMode);
+    ebListings[i].etsyTags  = parsed.etsyTags  || [];
+    ebListings[i].altTexts  = parsed.altTexts  || [];
+    if (!etsyOnlyMode) {
+      ebListings[i].keyword        = parsed.keyword       || '';
+      ebListings[i].newTitle       = parsed.newTitle      || ebListings[i].title;
+      ebListings[i].newDescription = parsed.description   || '';
+      ebListings[i].newSpecifics   = parsed.itemSpecifics || {};
+    }
+    if (ebListings[i].status !== 'generated') ebCounts.generated++;
+    ebListings[i].status = 'generated';
+    ebayUpdateCounts();
+    document.getElementById('eb-push-all').style.display = 'block';
+  } catch(e) {
+    ebListings[i].status = ebListings[i].alreadyDone ? 'done' : 'pending';
+    if (e.name !== 'AbortError') {
+      logError('Claude/eBay', ebListings[i].id, ebListings[i].title, e.message);
+      setStatus('ebay', 'Erreur #' + ebListings[i].id + ' : ' + e.message, 'error');
+    }
+  }
+  ebayRefreshCard(i);
+}
+
+async function ebayGenerateAll() {
+  var btn = document.getElementById('eb-gen-all');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Génération...';
+  startOp('eb-stop');
+  for (var i = 0; i < ebListings.length; i++) {
+    if (stopRequested) break;
+    if (ebListings[i].status === 'pending' || ebListings[i].status === 'done') {
+      await ebayGenerateOne(i);
+      await new Promise(function(r) { setTimeout(r, 600); });
+    }
+  }
+  endOp('eb-stop');
+  btn.disabled = false; btn.textContent = '① Regénérer tout';
+  setStatus('ebay', (stopRequested ? 'Arrêté. ' : '') + ebCounts.generated + ' description(s) générée(s).', 'success');
+}
+
+function ebaySkip(i) {
+  if (ebListings[i].status === 'generated') ebCounts.generated--;
+  ebListings[i].status = 'skipped';
+  ebayUpdateCounts(); ebayRefreshCard(i);
+}
+
+async function ebayPublishOne(i) {
+  var c = getCreds();
+  var item = ebListings[i];
+  var specsXML = Object.entries(item.newSpecifics).map(function(kv) {
+    return '<NameValueList><n>' + escXML(kv[0]) + '</n><Value>' + escXML(String(kv[1])) + '</Value></NameValueList>';
+  }).join('');
+  var finalDesc = item.newDescription + '\n' + MARKER;
+  var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(item.newTitle || item.title) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description>' + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
+  try {
+    var doc = await callEbayXML('ReviseItem', xml);
+    var ack = doc.getElementsByTagName('Ack')[0];
+    if (ack && ack.textContent !== 'Success' && ack.textContent !== 'Warning')
+      throw new Error(doc.getElementsByTagName('ShortMessage')[0] ? doc.getElementsByTagName('ShortMessage')[0].textContent : 'Erreur eBay');
+    if (ebListings[i].status === 'generated') { ebCounts.generated--; ebCounts.pushed++; }
+    ebListings[i].status = 'updated'; ebListings[i].alreadyDone = true;
+    ebayUpdateCounts(); ebayRefreshCard(i);
+  } catch(e) {
+    logError('eBay', item.id, item.title, e.message);
+    setStatus('ebay', 'Erreur eBay #' + item.id + ' : ' + e.message, 'error');
+  }
+}
+
+async function ebayPushAll() {
+  var toSend = ebListings.filter(function(l) { return l.status === 'generated'; });
+  if (!toSend.length) { setStatus('ebay', 'Aucun article généré.', 'error'); return; }
+  if (!confirm('Publier ' + toSend.length + ' article(s) sur eBay ?')) return;
+  var btn = document.getElementById('eb-push-all');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Publication...';
+  startOp('eb-stop');
+  for (var i = 0; i < ebListings.length; i++) {
+    if (stopRequested) break;
+    if (ebListings[i].status === 'generated') { await ebayPublishOne(i); await new Promise(function(r) { setTimeout(r, 400); }); }
+  }
+  endOp('eb-stop');
+  btn.disabled = false; btn.textContent = '② Publier tout eBay';
+  setStatus('ebay', '✓ Publication terminée.' + (errorLog.length ? ' ' + errorLog.length + ' erreur(s).' : ''), 'success');
+}
+
+function toggleEtsyMode() {
+  etsyOnlyMode = !etsyOnlyMode;
+  var btn = document.getElementById('eb-etsy-mode');
+  if (etsyOnlyMode) { btn.textContent = '🏷 Mode Etsy: ON'; btn.style.background = 'var(--sage)'; btn.style.color = 'white'; btn.style.border = 'none'; }
+  else              { btn.textContent = '🏷 Mode Etsy'; btn.style.background = ''; btn.style.color = ''; btn.style.border = ''; }
+  ebayRenderPage();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ██████████████████████████  ETSY TAB  ████████████████████████
+// ═══════════════════════════════════════════════════════════════
+function etsyUpdateCounts() {
+  document.getElementById('et-total').textContent  = etCounts.total;
+  document.getElementById('et-diffs').textContent  = etCounts.diffs;
+  document.getElementById('et-notags').textContent = etCounts.notags;
+  document.getElementById('et-pushed').textContent = etCounts.pushed;
+}
+
+async function etsyReload() {
+  var c = getCreds();
+  if (!etsyConnected) { setStatus('etsy', 'Connectez Etsy dans l\'onglet Paramètres.', 'error'); return; }
+  if (!ebListings.length) { setStatus('etsy', 'Chargez d\'abord vos articles eBay.', 'error'); return; }
+  setStatus('etsy', 'Chargement des listings Etsy...', 'info');
+  try {
+    var shopId = c['s-etsy-shop'];
+    var allEtsy = [];
+    var offset = 0;
+    while (true) {
+      var resp = await callEtsyAPI('GET', '/application/shops/' + shopId + '/listings/active?limit=100&offset=' + offset + '&includes[]=Images&includes[]=Translations');
+      var items = (resp.results || []);
+      allEtsy = allEtsy.concat(items);
+      if (items.length < 100) break;
+      offset += 100;
+    }
+    // Comparer avec eBay par titre (correspondance approximative)
+    etPairs = [];
+    ebListings.forEach(function(eb) {
+      var match = allEtsy.find(function(et) {
+        // Correspondance par SKU si disponible, sinon par titre
+        var etSku = et.sku || '';
+        if (eb.sku && etSku && eb.sku === etSku) return true;
+        // Comparaison de titre normalisée
+        var ebTitle = eb.title.toLowerCase().replace(/\s+/g,' ').trim();
+        var etTitle = (et.title || '').toLowerCase().replace(/\s+/g,' ').trim();
+        return ebTitle === etTitle || ebTitle.substring(0,40) === etTitle.substring(0,40);
+      });
+      var diffs = [];
+      if (match) {
+        if (eb.title !== match.title) diffs.push('title');
+        if (eb.price && match.price && parseFloat(eb.price).toFixed(2) !== parseFloat(match.price.amount / match.price.divisor).toFixed(2)) diffs.push('price');
+        if (eb.qty && match.quantity !== undefined && parseInt(eb.qty) !== match.quantity) diffs.push('qty');
+      }
+      var etTags  = match ? (match.tags || []) : [];
+      var etImages = match ? (match.images || []) : [];
+      var hasAltText = etImages.every(function(img) { return img.alt_text; });
+      etPairs.push({
+        ebay:    eb,
+        etsy:    match || null,
+        diffs:   diffs,
+        etTags:  etTags,
+        etImages: etImages,
+        hasTags:    etTags.length >= 13,
+        hasAltText: hasAltText,
+        checked: false,
+        newTags:    null,
+        newAltTexts: null,
+        status:  match ? (diffs.length ? 'diff' : 'ok') : 'missing'
+      });
+    });
+    etFiltered = etPairs.slice();
+    etPage = 1;
+    etCounts.total  = etPairs.length;
+    etCounts.diffs  = etPairs.filter(function(p) { return p.diffs.length > 0; }).length;
+    etCounts.notags = etPairs.filter(function(p) { return !p.hasTags || !p.hasAltText; }).length;
+    etCounts.pushed = 0;
+    etsyUpdateCounts();
+    setStatus('etsy', etPairs.length + ' articles comparés. ' + etCounts.diffs + ' différences, ' + etCounts.notags + ' tags/alt manquants.', 'success');
+    document.getElementById('etsy-connect-prompt').style.display = 'none';
+    document.getElementById('etsy-main').style.display = 'block';
+    etsyRenderPage();
+  } catch(e) {
+    setStatus('etsy', 'Erreur : ' + e.message, 'error');
+  }
+}
+
+function etsyFilter() {
+  var q   = document.getElementById('et-search').value.toLowerCase();
+  var flt = document.getElementById('et-filter').value;
+  etFiltered = etPairs.filter(function(p) {
+    var matchQ   = !q || p.ebay.title.toLowerCase().includes(q) || p.ebay.id.includes(q);
+    var matchFlt = flt === 'all'
+      || (flt === 'diff'    && p.diffs.length > 0)
+      || (flt === 'notags'  && (!p.hasTags || !p.hasAltText))
+      || (flt === 'checked' && p.checked);
+    return matchQ && matchFlt;
+  });
+  etPage = 1;
+  etsyRenderPage();
+}
+
+function etsyGoPage(p) { etPage = p; etsyRenderPage(); window.scrollTo(0,0); }
+
+function etsyRenderPage() {
+  var start = (etPage - 1) * PER_PAGE;
+  var items = etFiltered.slice(start, start + PER_PAGE);
+  var grid  = document.getElementById('et-grid');
+  grid.innerHTML = '';
+  items.forEach(function(pair) { grid.appendChild(etsyBuildCard(pair, etPairs.indexOf(pair))); });
+  var tp = Math.max(1, Math.ceil(etFiltered.length / PER_PAGE));
+  var pag = buildPagination(etPage, tp, 'etsyGoPage');
+  document.getElementById('et-pagination-top').innerHTML = pag;
+  document.getElementById('et-pagination-bot').innerHTML = pag;
+}
+
+function etsyBuildCard(pair, i) {
+  var div = document.createElement('div');
+  div.className = 'listing-card' + (pair.diffs.length ? ' has-diff' : '');
+  div.id = 'et-item-' + i;
+  var eb = pair.ebay;
+  var et = pair.etsy;
+  var statusBadge = pair.status === 'ok' ? '<span class="badge badge-ok">✓ Sync</span>'
+    : pair.status === 'diff'    ? '<span class="badge badge-diff">⚠ Différences</span>'
+    : pair.status === 'missing' ? '<span class="badge badge-missing">Absent Etsy</span>'
+    : pair.status === 'generating' ? '<span class="badge badge-generating"><span class="spinner"></span>Génération...</span>'
+    : '<span class="badge badge-ok">✓ Exporté</span>';
+
+  // Champs à comparer
+  var fields = [
+    {key:'title', label:'Titre', ebVal: eb.title, etVal: et ? et.title : null},
+    {key:'price', label:'Prix', ebVal: eb.price, etVal: et ? (et.price ? (et.price.amount/et.price.divisor).toFixed(2) : null) : null},
+    {key:'qty', label:'Quantité', ebVal: eb.qty, etVal: et ? String(et.quantity||'') : null}
+  ];
+
+  var compareHTML = '<div class="compare-grid"><div><h4>eBay</h4>';
+  fields.forEach(function(f) {
+    var isDiff = pair.diffs.includes(f.key);
+    compareHTML += '<div class="compare-field"><label>' + f.label + '</label><div class="val' + (isDiff ? ' diff' : '') + '">' + escHTML(f.ebVal || '-') + '</div></div>';
+  });
+  compareHTML += '</div><div><h4>Etsy</h4>';
+  fields.forEach(function(f) {
+    var isDiff = pair.diffs.includes(f.key);
+    compareHTML += '<div class="compare-field"><label>' + f.label + '</label><div class="val' + (isDiff ? ' diff' : '') + (et ? '' : ' missing') + '">' + escHTML((et ? f.etVal : null) || (et ? '-' : 'Absent')) + '</div></div>';
+  });
+  compareHTML += '</div></div>';
+
+  // Tags Etsy
+  var tagsHTML = '';
+  if (pair.newTags && pair.newTags.length) {
+    tagsHTML = '<div class="section-label" style="margin-top:8px">Nouveaux Tags Etsy</div><div class="tags-row">' + pair.newTags.map(function(t) { return '<span class="tag new">' + escHTML(t) + '</span>'; }).join('') + '</div>';
+  } else if (!pair.hasTags) {
+    tagsHTML = '<div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="tag missing">Tags manquants (' + pair.etTags.length + '/13)</span><button class="btn-sage btn-sm" onclick="etsyGenerateTagsOne(' + i + ')">🏷 Générer tags</button></div>';
+  } else {
+    tagsHTML = '<div class="section-label" style="margin-top:8px">Tags Etsy (' + pair.etTags.length + ')</div><div class="tags-row">' + pair.etTags.map(function(t) { return '<span class="tag">' + escHTML(t) + '</span>'; }).join('') + '</div>';
+  }
+
+  var checkboxHTML = (pair.diffs.length || !pair.hasTags || !pair.hasAltText)
+    ? '<input type="checkbox" class="listing-checkbox" ' + (pair.checked ? 'checked' : '') + ' onchange="etsyToggleCheck(' + i + ', this.checked)">'
+    : '<input type="checkbox" class="listing-checkbox" disabled>';
+
+  div.innerHTML = '<div class="listing-header">'
+    + checkboxHTML
+    + '<div class="listing-info"><div class="listing-title">' + escHTML(eb.title) + '</div>'
+    + '<div class="listing-subtitle">SKU: ' + escHTML(eb.sku||'-') + ' | eBay #' + escHTML(eb.id) + (et ? ' | Etsy #' + escHTML(String(et.listing_id||'')) : '') + '</div></div>'
+    + '<div class="listing-meta">' + statusBadge + '</div></div>'
+    + '<div class="listing-body">' + compareHTML + tagsHTML + '</div>';
+  return div;
+}
+
+function etsyRefreshCard(i) {
+  var el = document.getElementById('et-item-' + i);
+  if (el) el.replaceWith(etsyBuildCard(etPairs[i], i));
+}
+
+function etsyToggleCheck(i, checked) {
+  etPairs[i].checked = checked;
+}
+
+async function etsyGenerateTagsOne(i) {
+  var pair = etPairs[i];
+  pair.status = 'generating';
+  etsyRefreshCard(i);
+  try {
+    var userContent = [];
+    for (var pi = 0; pi < Math.min(3, pair.ebay.pictures.length); pi++) {
+      var img = await fetchImageB64(pair.ebay.pictures[pi]);
+      if (img) userContent.push({type:'image', source:{type:'base64', media_type:img.mediaType, data:img.base64}});
+    }
+    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance. Analyze photos and title. Generate 13 Etsy tags (max 20 chars each) and one alt text per photo.\nCURRENT TITLE: ' + pair.ebay.title + '\nRespond ONLY with valid JSON: {"etsyTags":["tag1"],"altTexts":["alt1"]}'});
+    var parsed = await callClaude([{role:'user', content:userContent}], true);
+    pair.newTags     = parsed.etsyTags  || [];
+    pair.newAltTexts = parsed.altTexts  || [];
+    pair.hasTags     = pair.newTags.length >= 13;
+    pair.status      = pair.diffs.length ? 'diff' : 'ok';
+    if (pair.diffs.length || !pair.hasTags) pair.checked = true;
+  } catch(e) {
+    pair.status = pair.diffs.length ? 'diff' : 'ok';
+    if (e.name !== 'AbortError') {
+      logError('Claude/Etsy', pair.ebay.id, pair.ebay.title, e.message);
+      setStatus('etsy', 'Erreur tags #' + pair.ebay.id + ' : ' + e.message, 'error');
+    }
+  }
+  etsyRefreshCard(i);
+}
+
+async function etsyGenerateAllTags() {
+  var btn = document.getElementById('et-gen-tags-all');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Génération...';
+  startOp('et-stop');
+  for (var i = 0; i < etPairs.length; i++) {
+    if (stopRequested) break;
+    if (!etPairs[i].hasTags || !etPairs[i].hasAltText) {
+      await etsyGenerateTagsOne(i);
+      await new Promise(function(r) { setTimeout(r, 500); });
+    }
+  }
+  endOp('et-stop');
+  btn.disabled = false; btn.textContent = '🏷 Générer tags manquants';
+  setStatus('etsy', 'Génération des tags terminée.', 'success');
+}
+
+async function etsyExportSelected() {
+  var toExport = etPairs.filter(function(p) { return p.checked && p.etsy; });
+  if (!toExport.length) { setStatus('etsy', 'Sélectionnez des articles à exporter.', 'error'); return; }
+  if (!confirm('Exporter ' + toExport.length + ' article(s) vers Etsy ?')) return;
+  var btn = document.getElementById('et-export-all');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Export...';
+  startOp('et-stop');
+  var success = 0;
+  for (var i = 0; i < etPairs.length; i++) {
+    if (stopRequested) break;
+    var pair = etPairs[i];
+    if (!pair.checked || !pair.etsy) continue;
+    try {
+      var payload = {};
+      if (pair.diffs.includes('title')) payload.title = pair.ebay.title;
+      if (pair.diffs.includes('price')) payload.price = {amount: Math.round(parseFloat(pair.ebay.price) * 100), divisor: 100, currency_code: 'EUR'};
+      if (pair.diffs.includes('qty'))   payload.quantity = parseInt(pair.ebay.qty);
+      if (pair.newTags && pair.newTags.length) payload.tags = pair.newTags;
+      if (Object.keys(payload).length) {
+        await callEtsyAPI('PATCH', '/application/listings/' + pair.etsy.listing_id, payload);
+      }
+      pair.status  = 'exported';
+      pair.checked = false;
+      pair.diffs   = [];
+      etCounts.pushed++;
+      success++;
+    } catch(e) {
+      logError('Etsy', pair.ebay.id, pair.ebay.title, e.message);
+      setStatus('etsy', 'Erreur Etsy #' + pair.ebay.id + ' : ' + e.message, 'error');
+    }
+    etsyRefreshCard(i);
+    await new Promise(function(r) { setTimeout(r, 400); });
+  }
+  endOp('et-stop');
+  btn.disabled = false; btn.textContent = '→ Exporter sélectionnés vers Etsy';
+  etsyUpdateCounts();
+  setStatus('etsy', '✓ ' + success + ' article(s) exportés vers Etsy.', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ████████████████████████  SHOPIFY TAB  ████████████████████████
+// ═══════════════════════════════════════════════════════════════
+function shopifyUpdateCounts() {
+  document.getElementById('sh-total').textContent  = shCounts.total;
+  document.getElementById('sh-diffs').textContent  = shCounts.diffs;
+  document.getElementById('sh-noseo').textContent  = shCounts.noseo;
+  document.getElementById('sh-pushed').textContent = shCounts.pushed;
+}
+
+async function shopifyReload(forceAll) {
+  if (!shopifyConnected) { setStatus('shopify', 'Connectez Shopify dans l\'onglet Paramètres.', 'error'); return; }
+  var c = getCreds();
+  if (!ebListings.length) { setStatus('shopify', 'Chargez d\'abord vos articles eBay.', 'error'); return; }
+  setStatus('shopify', 'Chargement des produits Shopify...', 'info');
+  try {
+    var allShopify = [];
+    var pageInfo = null;
+    do {
+      var path = '/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,tags,body_html' + (pageInfo ? '&page_info=' + pageInfo : '');
+      var resp = await callShopifyAPI('GET', path, null);
+      allShopify = allShopify.concat(resp.products || []);
+      pageInfo = resp.next_page_info || null;
+    } while (pageInfo);
+
+    shPairs = [];
+    ebListings.forEach(function(eb) {
+      var match = allShopify.find(function(sh) {
+        return sh.variants && sh.variants.some(function(v) { return v.sku && eb.sku && v.sku === eb.sku; });
+      });
+      if (!match && !forceAll) return; // ignorer si pas de correspondance et pas forceAll
+
+      var seoTitle = match ? (match.metafields_global_title_tag || '') : '';
+      var seoDesc  = match ? (match.metafields_global_description_tag || '') : '';
+      var diffs    = [];
+      if (match) {
+        if (eb.title !== match.title) diffs.push('title');
+        // Comparer prix via variant
+        var shPrice = match.variants && match.variants[0] ? match.variants[0].price : null;
+        if (eb.price && shPrice && parseFloat(eb.price).toFixed(2) !== parseFloat(shPrice).toFixed(2)) diffs.push('price');
+      }
+      var hasSeo = seoTitle.length > 0 && seoDesc.length > 0;
+      shPairs.push({
+        ebay:    eb,
+        shopify: match || null,
+        diffs:   diffs,
+        seoTitle: seoTitle,
+        seoDesc:  seoDesc,
+        hasSeo:   hasSeo,
+        newSeoTitle: null,
+        newSeoDesc:  null,
+        checked: false,
+        status:  match ? (diffs.length ? 'diff' : (hasSeo ? 'ok' : 'noseo')) : 'missing'
+      });
+    });
+
+    shFiltered = shPairs.slice();
+    shPage = 1;
+    shCounts.total  = shPairs.length;
+    shCounts.diffs  = shPairs.filter(function(p) { return p.diffs.length > 0; }).length;
+    shCounts.noseo  = shPairs.filter(function(p) { return !p.hasSeo; }).length;
+    shCounts.pushed = 0;
+    shopifyUpdateCounts();
+    setStatus('shopify', shPairs.length + ' articles comparés. ' + shCounts.diffs + ' différences, ' + shCounts.noseo + ' SEO manquants.', 'success');
+    document.getElementById('shopify-connect-prompt').style.display = 'none';
+    document.getElementById('shopify-main').style.display = 'block';
+    shopifyRenderPage();
+  } catch(e) {
+    setStatus('shopify', 'Erreur : ' + e.message, 'error');
+  }
+}
+
+function shopifyFilter() {
+  var q   = document.getElementById('sh-search').value.toLowerCase();
+  var flt = document.getElementById('sh-filter').value;
+  shFiltered = shPairs.filter(function(p) {
+    var matchQ   = !q || p.ebay.title.toLowerCase().includes(q);
+    var matchFlt = flt === 'all'
+      || (flt === 'diff'    && p.diffs.length > 0)
+      || (flt === 'noseo'   && !p.hasSeo)
+      || (flt === 'checked' && p.checked);
+    return matchQ && matchFlt;
+  });
+  shPage = 1;
+  shopifyRenderPage();
+}
+
+function shopifyGoPage(p) { shPage = p; shopifyRenderPage(); window.scrollTo(0,0); }
+
+function shopifyRenderPage() {
+  var start = (shPage - 1) * PER_PAGE;
+  var items = shFiltered.slice(start, start + PER_PAGE);
+  var grid  = document.getElementById('sh-grid');
+  grid.innerHTML = '';
+  items.forEach(function(pair) { grid.appendChild(shopifyBuildCard(pair, shPairs.indexOf(pair))); });
+  var tp = Math.max(1, Math.ceil(shFiltered.length / PER_PAGE));
+  var pag = buildPagination(shPage, tp, 'shopifyGoPage');
+  document.getElementById('sh-pagination-top').innerHTML = pag;
+  document.getElementById('sh-pagination-bot').innerHTML = pag;
+}
+
+function shopifyBuildCard(pair, i) {
+  var div = document.createElement('div');
+  div.className = 'listing-card' + (pair.diffs.length || !pair.hasSeo ? ' has-diff' : '');
+  div.id = 'sh-item-' + i;
+  var eb = pair.ebay;
+  var sh = pair.shopify;
+
+  var statusBadge = pair.status === 'ok'     ? '<span class="badge badge-ok">✓ Sync</span>'
+    : pair.status === 'diff'    ? '<span class="badge badge-diff">⚠ Différences</span>'
+    : pair.status === 'noseo'   ? '<span class="badge badge-missing">SEO manquant</span>'
+    : pair.status === 'missing' ? '<span class="badge badge-missing">Absent Shopify</span>'
+    : pair.status === 'generating' ? '<span class="badge badge-generating"><span class="spinner"></span>Génération...</span>'
+    : '<span class="badge badge-ok">✓ Exporté</span>';
+
+  var fields = [
+    {key:'title', label:'Titre', ebVal: eb.title, shVal: sh ? sh.title : null},
+    {key:'price', label:'Prix',  ebVal: eb.price,  shVal: sh && sh.variants && sh.variants[0] ? sh.variants[0].price : null}
+  ];
+
+  var compareHTML = '<div class="compare-grid"><div><h4>eBay</h4>';
+  fields.forEach(function(f) {
+    var isDiff = pair.diffs.includes(f.key);
+    compareHTML += '<div class="compare-field"><label>' + f.label + '</label><div class="val' + (isDiff?' diff':'') + '">' + escHTML(f.ebVal||'-') + '</div></div>';
+  });
+  compareHTML += '</div><div><h4>Shopify</h4>';
+  fields.forEach(function(f) {
+    var isDiff = pair.diffs.includes(f.key);
+    compareHTML += '<div class="compare-field"><label>' + f.label + '</label><div class="val' + (isDiff?' diff':'') + (sh?'':' missing') + '">' + escHTML(sh ? (f.shVal||'-') : 'Absent') + '</div></div>';
+  });
+  compareHTML += '</div></div>';
+
+  // SEO
+  var seoHTML = '';
+  if (pair.newSeoTitle || pair.newSeoDesc) {
+    seoHTML = '<div class="section-label" style="margin-top:8px">SEO Généré</div>'
+      + '<div class="compare-field"><label>SEO Title (' + (pair.newSeoTitle||'').length + '/70)</label><div class="val diff">' + escHTML(pair.newSeoTitle||'') + '</div></div>'
+      + '<div class="compare-field" style="margin-top:6px"><label>Meta Description (' + (pair.newSeoDesc||'').length + '/160)</label><div class="val diff">' + escHTML(pair.newSeoDesc||'') + '</div></div>';
+  } else if (!pair.hasSeo) {
+    seoHTML = '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
+      + '<span style="font-size:11px;color:var(--rust)">SEO Title/Meta manquants</span>'
+      + '<button class="btn-shopify btn-sm" onclick="shopifyGenerateSeoOne(' + i + ')">🔍 Générer SEO</button></div>';
+  } else {
+    seoHTML = '<div class="section-label" style="margin-top:8px">SEO actuel</div>'
+      + '<div class="compare-field"><label>SEO Title</label><div class="val">' + escHTML(pair.seoTitle) + '</div></div>'
+      + '<div class="compare-field" style="margin-top:6px"><label>Meta Description</label><div class="val">' + escHTML(pair.seoDesc) + '</div></div>';
+  }
+
+  var checkboxHTML = (pair.diffs.length || !pair.hasSeo)
+    ? '<input type="checkbox" class="listing-checkbox" ' + (pair.checked?'checked':'') + ' onchange="shopifyToggleCheck(' + i + ', this.checked)">'
+    : '<input type="checkbox" class="listing-checkbox" disabled>';
+
+  div.innerHTML = '<div class="listing-header">'
+    + checkboxHTML
+    + '<div class="listing-info"><div class="listing-title">' + escHTML(eb.title) + '</div>'
+    + '<div class="listing-subtitle">SKU: ' + escHTML(eb.sku||'-') + ' | eBay #' + escHTML(eb.id) + (sh ? ' | Shopify #' + escHTML(String(sh.id||'')) : '') + '</div></div>'
+    + '<div class="listing-meta">' + statusBadge + '</div></div>'
+    + '<div class="listing-body">' + compareHTML + seoHTML + '</div>';
+  return div;
+}
+
+function shopifyRefreshCard(i) {
+  var el = document.getElementById('sh-item-' + i);
+  if (el) el.replaceWith(shopifyBuildCard(shPairs[i], i));
+}
+
+function shopifyToggleCheck(i, checked) { shPairs[i].checked = checked; }
+
+async function shopifyGenerateSeoOne(i) {
+  var pair = shPairs[i];
+  pair.status = 'generating';
+  shopifyRefreshCard(i);
+  try {
+    var userContent = [];
+    for (var pi = 0; pi < Math.min(2, pair.ebay.pictures.length); pi++) {
+      var img = await fetchImageB64(pair.ebay.pictures[pi]);
+      if (img) userContent.push({type:'image', source:{type:'base64', media_type:img.mediaType, data:img.base64}});
+    }
+    var desc = (pair.ebay.description||'').replace(/<[^>]+>/g,' ').substring(0,600);
+    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance (French vintage Shopify store).\nGenerate a Shopify SEO Title (max 70 chars, include main keyword + "| Fleamarketfrance") and a Meta Description (150-160 chars, compelling, include keyword).\n\nPRODUCT TITLE: ' + pair.ebay.title + '\nDESCRIPTION: ' + desc + '\n\nRespond ONLY with valid JSON: {"seoTitle":"...","metaDescription":"..."}'});
+    var parsed = await callClaude([{role:'user', content:userContent}], true);
+    pair.newSeoTitle = parsed.seoTitle      || '';
+    pair.newSeoDesc  = parsed.metaDescription || '';
+    pair.hasSeo      = true;
+    pair.checked     = true;
+    pair.status      = pair.diffs.length ? 'diff' : 'noseo';
+  } catch(e) {
+    pair.status = pair.diffs.length ? 'diff' : 'noseo';
+    if (e.name !== 'AbortError') {
+      logError('Claude/Shopify', pair.ebay.id, pair.ebay.title, e.message);
+      setStatus('shopify', 'Erreur SEO #' + pair.ebay.id + ' : ' + e.message, 'error');
+    }
+  }
+  shopifyRefreshCard(i);
+}
+
+async function shopifyGenerateAllSeo() {
+  var btn = document.getElementById('sh-gen-seo-all');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Génération...';
+  startOp('sh-stop');
+  for (var i = 0; i < shPairs.length; i++) {
+    if (stopRequested) break;
+    if (!shPairs[i].hasSeo || !shPairs[i].newSeoTitle) {
+      await shopifyGenerateSeoOne(i);
+      await new Promise(function(r) { setTimeout(r, 500); });
+    }
+  }
+  endOp('sh-stop');
+  btn.disabled = false; btn.textContent = '🔍 Générer SEO manquant';
+  setStatus('shopify', 'Génération SEO terminée.', 'success');
+}
+
+async function shopifyExportSelected() {
+  var toExport = shPairs.filter(function(p) { return p.checked && p.shopify; });
+  if (!toExport.length) { setStatus('shopify', 'Sélectionnez des articles à exporter.', 'error'); return; }
+  if (!confirm('Exporter ' + toExport.length + ' article(s) vers Shopify ?')) return;
+  var btn = document.getElementById('sh-export-all');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Export...';
+  startOp('sh-stop');
+  var success = 0;
+  for (var i = 0; i < shPairs.length; i++) {
+    if (stopRequested) break;
+    var pair = shPairs[i];
+    if (!pair.checked || !pair.shopify) continue;
+    try {
+      var payload = {product: {}};
+      if (pair.diffs.includes('title')) payload.product.title = pair.ebay.title;
+      if (pair.newSeoTitle) payload.product.metafields_global_title_tag = pair.newSeoTitle;
+      if (pair.newSeoDesc)  payload.product.metafields_global_description_tag = pair.newSeoDesc;
+      if (Object.keys(payload.product).length) {
+        await callShopifyAPI('PUT', '/products/' + pair.shopify.id + '.json', payload);
+      }
+      pair.status  = 'exported';
+      pair.checked = false;
+      pair.diffs   = [];
+      if (pair.newSeoTitle) pair.seoTitle = pair.newSeoTitle;
+      if (pair.newSeoDesc)  pair.seoDesc  = pair.newSeoDesc;
+      shCounts.pushed++;
+      success++;
+    } catch(e) {
+      logError('Shopify', pair.ebay.id, pair.ebay.title, e.message);
+      setStatus('shopify', 'Erreur Shopify #' + pair.ebay.id + ' : ' + e.message, 'error');
+    }
+    shopifyRefreshCard(i);
+    await new Promise(function(r) { setTimeout(r, 400); });
+  }
+  endOp('sh-stop');
+  btn.disabled = false; btn.textContent = '→ Exporter sélectionnés vers Shopify';
+  shopifyUpdateCounts();
+  setStatus('shopify', '✓ ' + success + ' article(s) exportés vers Shopify.', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ETSY OAUTH
+// ═══════════════════════════════════════════════════════════════
+async function connectEtsy() {
+  var etsyKey = document.getElementById('s-etsy-key').value.trim();
+  if (!etsyKey) { alert('Entrez votre Etsy API Key.'); return; }
+  saveCreds();
+  try {
+    var resp = await fetch('/etsy/auth_url', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({api_key:etsyKey})});
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    var popup = window.open(data.auth_url, 'etsy_auth', 'width=600,height=700');
+    window.addEventListener('message', function handler(e) {
+      if (e.data && e.data.etsySuccess) {
+        etsyConnected = true;
+        document.getElementById('etsy-status-label').textContent = '✓ Connecté';
+        document.getElementById('etsy-status-label').style.color = 'var(--sage)';
+        document.getElementById('etsy-dot').className = 'conn-dot connected';
+        window.removeEventListener('message', handler);
+      } else if (e.data && e.data.etsyError) {
+        alert('Erreur Etsy : ' + e.data.etsyError);
+        window.removeEventListener('message', handler);
+      }
+    });
+  } catch(e) { alert('Erreur : ' + e.message); }
+}
+
+async function checkEtsyStatus() {
+  try {
+    var resp = await fetch('/etsy/status');
+    var data = await resp.json();
+    if (data.connected) {
+      etsyConnected = true;
+      document.getElementById('etsy-status-label').textContent = '✓ Connecté';
+      document.getElementById('etsy-status-label').style.color = 'var(--sage)';
+      document.getElementById('etsy-dot').className = 'conn-dot connected';
+    }
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SHOPIFY OAuth
+// ═══════════════════════════════════════════════════════════════
+async function connectShopify() {
+  try {
+    var resp = await fetch('/shopify/auth_url', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    var popup = window.open(data.auth_url, 'shopify_auth', 'width=600,height=700');
+    window.addEventListener('message', function handler(e) {
+      if (e.data && e.data.shopifySuccess) {
+        shopifyConnected = true;
+        document.getElementById('shopify-status-label').textContent = '✓ Connecté';
+        document.getElementById('shopify-status-label').style.color = 'var(--shopify)';
+        document.getElementById('shopify-dot').className = 'conn-dot connected';
+        window.removeEventListener('message', handler);
+      } else if (e.data && e.data.shopifyError) {
+        alert('Erreur Shopify : ' + e.data.shopifyError);
+        window.removeEventListener('message', handler);
+      }
+    });
+  } catch(e) { alert('Erreur Shopify : ' + e.message); }
+}
+
+async function checkShopifyStatus() {
+  try {
+    var resp = await fetch('/shopify/status');
+    var data = await resp.json();
+    if (data.connected) {
+      shopifyConnected = true;
+      document.getElementById('shopify-status-label').textContent = '✓ Connecté';
+      document.getElementById('shopify-status-label').style.color = 'var(--shopify)';
+      document.getElementById('shopify-dot').className = 'conn-dot connected';
+    }
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', function() {
+  loadCreds();
+  updateConnectionDots();
+  checkEtsyStatus();
+  checkShopifyStatus();
+  switchTab('settings');
+});
 </script>
 </body>
 </html>
