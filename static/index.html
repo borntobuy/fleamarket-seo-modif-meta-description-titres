@@ -1399,18 +1399,28 @@ async function connectEtsy() {
     var data = await resp.json();
     if (data.error) throw new Error(data.error);
     var popup = window.open(data.auth_url, 'etsy_auth', 'width=600,height=700');
-    window.addEventListener('message', function handler(e) {
-      if (e.data && e.data.etsySuccess) {
-        etsyConnected = true;
-        document.getElementById('etsy-status-label').textContent = '✓ Connecté';
-        document.getElementById('etsy-status-label').style.color = 'var(--sage)';
-        document.getElementById('etsy-dot').className = 'conn-dot connected';
-        window.removeEventListener('message', handler);
-      } else if (e.data && e.data.etsyError) {
-        alert('Erreur Etsy : ' + e.data.etsyError);
-        window.removeEventListener('message', handler);
-      }
-    });
+    document.getElementById('etsy-status-label').textContent = 'En attente...';
+    var maxTries = 60;
+    var tries = 0;
+    var interval = setInterval(async function() {
+      tries++;
+      try {
+        var r = await fetch('/etsy/status');
+        var d = await r.json();
+        if (d.connected) {
+          clearInterval(interval);
+          etsyConnected = true;
+          document.getElementById('etsy-status-label').textContent = '✓ Connecté';
+          document.getElementById('etsy-status-label').style.color = 'var(--sage)';
+          document.getElementById('etsy-dot').className = 'conn-dot connected';
+          if (popup && !popup.closed) popup.close();
+        } else if (tries >= maxTries || (popup && popup.closed)) {
+          clearInterval(interval);
+          if (!etsyConnected)
+            document.getElementById('etsy-status-label').textContent = 'Non connecté';
+        }
+      } catch(e) { clearInterval(interval); }
+    }, 500);
   } catch(e) { alert('Erreur : ' + e.message); }
 }
 
@@ -1436,18 +1446,30 @@ async function connectShopify() {
     var data = await resp.json();
     if (data.error) throw new Error(data.error);
     var popup = window.open(data.auth_url, 'shopify_auth', 'width=600,height=700');
-    window.addEventListener('message', function handler(e) {
-      if (e.data && e.data.shopifySuccess) {
-        shopifyConnected = true;
-        document.getElementById('shopify-status-label').textContent = '✓ Connecté';
-        document.getElementById('shopify-status-label').style.color = 'var(--shopify)';
-        document.getElementById('shopify-dot').className = 'conn-dot connected';
-        window.removeEventListener('message', handler);
-      } else if (e.data && e.data.shopifyError) {
-        alert('Erreur Shopify : ' + e.data.shopifyError);
-        window.removeEventListener('message', handler);
-      }
-    });
+    document.getElementById('shopify-status-label').textContent = 'En attente...';
+
+    // Poller /shopify/status jusqu'à connexion ou fermeture popup
+    var maxTries = 60; // 30 secondes max
+    var tries = 0;
+    var interval = setInterval(async function() {
+      tries++;
+      try {
+        var r = await fetch('/shopify/status');
+        var d = await r.json();
+        if (d.connected) {
+          clearInterval(interval);
+          shopifyConnected = true;
+          document.getElementById('shopify-status-label').textContent = '✓ Connecté';
+          document.getElementById('shopify-status-label').style.color = 'var(--shopify)';
+          document.getElementById('shopify-dot').className = 'conn-dot connected';
+          if (popup && !popup.closed) popup.close();
+        } else if (tries >= maxTries || (popup && popup.closed)) {
+          clearInterval(interval);
+          if (!shopifyConnected)
+            document.getElementById('shopify-status-label').textContent = 'Non connecté';
+        }
+      } catch(e) { clearInterval(interval); }
+    }, 500);
   } catch(e) { alert('Erreur Shopify : ' + e.message); }
 }
 
