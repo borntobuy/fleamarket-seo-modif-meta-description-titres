@@ -1153,12 +1153,23 @@ async function shopifyReload(forceAll) {
   try {
     var allShopify = [];
     var pageInfo = null;
-    do {
+    var visitedPages = new Set();
+    var firstCall = true;
+    while (true) {
       var path = '/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,tags,body_html' + (pageInfo ? '&page_info=' + pageInfo : '');
+      // Eviter les boucles infinies
+      if (visitedPages.has(pageInfo)) break;
+      visitedPages.add(pageInfo);
       var resp = await callShopifyAPI('GET', path, null);
-      allShopify = allShopify.concat(resp.products || []);
+      var batch = resp.products || [];
+      allShopify = allShopify.concat(batch);
+      setStatus('shopify', 'Chargement... ' + allShopify.length + ' produits récupérés', 'info');
+      // S'arrêter si pas de page suivante OU si la batch est vide OU si on a tout eu
       pageInfo = resp.next_page_info || null;
-    } while (pageInfo);
+      if (!pageInfo || batch.length === 0) break;
+      // S'arrêter aussi si on a déjà vu cette page_info
+      if (visitedPages.has(pageInfo)) break;
+    }
 
     shPairs = [];
     ebListings.forEach(function(eb) {
