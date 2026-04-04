@@ -381,16 +381,23 @@ def shopify_get_products():
     all_products = []
     url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,body_html'
 
+    # Récupérer le total via count
+    try:
+        count_resp = requests.get(
+            'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/count.json',
+            headers={'X-Shopify-Access-Token': token}, timeout=15
+        )
+        total_count = count_resp.json().get('count', 0) if count_resp.status_code == 200 else 0
+    except Exception:
+        total_count = 0
+
+    page_num = 0
     try:
         while url:
-            resp = requests.get(
-                url,
-                headers={'X-Shopify-Access-Token': token},
-                timeout=90
-            )
+            page_num += 1
+            resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=90)
             if resp.status_code != 200:
                 return jsonify({'error': 'Shopify HTTP ' + str(resp.status_code) + ': ' + resp.text[:200]}), resp.status_code
-
             products = resp.json().get('products', [])
             for p in products:
                 seo_title    = p.get('metafields_global_title_tag') or ''
@@ -401,27 +408,19 @@ def shopify_get_products():
                 sku   = p['variants'][0].get('sku', '')   if p.get('variants') else ''
                 price = p['variants'][0].get('price', '') if p.get('variants') else ''
                 all_products.append({
-                    'id':          p['id'],
-                    'title':       p.get('title', ''),
-                    'handle':      p.get('handle', ''),
-                    'sku':         sku,
-                    'price':       price,
-                    'seoTitle':    seo_title,
-                    'seoDesc':     seo_desc,
-                    'hasSeo':      bool(seo_title and seo_desc),
-                    'alreadyDone': already_done,
-                    'bodyHtml':    (p.get('body_html') or '')
+                    'id': p['id'], 'title': p.get('title', ''), 'handle': p.get('handle', ''),
+                    'sku': sku, 'price': price, 'seoTitle': seo_title, 'seoDesc': seo_desc,
+                    'hasSeo': bool(seo_title and seo_desc), 'alreadyDone': already_done,
+                    'bodyHtml': (p.get('body_html') or '')
                 })
-
-            # Pagination via header Link
             url  = None
             link = resp.headers.get('Link', '')
             if 'rel="next"' in link:
-                m = _re.search(r'<([^>]+)>;\s*rel="next"', link)
+                m = _re.search(r'<([^>]+)>; *rel="next"', link)
                 if m:
                     url = m.group(1)
 
-        return jsonify({'products': all_products, 'total': len(all_products)})
+        return jsonify({'products': all_products, 'total': len(all_products), 'total_store': total_count, 'pages': page_num})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -437,6 +436,7 @@ def shopify_update_seo():
     try:
         marked_title = seo_title if SHOPIFY_MARKER in seo_title else seo_title + ' ' + SHOPIFY_MARKER
         description = data.get('description', '')
+        handle = data.get('handle', '')
         payload = {'product': {
             'id': product_id,
             'metafields_global_title_tag':       marked_title,
@@ -444,6 +444,8 @@ def shopify_update_seo():
         }}
         if description:
             payload['product']['body_html'] = description + '\n' + SHOPIFY_MARKER
+        if handle:
+            payload['product']['handle'] = handle
         resp = requests.put(
             'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json',
             headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
