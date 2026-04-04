@@ -235,6 +235,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-sage btn-sm" onclick="ebayReload(true)">↺ Tout réimporter</button>
       <button class="btn-outline btn-sm" id="eb-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
       <button class="btn-outline btn-sm" id="eb-etsy-mode" onclick="toggleEtsyMode()">🏷 Mode Etsy</button>
+      <button class="btn-outline btn-sm" id="eb-select-all" onclick="ebayToggleSelectAll()">☐ Tout sélectionner</button>
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div id="eb-pagination-top"></div>
@@ -266,6 +267,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-sage btn-sm" id="et-gen-tags-all" onclick="etsyGenerateAllTags()">🏷 Générer tags manquants</button>
       <button class="btn-outline btn-sm" onclick="etsyReload()">↺ Recharger</button>
       <button class="btn-outline btn-sm" id="et-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
+      <button class="btn-outline btn-sm" id="et-select-all" onclick="etsyToggleSelectAll()">☐ Tout sélectionner</button>
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div class="search-bar">
@@ -304,6 +306,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" onclick="shopifyReload(false)">↺ Recharger non traités</button>
       <button class="btn-outline btn-sm" onclick="shopifyReload(true)">↺ Tout réimporter</button>
       <button class="btn-outline btn-sm" id="sh-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
+      <button class="btn-outline btn-sm" id="sh-select-all" onclick="shopifyToggleSelectAll()">☐ Tout sélectionner</button>
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div class="search-bar">
@@ -439,6 +442,36 @@ function escHTML(s) {
 // ═══════════════════════════════════════════════════════════════
 // STOP / ABORT
 // ═══════════════════════════════════════════════════════════════
+// ── Select All helpers ────────────────────────────────────────────────────
+var ebayAllSelected   = false;
+var etsyAllSelected   = false;
+var shopifyAllSelected = false;
+
+function ebayToggleSelectAll() {
+  ebayAllSelected = !ebayAllSelected;
+  ebListings.forEach(function(l) { l.selected = ebayAllSelected; });
+  var btn = document.getElementById('eb-select-all');
+  if (btn) btn.textContent = ebayAllSelected ? '☑ Tout deselectionnner' : '☐ Tout selectionner';
+  ebayRenderPage();
+}
+function ebaySetSelected(i, val) { if (ebListings[i]) ebListings[i].selected = val; }
+
+function etsyToggleSelectAll() {
+  etsyAllSelected = !etsyAllSelected;
+  etPairs.forEach(function(p) { if (p.etsy) p.checked = etsyAllSelected; });
+  var btn = document.getElementById('et-select-all');
+  if (btn) btn.textContent = etsyAllSelected ? '☑ Tout deselectionnner' : '☐ Tout selectionner';
+  etsyRenderPage();
+}
+
+function shopifyToggleSelectAll() {
+  shopifyAllSelected = !shopifyAllSelected;
+  shPairs.forEach(function(p) { p.checked = shopifyAllSelected; });
+  var btn = document.getElementById('sh-select-all');
+  if (btn) btn.textContent = shopifyAllSelected ? '☑ Tout deselectionnner' : '☐ Tout selectionner';
+  shopifyRenderPage();
+}
+
 function requestStop() {
   stopRequested = true;
   if (abortCtrl) abortCtrl.abort();
@@ -647,6 +680,7 @@ async function ebayReload(forceAll) {
           sku: sku, price: price, qty: qty,
           alreadyDone: desc.includes(MARKER),
           status: desc.includes(MARKER) ? 'done' : 'pending',
+          selected: true,
           newTitle: null, newDescription: null, keyword: null,
           newSpecifics: {}, etsyTags: [], altTexts: []
         });
@@ -717,6 +751,7 @@ function ebayBuildCard(item, i) {
     updated:    '<span class="badge badge-ok">✓ Publié</span>',
     done:       '<span class="badge badge-done">✓ Optimisé</span>'
   };
+  var ebCheckbox = '<input type="checkbox" class="listing-checkbox" ' + (item.selected ? 'checked' : '') + ' onchange="ebaySetSelected(' + i + ', this.checked)" style="margin-right:8px;margin-top:3px;flex-shrink:0">';
 
   var genLabel   = etsyOnlyMode ? '🏷 Tags Etsy' : 'Générer';
   var regenLabel = etsyOnlyMode ? '🏷 Regénérer tags' : 'Regénérer';
@@ -760,6 +795,7 @@ function ebayBuildCard(item, i) {
   }
 
   div.innerHTML = '<div class="listing-header">'
+    + ebCheckbox
     + '<div class="listing-info">' + titleHTML
     + '<div class="listing-subtitle">SKU: ' + escHTML(item.sku || '-') + ' | Prix: ' + escHTML(item.price || '-') + ' | Qté: ' + escHTML(item.qty || '-') + '</div>'
     + '</div>'
@@ -869,7 +905,7 @@ async function ebayPushAll() {
   startOp('eb-stop');
   for (var i = 0; i < ebListings.length; i++) {
     if (stopRequested) break;
-    if (ebListings[i].status === 'generated') { await ebayPublishOne(i); await new Promise(function(r) { setTimeout(r, 400); }); }
+    if (ebListings[i].status === 'generated' && ebListings[i].selected !== false) { await ebayPublishOne(i); await new Promise(function(r) { setTimeout(r, 400); }); }
   }
   endOp('eb-stop');
   btn.disabled = false; btn.textContent = '② Publier tout eBay';
@@ -1146,11 +1182,12 @@ function shopifyUpdateCounts() {
 }
 
 async function shopifyReload(forceAll) {
-  if (!shopifyConnected) { setStatus('shopify', 'Connectez Shopify dans l\'onglet Paramètres.', 'error'); return; }
-  var c = getCreds();
-  if (!ebListings.length) { setStatus('shopify', 'Chargez d\'abord vos articles eBay.', 'error'); return; }
+  if (!shopifyConnected) { setStatus('shopify', 'Connectez Shopify dans l\'onglet Parametres.', 'error'); return; }
   setStatus('shopify', 'Chargement des produits Shopify...', 'info');
+  document.getElementById('shopify-connect-prompt').style.display = 'none';
+  document.getElementById('shopify-main').style.display = 'block';
   try {
+    setStatus('shopify', 'Recuperation du nombre de produits...', 'info');
     var fetchResp = await fetch('/shopify/products', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -1158,56 +1195,32 @@ async function shopifyReload(forceAll) {
     });
     var fetchData = await fetchResp.json();
     if (fetchData.error) throw new Error(fetchData.error);
-    var allShopify = fetchData.products || [];
-    setStatus('shopify', allShopify.length + ' produit(s) Shopify charges.', 'info');
+    var allShopify  = fetchData.products    || [];
+    var totalStore  = fetchData.total_store || allShopify.length;
+    var pagesLoaded = fetchData.pages       || 1;
+    setStatus('shopify', allShopify.length + ' / ' + totalStore + ' produit(s) recuperes (' + pagesLoaded + ' page(s)).', 'info');
 
-        // Construire les paires en matchant eBay <-> Shopify par SKU
     shPairs = [];
-    ebListings.forEach(function(eb) {
-      var match = allShopify.find(function(sh) {
-        return sh.sku && eb.sku && sh.sku === eb.sku;
-      });
-      if (!match && !forceAll) return;
-
-      var seoTitle = match ? (match.seoTitle || '') : '';
-      var seoDesc  = match ? (match.seoDesc  || '') : '';
-      var diffs    = [];
-      if (match) {
-        if (eb.title !== match.title) diffs.push('title');
-        if (eb.price && match.price && parseFloat(eb.price).toFixed(2) !== parseFloat(match.price).toFixed(2)) diffs.push('price');
-        // Comparer description eBay vs Shopify
-        var ebDesc = eb.newDescription || eb.description || '';
-        var shDesc = match.bodyHtml || '';
-        if (ebDesc && !shDesc.includes('<!-- fmf-shopify -->')) diffs.push('description');
-      }
-      var hasSeo = seoTitle.length > 0 && seoDesc.length > 0;
-      // Description à pousser = description eBay optimisée (si dispo) sinon description eBay originale
-      var ebDescToPush = eb.newDescription || eb.description || '';
-      shPairs.push({
-        ebay:          eb,
-        shopify:       match || null,
-        diffs:         diffs,
-        seoTitle:      seoTitle,
-        seoDesc:       seoDesc,
-        hasSeo:        hasSeo,
-        newSeoTitle:   null,
-        newSeoDesc:    null,
-        descToPush:    ebDescToPush,
-        checked:       diffs.length > 0 || !hasSeo,
-        status:        match ? (diffs.length ? 'diff' : (hasSeo ? 'ok' : 'noseo')) : 'missing'
-      });
-    });
-    // Ajouter aussi les produits Shopify sans correspondance eBay
     allShopify.forEach(function(sh) {
-      var exists = shPairs.find(function(p) { return p.shopify && p.shopify.id === sh.id; });
-      if (!exists) {
-        shPairs.push({
-          ebay: null, shopify: sh, diffs: [],
-          seoTitle: sh.seoTitle || '', seoDesc: sh.seoDesc || '',
-          hasSeo: sh.hasSeo, newSeoTitle: null, newSeoDesc: null,
-          checked: false, status: sh.hasSeo ? 'ok' : 'noseo'
-        });
-      }
+      var hasSeo  = !!(sh.seoTitle && sh.seoDesc);
+      var hasDesc = !!(sh.bodyHtml && sh.bodyHtml.includes('<!-- fmf-shopify -->'));
+      var needsWork = !hasSeo || !hasDesc;
+      shPairs.push({
+        ebay:        null,
+        shopify:     sh,
+        diffs:       needsWork ? ['seo'] : [],
+        seoTitle:    sh.seoTitle || '',
+        seoDesc:     sh.seoDesc  || '',
+        handle:      sh.handle   || '',
+        price:       sh.price    || '',
+        hasSeo:      hasSeo,
+        hasDesc:     hasDesc,
+        newSeoTitle: null,
+        newSeoDesc:  null,
+        newHandle:   null,
+        checked:     needsWork,
+        status:      !hasSeo ? 'noseo' : (!hasDesc ? 'nodesc' : 'ok')
+      });
     });
 
     shFiltered = shPairs.slice();
@@ -1217,9 +1230,7 @@ async function shopifyReload(forceAll) {
     shCounts.noseo  = shPairs.filter(function(p) { return !p.hasSeo; }).length;
     shCounts.pushed = 0;
     shopifyUpdateCounts();
-    setStatus('shopify', shPairs.length + ' articles comparés. ' + shCounts.diffs + ' différences, ' + shCounts.noseo + ' SEO manquants.', 'success');
-    document.getElementById('shopify-connect-prompt').style.display = 'none';
-    document.getElementById('shopify-main').style.display = 'block';
+    setStatus('shopify', shPairs.length + ' article(s) Shopify charges. ' + shCounts.noseo + ' SEO manquants.', 'success');
     shopifyRenderPage();
   } catch(e) {
     setStatus('shopify', 'Erreur : ' + e.message, 'error');
@@ -1272,9 +1283,9 @@ function shopifyBuildCard(pair, i) {
     : '<span class="badge badge-ok">✓ Exporté</span>';
 
   var fields = [
-    {key:'title',       label:'Titre',       ebVal: eb ? eb.title : '-',  shVal: sh ? sh.title : null},
-    {key:'price',       label:'Prix',        ebVal: eb ? eb.price : '-',  shVal: sh ? sh.price : null},
-    {key:'description', label:'Description', ebVal: eb ? '✓ Disponible' : '-', shVal: sh && sh.bodyHtml && sh.bodyHtml.includes('<!-- fmf-shopify -->') ? '✓ Optimisée' : (sh && sh.bodyHtml ? 'Non optimisée' : 'Absente')}
+    {key:'title',       label:'Titre',       ebVal: '-', shVal: sh ? sh.title : '-'},
+    {key:'handle',      label:'URL Handle',  ebVal: pair.newHandle || '-', shVal: sh ? ('/' + sh.handle) : '-'},
+    {key:'description', label:'Description', ebVal: '-', shVal: sh && sh.bodyHtml && sh.bodyHtml.includes('<!-- fmf-shopify -->') ? 'Optimisee' : (sh && sh.bodyHtml ? 'Non optimisee' : 'Absente')}
   ];
 
   var compareHTML = '<div class="compare-grid"><div><h4>eBay</h4>';
@@ -1340,11 +1351,13 @@ async function shopifyGenerateSeoOne(i) {
       if (img) userContent.push({type:'image', source:{type:'base64', media_type:img.mediaType, data:img.base64}});
     }
     var desc = (pair.ebay ? pair.ebay.description||'' : pair.shopify ? pair.shopify.bodyHtml||'' : '').replace(/<[^>]+>/g,' ').substring(0,600);
-    var productTitle = pair.ebay ? pair.ebay.title : (pair.shopify ? pair.shopify.title : '');
-    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance, a French vintage and antiques shop on Shopify targeting US and UK buyers.\n\nAnalyze the photo and product info below, then generate:\n\n1. SEO TITLE (max 70 chars total including | Fleamarketfrance):\n- Find the most searched Google Shopping keyword for this exact item\n- Structure: [Primary Keyword] [Key Attribute: material/style/era] | Fleamarketfrance\n- Example good: French Silver Toast Rack Mid Century 1950s | Fleamarketfrance\n- Example bad: Buy Vintage French Item Online | Fleamarketfrance\n- Include material OR era OR style when it adds search value\n- No filler words (buy, shop, get, beautiful)\n\n2. META DESCRIPTION (strictly 150-160 characters, count carefully):\n- Open with primary keyword\n- Include: what it is + French origin + condition/era + unique feature\n- Close with a short call to action (Ships from France, Free US shipping, etc.)\n- Must be between 150 and 160 characters exactly\n\nPRODUCT TITLE: ' + productTitle + '\nDESCRIPTION: ' + desc + '\n\nRespond ONLY with valid JSON, no markdown, no backticks: {\"seoTitle\":\"...\",\"metaDescription\":\"...\"}'});
+    var productTitle = pair.shopify ? pair.shopify.title : '';
+    var currentHandle = pair.shopify ? pair.shopify.handle : '';
+    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance, a French vintage antiques shop on Shopify targeting US and UK buyers.\n\nAnalyze the photo and info, then generate:\n\n1. SEO TITLE (max 70 chars including | Fleamarketfrance):\n- Primary keyword = what a buyer types on Google Shopping\n- Structure: [Keyword] [Material/Style/Era] | Fleamarketfrance\n- Good: French Silver Toast Rack Mid Century | Fleamarketfrance\n- Bad: Buy Vintage French Item | Fleamarketfrance\n\n2. META DESCRIPTION (150-160 chars exactly):\n- Start with keyword, include French origin + era/condition + CTA\n\n3. URL HANDLE (slug for product URL):\n- Max 50 chars, lowercase, hyphens only, no numbers\n- Based on primary keyword + 1-2 key attributes\n- Good: french-silver-toast-rack-mid-century\n- Bad: 1-vintage-oyster-basket-french-1207221\n- Current handle (for reference): ' + currentHandle + '\n\nPRODUCT: ' + productTitle + '\nDESC: ' + desc + '\n\nJSON only, no markdown: {\"seoTitle\":\"...\",\"metaDescription\":\"...\",\"handle\":\"...\"}'});
     var parsed = await callClaude([{role:'user', content:userContent}], true);
-    pair.newSeoTitle = parsed.seoTitle      || '';
+    pair.newSeoTitle = parsed.seoTitle       || '';
     pair.newSeoDesc  = parsed.metaDescription || '';
+    pair.newHandle   = parsed.handle          || '';
     pair.hasSeo      = true;
     pair.checked     = true;
     pair.status      = pair.diffs.length ? 'diff' : 'noseo';
@@ -1400,7 +1413,8 @@ async function shopifyExportSelected() {
             product_id:  pair.shopify.id,
             seoTitle:    pair.newSeoTitle || pair.seoTitle,
             seoDesc:     pair.newSeoDesc  || pair.seoDesc,
-            description: pair.descToPush  || ''
+            description: pair.descToPush  || '',
+            handle:      pair.newHandle   || ''
           })
         });
         var seoData = await seoResp.json();
