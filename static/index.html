@@ -1175,19 +1175,26 @@ async function shopifyReload(forceAll) {
       if (match) {
         if (eb.title !== match.title) diffs.push('title');
         if (eb.price && match.price && parseFloat(eb.price).toFixed(2) !== parseFloat(match.price).toFixed(2)) diffs.push('price');
+        // Comparer description eBay vs Shopify
+        var ebDesc = eb.newDescription || eb.description || '';
+        var shDesc = match.bodyHtml || '';
+        if (ebDesc && !shDesc.includes('<!-- fmf-shopify -->')) diffs.push('description');
       }
       var hasSeo = seoTitle.length > 0 && seoDesc.length > 0;
+      // Description à pousser = description eBay optimisée (si dispo) sinon description eBay originale
+      var ebDescToPush = eb.newDescription || eb.description || '';
       shPairs.push({
-        ebay:        eb,
-        shopify:     match || null,
-        diffs:       diffs,
-        seoTitle:    seoTitle,
-        seoDesc:     seoDesc,
-        hasSeo:      hasSeo,
-        newSeoTitle: null,
-        newSeoDesc:  null,
-        checked:     false,
-        status:      match ? (diffs.length ? 'diff' : (hasSeo ? 'ok' : 'noseo')) : 'missing'
+        ebay:          eb,
+        shopify:       match || null,
+        diffs:         diffs,
+        seoTitle:      seoTitle,
+        seoDesc:       seoDesc,
+        hasSeo:        hasSeo,
+        newSeoTitle:   null,
+        newSeoDesc:    null,
+        descToPush:    ebDescToPush,
+        checked:       diffs.length > 0 || !hasSeo,
+        status:        match ? (diffs.length ? 'diff' : (hasSeo ? 'ok' : 'noseo')) : 'missing'
       });
     });
     // Ajouter aussi les produits Shopify sans correspondance eBay
@@ -1254,6 +1261,8 @@ function shopifyBuildCard(pair, i) {
   div.id = 'sh-item-' + i;
   var eb = pair.ebay;
   var sh = pair.shopify;
+  // Sécurité : si pas de produit eBay ni Shopify, on ignore
+  if (!eb && !sh) { div.innerHTML = ''; return div; }
 
   var statusBadge = pair.status === 'ok'     ? '<span class="badge badge-ok">✓ Sync</span>'
     : pair.status === 'diff'    ? '<span class="badge badge-diff">⚠ Différences</span>'
@@ -1263,8 +1272,9 @@ function shopifyBuildCard(pair, i) {
     : '<span class="badge badge-ok">✓ Exporté</span>';
 
   var fields = [
-    {key:'title', label:'Titre', ebVal: eb.title, shVal: sh ? sh.title : null},
-    {key:'price', label:'Prix',  ebVal: eb.price,  shVal: sh && sh.variants && sh.variants[0] ? sh.variants[0].price : null}
+    {key:'title',       label:'Titre',       ebVal: eb ? eb.title : '-',  shVal: sh ? sh.title : null},
+    {key:'price',       label:'Prix',        ebVal: eb ? eb.price : '-',  shVal: sh ? sh.price : null},
+    {key:'description', label:'Description', ebVal: eb ? '✓ Disponible' : '-', shVal: sh && sh.bodyHtml && sh.bodyHtml.includes('<!-- fmf-shopify -->') ? '✓ Optimisée' : (sh && sh.bodyHtml ? 'Non optimisée' : 'Absente')}
   ];
 
   var compareHTML = '<div class="compare-grid"><div><h4>eBay</h4>';
@@ -1299,10 +1309,13 @@ function shopifyBuildCard(pair, i) {
     ? '<input type="checkbox" class="listing-checkbox" ' + (pair.checked?'checked':'') + ' onchange="shopifyToggleCheck(' + i + ', this.checked)">'
     : '<input type="checkbox" class="listing-checkbox" disabled>';
 
+  var displayTitle = eb ? eb.title : (sh ? sh.title : '');
+  var displaySku   = eb ? eb.sku   : (sh ? sh.sku   : '-');
+  var displayEbId  = eb ? eb.id    : '';
   div.innerHTML = '<div class="listing-header">'
     + checkboxHTML
-    + '<div class="listing-info"><div class="listing-title">' + escHTML(eb.title) + '</div>'
-    + '<div class="listing-subtitle">SKU: ' + escHTML(eb.sku||'-') + ' | eBay #' + escHTML(eb.id) + (sh ? ' | Shopify #' + escHTML(String(sh.id||'')) : '') + '</div></div>'
+    + '<div class="listing-info"><div class="listing-title">' + escHTML(displayTitle) + '</div>'
+    + '<div class="listing-subtitle">SKU: ' + escHTML(displaySku||'-') + (displayEbId ? ' | eBay #' + escHTML(displayEbId) : '') + (sh ? ' | Shopify #' + escHTML(String(sh.id||'')) : '') + '</div></div>'
     + '<div class="listing-meta">' + statusBadge + '</div></div>'
     + '<div class="listing-body">' + compareHTML + seoHTML + '</div>';
   return div;
@@ -1321,12 +1334,14 @@ async function shopifyGenerateSeoOne(i) {
   shopifyRefreshCard(i);
   try {
     var userContent = [];
-    for (var pi = 0; pi < Math.min(2, pair.ebay.pictures.length); pi++) {
-      var img = await fetchImageB64(pair.ebay.pictures[pi]);
+    // Max 1 image pour Shopify (éviter timeout + limite 5MB)
+    if (pair.ebay && pair.ebay.pictures && pair.ebay.pictures.length > 0) {
+      var img = await fetchImageB64(pair.ebay.pictures[0]);
       if (img) userContent.push({type:'image', source:{type:'base64', media_type:img.mediaType, data:img.base64}});
     }
-    var desc = (pair.ebay.description||'').replace(/<[^>]+>/g,' ').substring(0,600);
-    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance (French vintage Shopify store).\nGenerate a Shopify SEO Title (max 70 chars, include main keyword + "| Fleamarketfrance") and a Meta Description (150-160 chars, compelling, include keyword).\n\nPRODUCT TITLE: ' + pair.ebay.title + '\nDESCRIPTION: ' + desc + '\n\nRespond ONLY with valid JSON: {"seoTitle":"...","metaDescription":"..."}'});
+    var desc = (pair.ebay ? pair.ebay.description||'' : pair.shopify ? pair.shopify.bodyHtml||'' : '').replace(/<[^>]+>/g,' ').substring(0,600);
+    var productTitle = pair.ebay ? pair.ebay.title : (pair.shopify ? pair.shopify.title : '');
+    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance, a French vintage and antiques shop on Shopify targeting US and UK buyers.\n\nAnalyze the photo and product info below, then generate:\n\n1. SEO TITLE (max 70 chars total including | Fleamarketfrance):\n- Find the most searched Google Shopping keyword for this exact item\n- Structure: [Primary Keyword] [Key Attribute: material/style/era] | Fleamarketfrance\n- Example good: French Silver Toast Rack Mid Century 1950s | Fleamarketfrance\n- Example bad: Buy Vintage French Item Online | Fleamarketfrance\n- Include material OR era OR style when it adds search value\n- No filler words (buy, shop, get, beautiful)\n\n2. META DESCRIPTION (strictly 150-160 characters, count carefully):\n- Open with primary keyword\n- Include: what it is + French origin + condition/era + unique feature\n- Close with a short call to action (Ships from France, Free US shipping, etc.)\n- Must be between 150 and 160 characters exactly\n\nPRODUCT TITLE: ' + productTitle + '\nDESCRIPTION: ' + desc + '\n\nRespond ONLY with valid JSON, no markdown, no backticks: {\"seoTitle\":\"...\",\"metaDescription\":\"...\"}'});
     var parsed = await callClaude([{role:'user', content:userContent}], true);
     pair.newSeoTitle = parsed.seoTitle      || '';
     pair.newSeoDesc  = parsed.metaDescription || '';
@@ -1378,10 +1393,15 @@ async function shopifyExportSelected() {
         if (pair.diffs.includes('title') && pair.ebay) titlePayload.product.title = pair.ebay.title;
         await callShopifyAPI('PUT', '/products/' + pair.shopify.id + '.json', titlePayload);
       }
-      if (pair.newSeoTitle || pair.newSeoDesc) {
+      if (pair.newSeoTitle || pair.newSeoDesc || pair.descToPush) {
         var seoResp = await fetch('/shopify/update_seo', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({product_id: pair.shopify.id, seoTitle: pair.newSeoTitle || pair.seoTitle, seoDesc: pair.newSeoDesc || pair.seoDesc})
+          body: JSON.stringify({
+            product_id:  pair.shopify.id,
+            seoTitle:    pair.newSeoTitle || pair.seoTitle,
+            seoDesc:     pair.newSeoDesc  || pair.seoDesc,
+            description: pair.descToPush  || ''
+          })
         });
         var seoData = await seoResp.json();
         if (!seoData.success) throw new Error(seoData.error || 'Erreur update SEO');
