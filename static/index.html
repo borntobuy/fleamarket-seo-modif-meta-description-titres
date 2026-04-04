@@ -197,8 +197,9 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
   </div>
   <div class="card">
     <div class="card-title">Shopify</div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <button class="btn-shopify" onclick="connectShopify()">Connecter Shopify OAuth</button>
+    <p style="font-size:11px;color:var(--sage)">La connexion Shopify se fait directement depuis l'onglet Shopify SEO.</p>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
+      <div class="conn-status"><div class="conn-dot" id="shopify-dot2"></div>Shopify</div>
       <span id="shopify-status-label" style="font-size:11px;color:var(--border)">Non connecté</span>
     </div>
   </div>
@@ -1297,6 +1298,26 @@ function shopifyBuildCard(pair, i) {
     }).join('') + '</div>';
   }
 
+  // Miniatures Shopify
+  var thumbsHTML = '';
+  if (sh.images && sh.images.length) {
+    thumbsHTML = '<div class="thumbs">';
+    sh.images.slice(0,4).forEach(function(u) {
+      thumbsHTML += '<img class="thumb" src="' + escHTML(u) + '">';
+    });
+    thumbsHTML += '</div>';
+  }
+
+  // Alt texts générés
+  var altHTML = '';
+  if (pair.newAltTexts && pair.newAltTexts.length) {
+    altHTML = '<div class="specifics-wrap" style="margin-top:8px"><div class="section-label">Alt Texts générés</div><div class="specifics-row">';
+    pair.newAltTexts.forEach(function(a, idx) {
+      altHTML += '<span class="tag new" style="max-width:100%;display:block;margin:2px 0">📷 ' + (idx+1) + ': ' + escHTML(a) + '</span>';
+    });
+    altHTML += '</div></div>';
+  }
+
   // Description actuelle (extrait)
   var descText = sh.bodyHtml ? sh.bodyHtml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').substring(0,300) + '...' : 'Aucune description';
 
@@ -1359,6 +1380,7 @@ function shopifyBuildCard(pair, i) {
     + '<div class="compare-field"><div class="section-label">Description actuelle</div>'
     + '<div class="val">' + escHTML(descText) + '</div></div>'
     + seoHTML
+    + altHTML
     + actionsHTML
     + '</div>';
   return div;
@@ -1386,11 +1408,12 @@ async function shopifyGenerateSeoOne(i) {
     var desc = (pair.ebay ? pair.ebay.description||'' : pair.shopify ? pair.shopify.bodyHtml||'' : '').replace(/<[^>]+>/g,' ').substring(0,600);
     var productTitle = pair.shopify ? pair.shopify.title : '';
     var currentHandle = pair.shopify ? pair.shopify.handle : '';
-    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance, a French brocante shop on Shopify selling authentic vintage and antique pieces sourced in France.\n\nAnalyze the photo and info, then generate:\n\n1. SEO TITLE (max 70 chars including | Fleamarketfrance):\n- Primary keyword = exactly what a collector or buyer types on Google Shopping\n- Structure: [Primary Keyword] [1-2 key attributes: material/style/era] | Fleamarketfrance\n- Good: French Silver Toast Rack Mid Century 1950s | Fleamarketfrance\n- Bad examples (never do this): Buy Vintage French Item | Fleamarketfrance / Shop Now French Antiques | Fleamarketfrance\n- No commercial phrases (buy, shop, get, order, free shipping, tariff-free)\n- No filler adjectives (beautiful, stunning, gorgeous, amazing)\n- Focus purely on what the object IS\n\n2. META DESCRIPTION (150-160 chars exactly — count carefully):\n- Start with the primary keyword\n- Describe: what it is + French origin + era or material + one specific detail\n- End with a factual statement, not a sales pitch\n- NEVER mention free shipping, tariff-free, shop now, or discount\n- Example: French silver-plated toast rack, mid-century 1950s Parisian manufacture. Eight slots, excellent vintage condition. Ships directly from France.\n\n3. URL HANDLE:\n- Max 50 chars, lowercase, hyphens only, no numbers, no reference codes\n- Based on primary keyword + 1-2 key attributes only\n- IMPORTANT: extract the series of digits at the END of the product title and keep them at the end of the handle. This ensures uniqueness.\n- Good: french-silver-toast-rack-1950254\n- Bad: french-silver-toast-rack (no number = risk of duplicates)\n- Bad: silver-plated-knife-rests-9999999 (wrong number invented)\n- Current handle (reference only): ' + currentHandle + '\n\nPRODUCT: ' + productTitle + '\nDESC: ' + desc + '\n\nJSON only, no markdown: {\"seoTitle\":\"...\",\"metaDescription\":\"...\",\"handle\":\"...\"}'});
+    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance, a French brocante shop on Shopify selling authentic vintage and antique pieces sourced in France.\n\nAnalyze the photo and info, then generate:\n\n1. SEO TITLE (max 70 chars including | Fleamarketfrance):\n- Primary keyword = exactly what a collector or buyer types on Google Shopping\n- Structure: [Primary Keyword] [1-2 key attributes: material/style/era] | Fleamarketfrance\n- Good: French Silver Toast Rack Mid Century 1950s | Fleamarketfrance\n- Bad examples (never do this): Buy Vintage French Item | Fleamarketfrance / Shop Now French Antiques | Fleamarketfrance\n- No commercial phrases (buy, shop, get, order, free shipping, tariff-free)\n- No filler adjectives (beautiful, stunning, gorgeous, amazing)\n- Focus purely on what the object IS\n\n2. META DESCRIPTION (150-160 chars exactly — count carefully):\n- Start with the primary keyword\n- Describe: what it is + French origin + era or material + one specific detail\n- End with a factual statement, not a sales pitch\n- NEVER mention free shipping, tariff-free, shop now, or discount\n- Example: French silver-plated toast rack, mid-century 1950s Parisian manufacture. Eight slots, excellent vintage condition. Ships directly from France.\n\n3. URL HANDLE:\n- Max 50 chars, lowercase, hyphens only, no numbers, no reference codes\n- Based on primary keyword + 1-2 key attributes only\n- IMPORTANT: extract the series of digits at the END of the product title and keep them at the end of the handle. This ensures uniqueness.\n- Good: french-silver-toast-rack-1950254\n- Bad: french-silver-toast-rack (no number = risk of duplicates)\n- Bad: silver-plated-knife-rests-9999999 (wrong number invented)\n- Current handle (reference only): ' + currentHandle + '\n\nPRODUCT: ' + productTitle + '\nDESC: ' + desc + '\n\nJSON only, no markdown: {\"seoTitle\":\"...\",\"metaDescription\":\"...\",\"handle\":\"...\",\"altTexts\":[\"alt 1\",\"alt 2\"]}\\nFor altTexts: one descriptive alt per photo (max 125 chars).'});
     var parsed = await callClaude([{role:'user', content:userContent}], true);
     pair.newSeoTitle = parsed.seoTitle       || '';
     pair.newSeoDesc  = parsed.metaDescription || '';
     pair.newHandle   = parsed.handle          || '';
+    pair.newAltTexts = parsed.altTexts        || [];
     pair.hasSeo      = true;
     pair.checked     = true;
     pair.status      = 'generated';
@@ -1478,10 +1501,11 @@ async function shopifyExportSelected() {
           method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             product_id:  pair.shopify.id,
-            seoTitle:    pair.newSeoTitle || pair.seoTitle,
-            seoDesc:     pair.newSeoDesc  || pair.seoDesc,
-            description: pair.descToPush  || '',
-            handle:      pair.newHandle   || ''
+            seoTitle:    pair.newSeoTitle  || pair.seoTitle,
+            seoDesc:     pair.newSeoDesc   || pair.seoDesc,
+            description: pair.descToPush   || '',
+            handle:      pair.newHandle    || '',
+            altTexts:    pair.newAltTexts  || []
           })
         });
         var seoData = await seoResp.json();
