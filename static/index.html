@@ -195,14 +195,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <span id="etsy-status-label" style="font-size:11px;color:var(--border)">Non connecté</span>
     </div>
   </div>
-  <div class="card">
-    <div class="card-title">Shopify</div>
-    <p style="font-size:11px;color:var(--sage)">La connexion Shopify se fait directement depuis l'onglet Shopify SEO.</p>
-    <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
-      <div class="conn-status"><div class="conn-dot" id="shopify-dot2"></div>Shopify</div>
-      <span id="shopify-status-label" style="font-size:11px;color:var(--border)">Non connecté</span>
-    </div>
-  </div>
+
   <div class="card">
     <div class="card-title">Anthropic API Key</div>
     <div class="field"><input type="password" id="s-anthropic" placeholder="sk-ant-..."></div>
@@ -1302,7 +1295,7 @@ function shopifyBuildCard(pair, i) {
   var thumbsHTML = '';
   if (sh.images && sh.images.length) {
     thumbsHTML = '<div class="thumbs">';
-    sh.images.slice(0,4).forEach(function(u) {
+    sh.images.forEach(function(u) {
       thumbsHTML += '<img class="thumb" src="' + escHTML(u) + '">';
     });
     thumbsHTML += '</div>';
@@ -1399,8 +1392,8 @@ async function shopifyGenerateSeoOne(i) {
   shopifyRefreshCard(i);
   try {
     var userContent = [];
-    // Utiliser les images Shopify (max 2, compressées via Pillow côté serveur)
-    var picUrls = pair.shopify && pair.shopify.images ? pair.shopify.images.slice(0,2) : [];
+    // Utiliser les images Shopify (max 4, compressées via Pillow côté serveur)
+    var picUrls = pair.shopify && pair.shopify.images ? pair.shopify.images.slice(0,4) : [];
     for (var pi = 0; pi < picUrls.length; pi++) {
       var img = await fetchImageB64(picUrls[pi]);
       if (img) userContent.push({type:'image', source:{type:'base64', media_type:img.mediaType, data:img.base64}});
