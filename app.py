@@ -412,7 +412,7 @@ def shopify_get_products():
                     'sku': sku, 'price': price, 'seoTitle': seo_title, 'seoDesc': seo_desc,
                     'hasSeo': bool(seo_title and seo_desc), 'alreadyDone': already_done,
                     'bodyHtml': (p.get('body_html') or ''),
-                    'images':  [img.get('src','') for img in (p.get('images') or [])[:4]]
+                    'images':  [img.get('src','') for img in (p.get('images') or [])]
                 })
             url  = None
             link = resp.headers.get('Link', '')
