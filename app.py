@@ -367,7 +367,7 @@ def shopify_status():
     return jsonify({'connected': 'current' in shopify_token_store})
 
 
-SHOPIFY_MARKER = 'fmf-seo-done'
+SHOPIFY_MARKER = '<!-- fmf-shopify -->'
 
 @app.route('/shopify/products', methods=['POST'])
 def shopify_get_products():
@@ -379,7 +379,7 @@ def shopify_get_products():
         return jsonify({'error': 'Non connecte a Shopify'}), 401
 
     all_products = []
-    url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle'
+    url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,body_html'
 
     try:
         while url:
@@ -395,7 +395,7 @@ def shopify_get_products():
             for p in products:
                 seo_title    = p.get('metafields_global_title_tag') or ''
                 seo_desc     = p.get('metafields_global_description_tag') or ''
-                already_done = SHOPIFY_MARKER in (seo_title + seo_desc)
+                already_done = SHOPIFY_MARKER in (p.get('body_html') or '')
                 if not force_all and already_done:
                     continue
                 sku   = p['variants'][0].get('sku', '')   if p.get('variants') else ''
@@ -410,7 +410,7 @@ def shopify_get_products():
                     'seoDesc':     seo_desc,
                     'hasSeo':      bool(seo_title and seo_desc),
                     'alreadyDone': already_done,
-                    'bodyHtml':    (p.get('body_html') or '')[:300]
+                    'bodyHtml':    (p.get('body_html') or '')
                 })
 
             # Pagination via header Link
@@ -436,11 +436,14 @@ def shopify_update_seo():
         return jsonify({'error': 'Non connecte a Shopify'}), 401
     try:
         marked_title = seo_title if SHOPIFY_MARKER in seo_title else seo_title + ' ' + SHOPIFY_MARKER
+        description = data.get('description', '')
         payload = {'product': {
             'id': product_id,
             'metafields_global_title_tag':       marked_title,
             'metafields_global_description_tag': seo_desc
         }}
+        if description:
+            payload['product']['body_html'] = description + '\n' + SHOPIFY_MARKER
         resp = requests.put(
             'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json',
             headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
