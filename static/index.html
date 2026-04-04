@@ -1183,7 +1183,10 @@ function shopifyUpdateCounts() {
 }
 
 async function shopifyReload(forceAll) {
-  if (!shopifyConnected) { setStatus('shopify', 'Connectez Shopify dans l\'onglet Parametres.', 'error'); return; }
+  if (!shopifyConnected) {
+    setStatus('shopify', 'Cliquez sur "Connecter Shopify OAuth" ci-dessus.', 'error');
+    return;
+  }
   setStatus('shopify', 'Chargement des produits Shopify...', 'info');
   document.getElementById('shopify-connect-prompt').style.display = 'none';
   document.getElementById('shopify-main').style.display = 'block';
@@ -1583,7 +1586,7 @@ async function connectShopify() {
     var data = await resp.json();
     if (data.error) throw new Error(data.error);
     var popup = window.open(data.auth_url, 'shopify_auth', 'width=600,height=700');
-    document.getElementById('shopify-status-label').textContent = 'En attente...';
+    var _lbl = document.getElementById('shopify-status-label2'); if(_lbl) _lbl.textContent = 'En attente...';
 
     // Poller /shopify/status jusqu'à connexion ou fermeture popup
     var maxTries = 60; // 30 secondes max
@@ -1596,10 +1599,9 @@ async function connectShopify() {
         if (d.connected) {
           clearInterval(interval);
           shopifyConnected = true;
-          var lbl1 = document.getElementById('shopify-status-label');
           var lbl2 = document.getElementById('shopify-status-label2');
-          if (lbl1) { lbl1.textContent = '✓ Connecté'; lbl1.style.color = 'var(--shopify)'; }
           if (lbl2) { lbl2.textContent = '✓ Connecté'; lbl2.style.color = 'var(--shopify)'; }
+          shopifyConnected = true;
           document.getElementById('shopify-dot').className = 'conn-dot connected';
           var authSection = document.getElementById('shopify-auth-section');
           if (authSection) authSection.style.display = 'none';
@@ -1607,7 +1609,7 @@ async function connectShopify() {
         } else if (tries >= maxTries || (popup && popup.closed)) {
           clearInterval(interval);
           if (!shopifyConnected)
-            document.getElementById('shopify-status-label').textContent = 'Non connecté';
+            var _lbl = document.getElementById('shopify-status-label2'); if(_lbl) _lbl.textContent = 'Non connecté';
         }
       } catch(e) { clearInterval(interval); }
     }, 500);
@@ -1620,14 +1622,10 @@ async function checkShopifyStatus() {
     var data = await resp.json();
     if (data.connected) {
       shopifyConnected = true;
-      var lbl1 = document.getElementById('shopify-status-label');
       var lbl2 = document.getElementById('shopify-status-label2');
-      if (lbl1) { lbl1.textContent = '✓ Connecté'; lbl1.style.color = 'var(--shopify)'; }
       if (lbl2) { lbl2.textContent = '✓ Connecté'; lbl2.style.color = 'var(--shopify)'; }
-      document.getElementById('shopify-dot').className = 'conn-dot connected';
-      // Afficher directement les boutons de chargement
-      var prompt = document.getElementById('shopify-connect-prompt');
-      if (prompt) prompt.style.display = 'block';
+      var dot = document.getElementById('shopify-dot');
+      if (dot) dot.className = 'conn-dot connected';
       var authSection = document.getElementById('shopify-auth-section');
       if (authSection) authSection.style.display = 'none';
     }
