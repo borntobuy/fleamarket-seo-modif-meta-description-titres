@@ -1268,67 +1268,91 @@ function shopifyRenderPage() {
 
 function shopifyBuildCard(pair, i) {
   var div = document.createElement('div');
-  div.className = 'listing-card' + (pair.diffs.length || !pair.hasSeo ? ' has-diff' : '');
+  div.className = 'listing-card' + (!pair.hasSeo || !pair.hasDesc ? ' has-diff' : '');
   div.id = 'sh-item-' + i;
-  var eb = pair.ebay;
   var sh = pair.shopify;
-  // Sécurité : si pas de produit eBay ni Shopify, on ignore
-  if (!eb && !sh) { div.innerHTML = ''; return div; }
+  if (!sh) { div.innerHTML = ''; return div; }
 
-  var statusBadge = pair.status === 'ok'     ? '<span class="badge badge-ok">✓ Sync</span>'
-    : pair.status === 'diff'    ? '<span class="badge badge-diff">⚠ Différences</span>'
-    : pair.status === 'noseo'   ? '<span class="badge badge-missing">SEO manquant</span>'
-    : pair.status === 'missing' ? '<span class="badge badge-missing">Absent Shopify</span>'
-    : pair.status === 'generating' ? '<span class="badge badge-generating"><span class="spinner"></span>Génération...</span>'
-    : '<span class="badge badge-ok">✓ Exporté</span>';
+  var statusBadge = pair.status === 'ok'
+    ? '<span class="badge badge-ok">✓ Optimisé</span>'
+    : pair.status === 'generating'
+    ? '<span class="badge badge-generating"><span class="spinner"></span>Génération...</span>'
+    : pair.status === 'exported'
+    ? '<span class="badge badge-ok">✓ Exporté</span>'
+    : '<span class="badge badge-missing">SEO manquant</span>';
 
-  var fields = [
-    {key:'title',       label:'Titre',       ebVal: '-', shVal: sh ? sh.title : '-'},
-    {key:'handle',      label:'URL Handle',  ebVal: pair.newHandle || '-', shVal: sh ? ('/' + sh.handle) : '-'},
-    {key:'description', label:'Description', ebVal: '-', shVal: sh && sh.bodyHtml && sh.bodyHtml.includes('<!-- fmf-shopify -->') ? 'Optimisee' : (sh && sh.bodyHtml ? 'Non optimisee' : 'Absente')}
-  ];
-
-  var compareHTML = '<div class="compare-grid"><div><h4>eBay</h4>';
-  fields.forEach(function(f) {
-    var isDiff = pair.diffs.includes(f.key);
-    compareHTML += '<div class="compare-field"><label>' + f.label + '</label><div class="val' + (isDiff?' diff':'') + '">' + escHTML(f.ebVal||'-') + '</div></div>';
-  });
-  compareHTML += '</div><div><h4>Shopify</h4>';
-  fields.forEach(function(f) {
-    var isDiff = pair.diffs.includes(f.key);
-    compareHTML += '<div class="compare-field"><label>' + f.label + '</label><div class="val' + (isDiff?' diff':'') + (sh?'':' missing') + '">' + escHTML(sh ? (f.shVal||'-') : 'Absent') + '</div></div>';
-  });
-  compareHTML += '</div></div>';
-
-  // SEO
-  var seoHTML = '';
-  if (pair.newSeoTitle || pair.newSeoDesc) {
-    seoHTML = '<div class="section-label" style="margin-top:8px">SEO Généré</div>'
-      + '<div class="compare-field"><label>SEO Title (' + (pair.newSeoTitle||'').length + '/70)</label><div class="val diff">' + escHTML(pair.newSeoTitle||'') + '</div></div>'
-      + '<div class="compare-field" style="margin-top:6px"><label>Meta Description (' + (pair.newSeoDesc||'').length + '/160)</label><div class="val diff">' + escHTML(pair.newSeoDesc||'') + '</div></div>';
-  } else if (!pair.hasSeo) {
-    seoHTML = '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
-      + '<span style="font-size:11px;color:var(--rust)">SEO Title/Meta manquants</span>'
-      + '<button class="btn-shopify btn-sm" onclick="shopifyGenerateSeoOne(' + i + ')">🔍 Générer SEO</button></div>';
-  } else {
-    seoHTML = '<div class="section-label" style="margin-top:8px">SEO actuel</div>'
-      + '<div class="compare-field"><label>SEO Title</label><div class="val">' + escHTML(pair.seoTitle) + '</div></div>'
-      + '<div class="compare-field" style="margin-top:6px"><label>Meta Description</label><div class="val">' + escHTML(pair.seoDesc) + '</div></div>';
+  // Miniatures Shopify (via images si dispo, sinon rien)
+  var thumbsHTML = '';
+  if (sh.images && sh.images.length) {
+    thumbsHTML = '<div class="thumbs">' + sh.images.slice(0,4).map(function(u) {
+      thumbsHTML += '<img class="thumb" src="' + escHTML(u) + '">';
+    }).join('') + '</div>';
   }
 
-  var checkboxHTML = (pair.diffs.length || !pair.hasSeo)
-    ? '<input type="checkbox" class="listing-checkbox" ' + (pair.checked?'checked':'') + ' onchange="shopifyToggleCheck(' + i + ', this.checked)">'
-    : '<input type="checkbox" class="listing-checkbox" disabled>';
+  // Description actuelle (extrait)
+  var descText = sh.bodyHtml ? sh.bodyHtml.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').substring(0,300) + '...' : 'Aucune description';
 
-  var displayTitle = eb ? eb.title : (sh ? sh.title : '');
-  var displaySku   = eb ? eb.sku   : (sh ? sh.sku   : '-');
-  var displayEbId  = eb ? eb.id    : '';
+  // Champs SEO générés
+  var seoHTML = '';
+  if (pair.newSeoTitle || pair.newSeoDesc || pair.newHandle) {
+    seoHTML = '<div class="specifics-wrap" style="margin-top:12px">'
+      + '<div class="section-label">SEO Généré</div>';
+    if (pair.newSeoTitle) {
+      var tLen = pair.newSeoTitle.length;
+      var tWarn = tLen > 70 ? ' style="color:var(--rust)"' : '';
+      seoHTML += '<div class="compare-field"><label>SEO Title <span' + tWarn + '>(' + tLen + '/70)</span></label>'
+        + '<div class="val diff">' + escHTML(pair.newSeoTitle) + '</div></div>';
+    }
+    if (pair.newSeoDesc) {
+      var dLen = pair.newSeoDesc.length;
+      var dWarn = (dLen < 150 || dLen > 160) ? ' style="color:var(--rust)"' : '';
+      seoHTML += '<div class="compare-field" style="margin-top:6px"><label>Meta Description <span' + dWarn + '>(' + dLen + '/160)</span></label>'
+        + '<div class="val diff">' + escHTML(pair.newSeoDesc) + '</div></div>';
+    }
+    if (pair.newHandle) {
+      seoHTML += '<div class="compare-field" style="margin-top:6px"><label>URL Handle</label>'
+        + '<div class="val diff">/products/' + escHTML(pair.newHandle) + '</div></div>';
+    }
+    seoHTML += '</div>';
+  } else if (pair.seoTitle) {
+    // Afficher le SEO actuel s'il existe
+    seoHTML = '<div class="specifics-wrap" style="margin-top:12px">'
+      + '<div class="section-label">SEO Actuel</div>'
+      + '<div class="compare-field"><label>SEO Title</label><div class="val">' + escHTML(pair.seoTitle) + '</div></div>'
+      + '<div class="compare-field" style="margin-top:6px"><label>Meta Description</label><div class="val">' + escHTML(pair.seoDesc || 'Absente') + '</div></div>'
+      + '<div class="compare-field" style="margin-top:6px"><label>URL Handle</label><div class="val">/products/' + escHTML(sh.handle || '') + '</div></div>'
+      + '</div>';
+  }
+
+  // Boutons
+  var actionsHTML = '<div class="item-actions">';
+  if (pair.status !== 'generating' && pair.status !== 'exported') {
+    actionsHTML += '<button class="btn-shopify btn-sm" onclick="shopifyGenerateSeoOne(' + i + ')">🔍 ' + (pair.newSeoTitle ? 'Regénérer' : 'Générer SEO') + '</button>';
+  }
+  if (pair.newSeoTitle) {
+    actionsHTML += '<button class="btn-outline btn-sm" onclick="shopifyExportOne(' + i + ')">→ Exporter</button>';
+  }
+  actionsHTML += '</div>';
+
+  var checkboxHTML = '<input type="checkbox" class="listing-checkbox" '
+    + (pair.checked ? 'checked' : '')
+    + ' onchange="shopifyToggleCheck(' + i + ', this.checked)">';
+
   div.innerHTML = '<div class="listing-header">'
     + checkboxHTML
-    + '<div class="listing-info"><div class="listing-title">' + escHTML(displayTitle) + '</div>'
-    + '<div class="listing-subtitle">SKU: ' + escHTML(displaySku||'-') + (displayEbId ? ' | eBay #' + escHTML(displayEbId) : '') + (sh ? ' | Shopify #' + escHTML(String(sh.id||'')) : '') + '</div></div>'
-    + '<div class="listing-meta">' + statusBadge + '</div></div>'
-    + '<div class="listing-body">' + compareHTML + seoHTML + '</div>';
+    + '<div class="listing-info">'
+    + '<div class="listing-title">' + escHTML(sh.title) + '</div>'
+    + '<div class="listing-subtitle">SKU: ' + escHTML(sh.sku || '-') + ' | Shopify #' + escHTML(String(sh.id || '')) + ' | /products/' + escHTML(sh.handle || '') + '</div>'
+    + '</div>'
+    + '<div class="listing-meta">' + statusBadge + '</div>'
+    + '</div>'
+    + '<div class="listing-body">'
+    + thumbsHTML
+    + '<div class="compare-field"><div class="section-label">Description actuelle</div>'
+    + '<div class="val">' + escHTML(descText) + '</div></div>'
+    + seoHTML
+    + actionsHTML
+    + '</div>';
   return div;
 }
 
@@ -1353,7 +1377,7 @@ async function shopifyGenerateSeoOne(i) {
     var desc = (pair.ebay ? pair.ebay.description||'' : pair.shopify ? pair.shopify.bodyHtml||'' : '').replace(/<[^>]+>/g,' ').substring(0,600);
     var productTitle = pair.shopify ? pair.shopify.title : '';
     var currentHandle = pair.shopify ? pair.shopify.handle : '';
-    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance, a French vintage antiques shop on Shopify targeting US and UK buyers.\n\nAnalyze the photo and info, then generate:\n\n1. SEO TITLE (max 70 chars including | Fleamarketfrance):\n- Primary keyword = what a buyer types on Google Shopping\n- Structure: [Keyword] [Material/Style/Era] | Fleamarketfrance\n- Good: French Silver Toast Rack Mid Century | Fleamarketfrance\n- Bad: Buy Vintage French Item | Fleamarketfrance\n\n2. META DESCRIPTION (150-160 chars exactly):\n- Start with keyword, include French origin + era/condition + CTA\n\n3. URL HANDLE (slug for product URL):\n- Max 50 chars, lowercase, hyphens only, no numbers\n- Based on primary keyword + 1-2 key attributes\n- Good: french-silver-toast-rack-mid-century\n- Bad: 1-vintage-oyster-basket-french-1207221\n- Current handle (for reference): ' + currentHandle + '\n\nPRODUCT: ' + productTitle + '\nDESC: ' + desc + '\n\nJSON only, no markdown: {\"seoTitle\":\"...\",\"metaDescription\":\"...\",\"handle\":\"...\"}'});
+    userContent.push({type:'text', text:'You are an SEO expert for Fleamarketfrance, a French brocante shop on Shopify selling authentic vintage and antique pieces sourced in France.\n\nAnalyze the photo and info, then generate:\n\n1. SEO TITLE (max 70 chars including | Fleamarketfrance):\n- Primary keyword = exactly what a collector or buyer types on Google Shopping\n- Structure: [Primary Keyword] [1-2 key attributes: material/style/era] | Fleamarketfrance\n- Good: French Silver Toast Rack Mid Century 1950s | Fleamarketfrance\n- Bad examples (never do this): Buy Vintage French Item | Fleamarketfrance / Shop Now French Antiques | Fleamarketfrance\n- No commercial phrases (buy, shop, get, order, free shipping, tariff-free)\n- No filler adjectives (beautiful, stunning, gorgeous, amazing)\n- Focus purely on what the object IS\n\n2. META DESCRIPTION (150-160 chars exactly — count carefully):\n- Start with the primary keyword\n- Describe: what it is + French origin + era or material + one specific detail\n- End with a factual statement, not a sales pitch\n- NEVER mention free shipping, tariff-free, shop now, or discount\n- Example: French silver-plated toast rack, mid-century 1950s Parisian manufacture. Eight slots, excellent vintage condition. Ships directly from France.\n\n3. URL HANDLE:\n- Max 50 chars, lowercase, hyphens only, no numbers, no reference codes\n- Based on primary keyword + 1-2 key attributes only\n- IMPORTANT: extract the series of digits at the END of the product title and keep them at the end of the handle. This ensures uniqueness.\n- Good: french-silver-toast-rack-1950254\n- Bad: french-silver-toast-rack (no number = risk of duplicates)\n- Bad: silver-plated-knife-rests-9999999 (wrong number invented)\n- Current handle (reference only): ' + currentHandle + '\n\nPRODUCT: ' + productTitle + '\nDESC: ' + desc + '\n\nJSON only, no markdown: {\"seoTitle\":\"...\",\"metaDescription\":\"...\",\"handle\":\"...\"}'});
     var parsed = await callClaude([{role:'user', content:userContent}], true);
     pair.newSeoTitle = parsed.seoTitle       || '';
     pair.newSeoDesc  = parsed.metaDescription || '';
@@ -1385,6 +1409,38 @@ async function shopifyGenerateAllSeo() {
   endOp('sh-stop');
   btn.disabled = false; btn.textContent = '🔍 Générer SEO manquant';
   setStatus('shopify', 'Génération SEO terminée.', 'success');
+}
+
+async function shopifyExportOne(i) {
+  var pair = shPairs[i];
+  if (!pair.shopify) return;
+  pair.status = 'generating';
+  shopifyRefreshCard(i);
+  try {
+    var seoResp = await fetch('/shopify/update_seo', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        product_id:  pair.shopify.id,
+        seoTitle:    pair.newSeoTitle || pair.seoTitle,
+        seoDesc:     pair.newSeoDesc  || pair.seoDesc,
+        description: pair.descToPush  || '',
+        handle:      pair.newHandle   || ''
+      })
+    });
+    var data = await seoResp.json();
+    if (!data.success) throw new Error(data.error || 'Erreur');
+    pair.status  = 'exported';
+    pair.checked = false;
+    if (pair.newSeoTitle) pair.seoTitle = pair.newSeoTitle;
+    if (pair.newSeoDesc)  pair.seoDesc  = pair.newSeoDesc;
+    shCounts.pushed++;
+    shopifyUpdateCounts();
+  } catch(e) {
+    pair.status = 'noseo';
+    logError('Shopify', pair.shopify.id, pair.shopify.title, e.message);
+    setStatus('shopify', 'Erreur export #' + pair.shopify.id + ' : ' + e.message, 'error');
+  }
+  shopifyRefreshCard(i);
 }
 
 async function shopifyExportSelected() {
