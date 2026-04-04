@@ -295,10 +295,11 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
   <div id="shopify-status" class="status-bar"></div>
   <div id="shopify-main" style="display:none">
     <div class="summary-bar">
-      <div>Comparés : <span id="sh-total">0</span></div>
-      <div>Différences : <span id="sh-diffs">0</span></div>
+      <div>Total : <span id="sh-total">0</span></div>
       <div>SEO manquant : <span id="sh-noseo">0</span></div>
+      <div>Générés : <span id="sh-generated">0</span></div>
       <div>Exportés : <span id="sh-pushed">0</span></div>
+      <div>Erreurs : <span id="sh-errors" style="color:#f87">0</span></div>
     </div>
     <div class="action-bar">
       <button class="btn-shopify" id="sh-export-all" onclick="shopifyExportSelected()">→ Exporter sélectionnés vers Shopify</button>
@@ -323,8 +324,11 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
     <div id="sh-pagination-bot"></div>
   </div>
   <div id="shopify-connect-prompt" class="card">
-    <div class="card-title">Connexion Shopify requise</div>
-    <p style="font-size:12px;margin-bottom:16px">Configurez vos identifiants Shopify dans l'onglet Paramètres.</p>
+    <div class="card-title">Shopify</div>
+    <div id="shopify-auth-section" style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <button class="btn-shopify" onclick="connectShopify()">Connecter Shopify OAuth</button>
+      <span id="shopify-status-label2" style="font-size:11px;color:var(--border)">Non connecté</span>
+    </div>
     <div style="display:flex;gap:8px">
       <button class="btn-shopify" onclick="shopifyReload(false)">Charger articles non traités</button>
       <button class="btn-outline" onclick="shopifyReload(true)">Tout réimporter</button>
@@ -1175,10 +1179,13 @@ async function etsyExportSelected() {
 // ████████████████████████  SHOPIFY TAB  ████████████████████████
 // ═══════════════════════════════════════════════════════════════
 function shopifyUpdateCounts() {
-  document.getElementById('sh-total').textContent  = shCounts.total;
-  document.getElementById('sh-diffs').textContent  = shCounts.diffs;
-  document.getElementById('sh-noseo').textContent  = shCounts.noseo;
-  document.getElementById('sh-pushed').textContent = shCounts.pushed;
+  document.getElementById('sh-total').textContent     = shCounts.total;
+  document.getElementById('sh-noseo').textContent     = shCounts.noseo;
+  document.getElementById('sh-pushed').textContent    = shCounts.pushed;
+  var genEl = document.getElementById('sh-generated');
+  if (genEl) genEl.textContent = shCounts.generated || 0;
+  var errEl = document.getElementById('sh-errors');
+  if (errEl) errEl.textContent = shCounts.errors || 0;
 }
 
 async function shopifyReload(forceAll) {
@@ -1225,10 +1232,11 @@ async function shopifyReload(forceAll) {
 
     shFiltered = shPairs.slice();
     shPage = 1;
-    shCounts.total  = shPairs.length;
-    shCounts.diffs  = shPairs.filter(function(p) { return p.diffs.length > 0; }).length;
-    shCounts.noseo  = shPairs.filter(function(p) { return !p.hasSeo; }).length;
-    shCounts.pushed = 0;
+    shCounts.total     = shPairs.length;
+    shCounts.noseo     = shPairs.filter(function(p) { return !p.hasSeo; }).length;
+    shCounts.pushed    = 0;
+    shCounts.generated = 0;
+    shCounts.errors    = 0;
     shopifyUpdateCounts();
     setStatus('shopify', shPairs.length + ' article(s) Shopify charges. ' + shCounts.noseo + ' SEO manquants.', 'success');
     shopifyRenderPage();
@@ -1369,9 +1377,10 @@ async function shopifyGenerateSeoOne(i) {
   shopifyRefreshCard(i);
   try {
     var userContent = [];
-    // Max 1 image pour Shopify (éviter timeout + limite 5MB)
-    if (pair.ebay && pair.ebay.pictures && pair.ebay.pictures.length > 0) {
-      var img = await fetchImageB64(pair.ebay.pictures[0]);
+    // Utiliser les images Shopify (max 2, compressées via Pillow côté serveur)
+    var picUrls = pair.shopify && pair.shopify.images ? pair.shopify.images.slice(0,2) : [];
+    for (var pi = 0; pi < picUrls.length; pi++) {
+      var img = await fetchImageB64(picUrls[pi]);
       if (img) userContent.push({type:'image', source:{type:'base64', media_type:img.mediaType, data:img.base64}});
     }
     var desc = (pair.ebay ? pair.ebay.description||'' : pair.shopify ? pair.shopify.bodyHtml||'' : '').replace(/<[^>]+>/g,' ').substring(0,600);
@@ -1384,7 +1393,9 @@ async function shopifyGenerateSeoOne(i) {
     pair.newHandle   = parsed.handle          || '';
     pair.hasSeo      = true;
     pair.checked     = true;
-    pair.status      = pair.diffs.length ? 'diff' : 'noseo';
+    pair.status      = 'generated';
+    shCounts.generated = (shCounts.generated || 0) + 1;
+    shopifyUpdateCounts();
   } catch(e) {
     pair.status = pair.diffs.length ? 'diff' : 'noseo';
     if (e.name !== 'AbortError') {
@@ -1568,9 +1579,13 @@ async function connectShopify() {
         if (d.connected) {
           clearInterval(interval);
           shopifyConnected = true;
-          document.getElementById('shopify-status-label').textContent = '✓ Connecté';
-          document.getElementById('shopify-status-label').style.color = 'var(--shopify)';
+          var lbl1 = document.getElementById('shopify-status-label');
+          var lbl2 = document.getElementById('shopify-status-label2');
+          if (lbl1) { lbl1.textContent = '✓ Connecté'; lbl1.style.color = 'var(--shopify)'; }
+          if (lbl2) { lbl2.textContent = '✓ Connecté'; lbl2.style.color = 'var(--shopify)'; }
           document.getElementById('shopify-dot').className = 'conn-dot connected';
+          var authSection = document.getElementById('shopify-auth-section');
+          if (authSection) authSection.style.display = 'none';
           if (popup && !popup.closed) popup.close();
         } else if (tries >= maxTries || (popup && popup.closed)) {
           clearInterval(interval);
@@ -1588,9 +1603,16 @@ async function checkShopifyStatus() {
     var data = await resp.json();
     if (data.connected) {
       shopifyConnected = true;
-      document.getElementById('shopify-status-label').textContent = '✓ Connecté';
-      document.getElementById('shopify-status-label').style.color = 'var(--shopify)';
+      var lbl1 = document.getElementById('shopify-status-label');
+      var lbl2 = document.getElementById('shopify-status-label2');
+      if (lbl1) { lbl1.textContent = '✓ Connecté'; lbl1.style.color = 'var(--shopify)'; }
+      if (lbl2) { lbl2.textContent = '✓ Connecté'; lbl2.style.color = 'var(--shopify)'; }
       document.getElementById('shopify-dot').className = 'conn-dot connected';
+      // Afficher directement les boutons de chargement
+      var prompt = document.getElementById('shopify-connect-prompt');
+      if (prompt) prompt.style.display = 'block';
+      var authSection = document.getElementById('shopify-auth-section');
+      if (authSection) authSection.style.display = 'none';
     }
   } catch(e) {}
 }
