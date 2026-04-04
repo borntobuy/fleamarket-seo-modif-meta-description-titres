@@ -379,7 +379,7 @@ def shopify_get_products():
         return jsonify({'error': 'Non connecte a Shopify'}), 401
 
     all_products = []
-    url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,body_html'
+    url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,body_html,images'
 
     # Récupérer le total via count
     try:
@@ -411,7 +411,8 @@ def shopify_get_products():
                     'id': p['id'], 'title': p.get('title', ''), 'handle': p.get('handle', ''),
                     'sku': sku, 'price': price, 'seoTitle': seo_title, 'seoDesc': seo_desc,
                     'hasSeo': bool(seo_title and seo_desc), 'alreadyDone': already_done,
-                    'bodyHtml': (p.get('body_html') or '')
+                    'bodyHtml': (p.get('body_html') or ''),
+                    'images':  [img.get('src','') for img in (p.get('images') or [])[:4]]
                 })
             url  = None
             link = resp.headers.get('Link', '')
