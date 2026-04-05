@@ -882,6 +882,7 @@ async function ebayPublishOne(i) {
   var conditionMap = {'new':1000,'new with tags':1000,'new without tags':1500,'new with defects':1750,'pre-owned':3000,'used':3000,'very good':4000,'good':5000,'acceptable':6000,'for parts':7000};
   var condText = ((item.newSpecifics && item.newSpecifics['Condition']) || (item.existingSpecifics && item.existingSpecifics['Condition']) || 'used').toLowerCase().trim();
   var conditionId = conditionMap[condText] || 3000;
+  var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(item.newTitle || item.title) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description><ConditionID>' + conditionId + '</ConditionID>' + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
   try {
     var doc = await callEbayXML('ReviseItem', xml);
     var ack = doc.getElementsByTagName('Ack')[0];
