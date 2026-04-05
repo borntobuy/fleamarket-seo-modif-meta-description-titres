@@ -117,7 +117,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
 .compare-col h4{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--border);margin-bottom:8px}
 .compare-field{margin-bottom:8px}
 .compare-field label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--sage);margin-bottom:3px;display:block}
-.compare-field .val{font-size:11px;padding:6px 10px;background:var(--cream);border:1px solid var(--border);border-radius:2px;min-height:28px;line-height:1.5}
+.compare-field .val{font-size:11px;padding:6px 10px;background:var(--cream);border:1px solid var(--border);border-radius:2px;min-height:28px;line-height:1.5;max-height:350px;overflow-y:auto}.compare-field .val.diff{border-color:var(--gold-light);background:#fffdf5;color:var(--dark)}
 .compare-field .val.diff{border-color:var(--gold);background:#fffdf5;color:var(--dark)}
 .compare-field .val.missing{border-color:var(--rust);background:#fff5f5;color:#999;font-style:italic}
 
@@ -555,7 +555,7 @@ async function callClaude(messages, useHaiku) {
       api_key: c['s-anthropic'],
       payload: {
         model: useHaiku ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
+        max_tokens: 2500,
         messages: messages
       }
     })
@@ -764,7 +764,7 @@ function ebayBuildCard(item, i) {
 
   var descOld = (item.description || '').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').substring(0,300) + '...';
   var descNew = item.newDescription
-    ? '<div class="compare-field"><div class="val diff">' + item.newDescription.replace(/\n/g,'<br>').substring(0,400) + '</div></div>'
+    ? '<div class="compare-field"><div class="val diff">' + item.newDescription.replace(/\n/g,'<br>') + '</div></div>'
     : '<div class="compare-field"><div class="val missing">Pas encore générée</div></div>';
 
   var specsHTML = '';
