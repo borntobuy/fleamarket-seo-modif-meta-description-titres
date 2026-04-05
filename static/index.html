@@ -117,7 +117,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
 .compare-col h4{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--border);margin-bottom:8px}
 .compare-field{margin-bottom:8px}
 .compare-field label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--sage);margin-bottom:3px;display:block}
-.compare-field .val{font-size:11px;padding:6px 10px;background:var(--cream);border:1px solid var(--border);border-radius:2px;min-height:28px;line-height:1.5;max-height:350px;overflow-y:auto}.compare-field .val.diff{border-color:var(--gold-light);background:#fffdf5;color:var(--dark)}
+.compare-field .val{font-size:11px;padding:6px 10px;background:var(--cream);border:1px solid var(--border);border-radius:2px;min-height:28px;line-height:1.5;max-height:350px;overflow-y:auto}.compare-field .val.desc-preview{font-size:13px;padding:12px;max-height:500px;background:white;text-align:center}.compare-field .val.desc-preview h2{font-family:Arial,sans-serif;font-size:18px;font-weight:bold;text-align:center;margin:0 0 14px}.compare-field .val.desc-preview p{font-family:Arial,sans-serif;font-size:13px;text-align:center;margin:0 0 10px;line-height:1.7}.compare-field .val.diff{border-color:var(--gold-light);background:#fffdf5;color:var(--dark)}
 .compare-field .val.diff{border-color:var(--gold);background:#fffdf5;color:var(--dark)}
 .compare-field .val.missing{border-color:var(--rust);background:#fff5f5;color:#999;font-style:italic}
 
@@ -764,7 +764,7 @@ function ebayBuildCard(item, i) {
 
   var descOld = (item.description || '').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').substring(0,300) + '...';
   var descNew = item.newDescription
-    ? '<div class="compare-field"><div class="val diff">' + escHTML(item.newDescription.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim()) + '</div></div>'
+    ? '<div class="compare-field"><div class="val diff desc-preview">' + item.newDescription + '</div></div>'
     : '<div class="compare-field"><div class="val missing">Pas encore générée</div></div>';
 
   var specsHTML = '';
@@ -879,7 +879,9 @@ async function ebayPublishOne(i) {
     return '<NameValueList><n>' + escXML(kv[0]) + '</n><Value>' + escXML(String(kv[1])) + '</Value></NameValueList>';
   }).join('');
   var finalDesc = item.newDescription + '\n' + MARKER;
-  var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(item.newTitle || item.title) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description>' + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
+  var conditionMap = {'new':1000,'new with tags':1000,'new without tags':1500,'new with defects':1750,'pre-owned':3000,'used':3000,'very good':4000,'good':5000,'acceptable':6000,'for parts':7000};
+  var condText = ((item.newSpecifics && item.newSpecifics['Condition']) || (item.existingSpecifics && item.existingSpecifics['Condition']) || 'used').toLowerCase().trim();
+  var conditionId = conditionMap[condText] || 3000;
   try {
     var doc = await callEbayXML('ReviseItem', xml);
     var ack = doc.getElementsByTagName('Ack')[0];
