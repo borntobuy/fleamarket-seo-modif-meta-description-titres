@@ -133,7 +133,12 @@ def fetch_image():
                 if scale < 0.1:
                     break
 
-        content_type = 'image/jpeg' if pil_available else resp.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        # Garder le type original si pas de compression, sinon JPEG
+        orig_type = resp.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+        content_type = 'image/jpeg' if (pil_available and len(resp.content) > MAX_BYTES) else orig_type
+        # S'assurer que le type est accepté par Anthropic (jpeg, png, gif, webp)
+        if content_type not in ('image/jpeg', 'image/png', 'image/gif', 'image/webp'):
+            content_type = 'image/jpeg'
         b64 = base64.b64encode(img_bytes).decode('utf-8')
         return jsonify({'base64': b64, 'mediaType': content_type})
     except Exception as e:
