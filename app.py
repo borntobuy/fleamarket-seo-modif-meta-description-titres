@@ -108,7 +108,7 @@ def fetch_image():
         if not resp.content:
             return jsonify({'error': 'Image vide'}), 204
 
-        MAX_BYTES = 4 * 1024 * 1024
+        MAX_BYTES = 3 * 1024 * 1024
         img_bytes = resp.content
 
         if pil_available and len(img_bytes) > MAX_BYTES:
