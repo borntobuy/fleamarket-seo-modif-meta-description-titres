@@ -1481,8 +1481,15 @@ async function shopifyExportOne(i) {
 }
 
 async function shopifyExportSelected() {
-  var toExport = shPairs.filter(function(p) { return p.checked && p.shopify; });
-  if (!toExport.length) { setStatus('shopify', 'Sélectionnez des articles à exporter.', 'error'); return; }
+  var toExport = shPairs.filter(function(p) { return p.checked && p.shopify && p.newSeoTitle; });
+  var checkedNoSeo = shPairs.filter(function(p) { return p.checked && p.shopify && !p.newSeoTitle; }).length;
+  if (!toExport.length) {
+    setStatus('shopify', checkedNoSeo ? checkedNoSeo + ' article(s) coché(s) sans SEO généré — lancez d\'abord la génération.' : 'Sélectionnez des articles à exporter.', 'error');
+    return;
+  }
+  if (checkedNoSeo > 0) {
+    setStatus('shopify', checkedNoSeo + ' article(s) ignoré(s) car SEO non généré. ' + toExport.length + ' article(s) à exporter.', 'info');
+  }
   if (!confirm('Exporter ' + toExport.length + ' article(s) vers Shopify ?')) return;
   var btn = document.getElementById('sh-export-all');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Export...';
@@ -1521,8 +1528,10 @@ async function shopifyExportSelected() {
       if (pair.newSeoDesc)  pair.seoDesc  = pair.newSeoDesc;
       shCounts.pushed++;
       success++;
+      shopifyUpdateCounts();
+      shopifyRefreshCard(i);
     } catch(e) {
-      logError('Shopify', pair.ebay.id, pair.ebay.title, e.message);
+      logError('Shopify', pair.shopify ? pair.shopify.id : '', pair.shopify ? pair.shopify.title : '', e.message);
       setStatus('shopify', 'Erreur Shopify #' + pair.ebay.id + ' : ' + e.message, 'error');
     }
     shopifyRefreshCard(i);
