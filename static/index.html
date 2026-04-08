@@ -1453,14 +1453,26 @@ async function shopifyCleanupMarkers() {
   if (!shopifyConnected) { setStatus('shopify', 'Connectez Shopify d\'abord.', 'error'); return; }
   if (!confirm('Cela va retirer le marqueur <!-- fmf-shopify --> de tous les SEO titles et le replacer dans la description. Continuer ?')) return;
   var btn = event.target;
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Nettoyage...';
+  btn.disabled = true;
+  var offset = 0, fixed = 0, errors = [], total = 0;
   try {
-    var resp = await fetch('/shopify/cleanup_markers', {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
-    });
-    var data = await resp.json();
-    if (data.error) throw new Error(data.error);
-    setStatus('shopify', '✓ ' + data.fixed + ' article(s) nettoyé(s).' + (data.errors && data.errors.length ? ' Erreurs: ' + data.errors.join(', ') : ''), 'success');
+    while (true) {
+      btn.innerHTML = '<span class="spinner"></span>Nettoyage ' + (total ? Math.min(offset, total) + '/' + total : '...') + ' (' + fixed + ' corrigés)';
+      var resp = await fetch('/shopify/cleanup_markers', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({offset: offset, fixed: fixed, errors: errors})
+      });
+      var data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      fixed   = data.fixed;
+      errors  = data.errors || [];
+      total   = data.total  || total;
+      offset  = data.offset || offset;
+      setStatus('shopify', 'Nettoyage en cours... ' + Math.min(offset, total) + '/' + total + ' traités, ' + fixed + ' corrigés.', 'info');
+      if (data.done) break;
+      await new Promise(function(r) { setTimeout(r, 300); });
+    }
+    setStatus('shopify', '✓ Nettoyage terminé. ' + fixed + ' article(s) corrigé(s).' + (errors.length ? ' Erreurs: ' + errors.length : ''), 'success');
   } catch(e) {
     setStatus('shopify', 'Erreur nettoyage : ' + e.message, 'error');
   }
