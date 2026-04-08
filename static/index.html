@@ -301,6 +301,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" onclick="shopifyReload(false)">↺ Recharger non traités</button>
       <button class="btn-outline btn-sm" onclick="shopifyReload(true)">↺ Tout réimporter</button>
       <button class="btn-outline btn-sm" id="sh-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
+      <button class="btn-danger btn-sm" onclick="shopifyCleanupMarkers()" title="Retire le marqueur fmf-shopify des SEO titles et le place correctement dans body_html">🧹 Nettoyer marqueurs</button>
       <button class="btn-outline btn-sm" id="sh-select-all" onclick="shopifyToggleSelectAll()">☐ Tout sélectionner</button>
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
@@ -1446,6 +1447,24 @@ async function shopifyGenerateAllSeo() {
   endOp('sh-stop');
   btn.disabled = false; btn.textContent = '🔍 Générer SEO manquant';
   setStatus('shopify', 'Génération SEO terminée.', 'success');
+}
+
+async function shopifyCleanupMarkers() {
+  if (!shopifyConnected) { setStatus('shopify', 'Connectez Shopify d\'abord.', 'error'); return; }
+  if (!confirm('Cela va retirer le marqueur <!-- fmf-shopify --> de tous les SEO titles et le replacer dans la description. Continuer ?')) return;
+  var btn = event.target;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Nettoyage...';
+  try {
+    var resp = await fetch('/shopify/cleanup_markers', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    setStatus('shopify', '✓ ' + data.fixed + ' article(s) nettoyé(s).' + (data.errors && data.errors.length ? ' Erreurs: ' + data.errors.join(', ') : ''), 'success');
+  } catch(e) {
+    setStatus('shopify', 'Erreur nettoyage : ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = '🧹 Nettoyer marqueurs';
 }
 
 async function shopifyExportOne(i) {
