@@ -566,78 +566,105 @@ def shopify_cleanup_markers():
     token = shopify_token_store.get('current')
     if not token:
         return jsonify({'error': 'Non connecte a Shopify'}), 401
-    import sys, re as _re, time as _time
-    # Récupérer l'offset depuis la requête pour reprendre où on s'est arrêté
+    import sys, re as _re
     data      = request.json or {}
     offset    = data.get('offset', 0)
     fixed     = data.get('fixed', 0)
     errors    = data.get('errors', [])
-    BATCH     = 15  # produits par batch pour rester sous le timeout
+    BATCH     = 10
 
     try:
-        # Récupérer tous les IDs en une fois (rapide)
-        all_ids = []
-        url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,body_html'
-        all_products = {}
-        while url:
-            resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=30)
-            for p in resp.json().get('products', []):
-                all_products[p['id']] = p.get('body_html') or ''
-            url = None
-            link = resp.headers.get('Link', '')
-            if 'rel="next"' in link:
-                m = _re.search(r'<([^>]+)>; *rel="next"', link)
-                if m: url = m.group(1)
-
-        all_ids   = list(all_products.keys())
-        total     = len(all_ids)
-        batch_ids = all_ids[offset:offset + BATCH]
-
-        print('CLEANUP: total=' + str(total) + ' offset=' + str(offset) + ' batch=' + str(len(batch_ids)), file=sys.stderr)
-
-        for pid in batch_ids:
-            mf_resp = requests.get(
-                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '/metafields.json',
-                headers={'X-Shopify-Access-Token': token}, timeout=15
+        # Récupérer tous les produits avec SEO via GraphQL
+        all_products = []
+        cursor = None
+        while True:
+            after = ('after: \"' + cursor + '\"') if cursor else ''
+            query = '''{
+  products(first: 250 ''' + after + ''') {
+    pageInfo { hasNextPage endCursor }
+    edges {
+      node {
+        id
+        seo { title description }
+        bodyHtml
+      }
+    }
+  }
+}'''
+            resp = requests.post(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/graphql.json',
+                headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                json={'query': query}, timeout=30
             )
-            metafields = mf_resp.json().get('metafields', [])
-            seo_mf = next((m for m in metafields if m.get('key') == 'title_tag'), None)
-            if not seo_mf:
-                continue
-            seo_title = seo_mf.get('value', '')
+            edges = resp.json().get('data', {}).get('products', {}).get('edges', [])
+            for edge in edges:
+                node = edge['node']
+                pid  = int(node['id'].split('/')[-1])
+                seo  = node.get('seo', {})
+                all_products.append({
+                    'id':       pid,
+                    'title':    seo.get('title') or '',
+                    'bodyHtml': node.get('bodyHtml') or ''
+                })
+            page_info = resp.json().get('data', {}).get('products', {}).get('pageInfo', {})
+            if not page_info.get('hasNextPage'):
+                break
+            cursor = page_info.get('endCursor')
+
+        total     = len(all_products)
+        batch     = all_products[offset:offset + BATCH]
+
+        print('CLEANUP GraphQL: total=' + str(total) + ' offset=' + str(offset), file=sys.stderr)
+
+        for p in batch:
+            pid       = p['id']
+            seo_title = p['title']
+            body_html = p['bodyHtml']
+
             if SHOPIFY_MARKER not in seo_title:
                 continue
 
+            print('CLEANUP fixing #' + str(pid) + ': ' + repr(seo_title[-50:]), file=sys.stderr)
             clean_title = seo_title.replace(SHOPIFY_MARKER, '').strip()
-            patch = requests.put(
-                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/metafields/' + str(seo_mf['id']) + '.json',
+
+            # Mettre à jour via GraphQL mutation
+            mutation = '''mutation {
+  productUpdate(input: {
+    id: "gid://shopify/Product/''' + str(pid) + '''"
+    seo: { title: "''' + clean_title.replace('"', '\\"') + '''" }
+  }) {
+    product { id seo { title } }
+    userErrors { field message }
+  }
+}'''
+            mut_resp = requests.post(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/graphql.json',
                 headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
-                json={'metafield': {'id': seo_mf['id'], 'value': clean_title, 'type': 'single_line_text_field'}},
-                timeout=15
+                json={'query': mutation}, timeout=15
             )
-            if patch.status_code in (200, 201):
-                fixed += 1
-                body_html = all_products[pid]
-                if SHOPIFY_MARKER not in body_html:
-                    requests.put(
-                        'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '.json',
-                        headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
-                        json={'product': {'id': pid, 'body_html': body_html + '\n' + SHOPIFY_MARKER}},
-                        timeout=15
-                    )
-            else:
-                errors.append(str(pid))
+            mut_data   = mut_resp.json()
+            user_errors = mut_data.get('data', {}).get('productUpdate', {}).get('userErrors', [])
+            if user_errors:
+                errors.append(str(pid) + ': ' + str(user_errors))
+                continue
+
+            fixed += 1
+            # Ajouter marqueur dans body_html si absent
+            if SHOPIFY_MARKER not in body_html:
+                requests.put(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '.json',
+                    headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                    json={'product': {'id': pid, 'body_html': body_html + '\n' + SHOPIFY_MARKER}},
+                    timeout=15
+                )
 
         next_offset = offset + BATCH
         done        = next_offset >= total
 
         return jsonify({
-            'fixed':       fixed,
-            'errors':      errors,
-            'offset':      next_offset,
-            'total':       total,
-            'done':        done,
-            'progress':    min(next_offset, total)
+            'fixed': fixed, 'errors': errors,
+            'offset': next_offset, 'total': total,
+            'done': done, 'progress': min(next_offset, total)
         })
     except Exception as e:
         import traceback
