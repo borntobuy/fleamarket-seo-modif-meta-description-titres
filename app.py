@@ -409,7 +409,11 @@ def shopify_get_products():
                 seo_desc     = p.get('metafields_global_description_tag') or ''
                 body_html  = p.get('body_html') or ''
                 seo_title_ = p.get('metafields_global_title_tag') or ''
-                already_done = SHOPIFY_MARKER in body_html or SHOPIFY_MARKER in seo_title_
+                seo_desc_  = p.get('metafields_global_description_tag') or ''
+                # Déjà traité si : marqueur dans body_html OU (SEO title + meta desc présents et propres)
+                has_marker    = SHOPIFY_MARKER in body_html or SHOPIFY_MARKER in seo_title_
+                has_clean_seo = bool(seo_title_) and bool(seo_desc_) and SHOPIFY_MARKER not in seo_title_
+                already_done  = has_marker or has_clean_seo
                 if not force_all and already_done:
                     continue
                 sku   = p['variants'][0].get('sku', '')   if p.get('variants') else ''
