@@ -518,13 +518,17 @@ def shopify_cleanup_markers():
     fixed = 0
     errors = []
     try:
+        import sys
+        print('CLEANUP: token=' + token[:8] + '...', file=sys.stderr)
         # Récupérer body_html aussi pour ne pas l'écraser
         url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,metafields_global_title_tag,body_html'
         while url:
             resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=30)
             products = resp.json().get('products', [])
+            print('CLEANUP: ' + str(len(products)) + ' produits, status=' + str(resp.status_code), file=sys.stderr)
             for p in products:
                 seo_title = p.get('metafields_global_title_tag') or ''
+                print('CLEANUP check: ' + repr(seo_title[-30:]), file=sys.stderr)
                 if SHOPIFY_MARKER not in seo_title:
                     continue
                 # Nettoyer le titre
@@ -543,10 +547,15 @@ def shopify_cleanup_markers():
                     }},
                     timeout=15
                 )
-                if patch_resp.status_code in (200, 201):
-                    fixed += 1
-                else:
+                import sys
+                print('CLEANUP #' + str(p['id']) + ' status=' + str(patch_resp.status_code), file=sys.stderr)
+                print('CLEANUP title_before=' + repr(seo_title[:60]), file=sys.stderr)
+                print('CLEANUP title_after=' + repr(clean_title[:60]), file=sys.stderr)
+                if patch_resp.status_code not in (200, 201):
+                    print('CLEANUP ERROR=' + patch_resp.text[:200], file=sys.stderr)
                     errors.append(str(p['id']) + ': ' + patch_resp.text[:100])
+                else:
+                    fixed += 1
             url = None
             link = resp.headers.get('Link', '')
             if 'rel="next"' in link:
