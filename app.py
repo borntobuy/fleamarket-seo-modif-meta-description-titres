@@ -374,6 +374,48 @@ def shopify_status():
 
 SHOPIFY_MARKER = '<!-- fmf-shopify -->'
 
+def get_all_seo_metafields(token):
+    """Récupère tous les SEO title_tag et description_tag via GraphQL en une seule requête."""
+    import re as _re
+    result = {}
+    cursor = None
+    while True:
+        after = ('after: \"' + cursor + '\"') if cursor else ''
+        query = '''{
+  products(first: 250 ''' + after + ''') {
+    pageInfo { hasNextPage endCursor }
+    edges {
+      node {
+        id
+        seo { title description }
+      }
+    }
+  }
+}'''
+        resp = requests.post(
+            'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/graphql.json',
+            headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+            json={'query': query},
+            timeout=30
+        )
+        data = resp.json()
+        edges = data.get('data', {}).get('products', {}).get('edges', [])
+        for edge in edges:
+            node = edge['node']
+            # ID GraphQL = "gid://shopify/Product/12345" -> extraire le nombre
+            gid = node['id']
+            pid = int(gid.split('/')[-1])
+            seo = node.get('seo', {})
+            result[pid] = {
+                'seoTitle': seo.get('title') or '',
+                'seoDesc':  seo.get('description') or ''
+            }
+        page_info = data.get('data', {}).get('products', {}).get('pageInfo', {})
+        if not page_info.get('hasNextPage'):
+            break
+        cursor = page_info.get('endCursor')
+    return result
+
 @app.route('/shopify/products', methods=['POST'])
 def shopify_get_products():
     import re as _re
@@ -387,6 +429,9 @@ def shopify_get_products():
     url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants,metafields_global_title_tag,metafields_global_description_tag,handle,body_html,images'
 
     # Récupérer le total via count
+    # Récupérer tous les SEO via GraphQL en une seule requête
+    all_seo = get_all_seo_metafields(token)
+
     try:
         count_resp = requests.get(
             'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/count.json',
@@ -405,24 +450,26 @@ def shopify_get_products():
                 return jsonify({'error': 'Shopify HTTP ' + str(resp.status_code) + ': ' + resp.text[:200]}), resp.status_code
             products = resp.json().get('products', [])
             for p in products:
-                seo_title    = p.get('metafields_global_title_tag') or ''
-                seo_desc     = p.get('metafields_global_description_tag') or ''
-                body_html  = p.get('body_html') or ''
-                seo_title_ = p.get('metafields_global_title_tag') or ''
-                seo_desc_  = p.get('metafields_global_description_tag') or ''
-                # Déjà traité si : marqueur dans body_html OU (SEO title + meta desc présents et propres)
-                has_marker    = SHOPIFY_MARKER in body_html or SHOPIFY_MARKER in seo_title_
-                has_clean_seo = bool(seo_title_) and bool(seo_desc_) and SHOPIFY_MARKER not in seo_title_
+                body_html = p.get('body_html') or ''
+                sku       = p['variants'][0].get('sku', '')   if p.get('variants') else ''
+                price     = p['variants'][0].get('price', '') if p.get('variants') else ''
+
+                seo        = all_seo.get(p['id'], {})
+                seo_title  = seo.get('seoTitle', '')
+                seo_desc   = seo.get('seoDesc', '')
+
+                has_marker    = SHOPIFY_MARKER in body_html
+                has_clean_seo = bool(seo_title) and bool(seo_desc) and SHOPIFY_MARKER not in seo_title
                 already_done  = has_marker or has_clean_seo
+
                 if not force_all and already_done:
                     continue
-                sku   = p['variants'][0].get('sku', '')   if p.get('variants') else ''
-                price = p['variants'][0].get('price', '') if p.get('variants') else ''
+
                 all_products.append({
                     'id': p['id'], 'title': p.get('title', ''), 'handle': p.get('handle', ''),
                     'sku': sku, 'price': price, 'seoTitle': seo_title, 'seoDesc': seo_desc,
                     'hasSeo': bool(seo_title and seo_desc), 'alreadyDone': already_done,
-                    'bodyHtml': (p.get('body_html') or ''),
+                    'bodyHtml': body_html,
                     'images':  [img.get('src','') for img in (p.get('images') or [])]
                 })
             url  = None
