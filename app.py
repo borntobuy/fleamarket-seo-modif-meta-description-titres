@@ -515,27 +515,36 @@ def shopify_cleanup_markers():
     token = shopify_token_store.get('current')
     if not token:
         return jsonify({'error': 'Non connecte a Shopify'}), 401
-    import sys, re as _re
-    fixed = 0
-    errors = []
+    import sys, re as _re, time as _time
+    # Récupérer l'offset depuis la requête pour reprendre où on s'est arrêté
+    data      = request.json or {}
+    offset    = data.get('offset', 0)
+    fixed     = data.get('fixed', 0)
+    errors    = data.get('errors', [])
+    BATCH     = 15  # produits par batch pour rester sous le timeout
+
     try:
-        # Récupérer tous les produits avec body_html
+        # Récupérer tous les IDs en une fois (rapide)
+        all_ids = []
         url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,body_html'
-        all_products = []
+        all_products = {}
         while url:
             resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=30)
-            all_products += resp.json().get('products', [])
+            for p in resp.json().get('products', []):
+                all_products[p['id']] = p.get('body_html') or ''
             url = None
             link = resp.headers.get('Link', '')
             if 'rel="next"' in link:
                 m = _re.search(r'<([^>]+)>; *rel="next"', link)
                 if m: url = m.group(1)
 
-        print('CLEANUP: ' + str(len(all_products)) + ' produits', file=sys.stderr)
+        all_ids   = list(all_products.keys())
+        total     = len(all_ids)
+        batch_ids = all_ids[offset:offset + BATCH]
 
-        for p in all_products:
-            pid = p['id']
-            # Récupérer les metafields de ce produit
+        print('CLEANUP: total=' + str(total) + ' offset=' + str(offset) + ' batch=' + str(len(batch_ids)), file=sys.stderr)
+
+        for pid in batch_ids:
             mf_resp = requests.get(
                 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '/metafields.json',
                 headers={'X-Shopify-Access-Token': token}, timeout=15
@@ -548,21 +557,16 @@ def shopify_cleanup_markers():
             if SHOPIFY_MARKER not in seo_title:
                 continue
 
-            print('CLEANUP fixing #' + str(pid) + ': ' + repr(seo_title[-50:]), file=sys.stderr)
             clean_title = seo_title.replace(SHOPIFY_MARKER, '').strip()
-
-            # Mettre à jour le metafield SEO title
             patch = requests.put(
                 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/metafields/' + str(seo_mf['id']) + '.json',
                 headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
                 json={'metafield': {'id': seo_mf['id'], 'value': clean_title, 'type': 'single_line_text_field'}},
                 timeout=15
             )
-            print('CLEANUP patch status=' + str(patch.status_code), file=sys.stderr)
             if patch.status_code in (200, 201):
                 fixed += 1
-                # Ajouter le marqueur dans body_html si absent
-                body_html = p.get('body_html') or ''
+                body_html = all_products[pid]
                 if SHOPIFY_MARKER not in body_html:
                     requests.put(
                         'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '.json',
@@ -571,9 +575,19 @@ def shopify_cleanup_markers():
                         timeout=15
                     )
             else:
-                errors.append(str(pid) + ': ' + patch.text[:100])
+                errors.append(str(pid))
 
-        return jsonify({'fixed': fixed, 'errors': errors})
+        next_offset = offset + BATCH
+        done        = next_offset >= total
+
+        return jsonify({
+            'fixed':       fixed,
+            'errors':      errors,
+            'offset':      next_offset,
+            'total':       total,
+            'done':        done,
+            'progress':    min(next_offset, total)
+        })
     except Exception as e:
         import traceback
         print('CLEANUP ERROR: ' + traceback.format_exc(), file=sys.stderr)
