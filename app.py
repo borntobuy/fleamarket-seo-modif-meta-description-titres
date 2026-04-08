@@ -515,56 +515,70 @@ def shopify_cleanup_markers():
     token = shopify_token_store.get('current')
     if not token:
         return jsonify({'error': 'Non connecte a Shopify'}), 401
+    import sys, re as _re
     fixed = 0
     errors = []
     try:
-        import sys
-        print('CLEANUP: token=' + token[:8] + '...', file=sys.stderr)
-        # Récupérer body_html aussi pour ne pas l'écraser
-        url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,metafields_global_title_tag,body_html'
+        # Récupérer tous les produits avec body_html
+        url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,body_html'
+        all_products = []
         while url:
             resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=30)
-            products = resp.json().get('products', [])
-            print('CLEANUP: ' + str(len(products)) + ' produits, status=' + str(resp.status_code), file=sys.stderr)
-            for p in products:
-                seo_title = p.get('metafields_global_title_tag') or ''
-                print('CLEANUP check: ' + repr(seo_title[-30:]), file=sys.stderr)
-                if SHOPIFY_MARKER not in seo_title:
-                    continue
-                # Nettoyer le titre
-                clean_title = seo_title.replace(SHOPIFY_MARKER, '').strip()
-                # Ajouter le marqueur dans body_html si pas déjà présent
-                body_html = p.get('body_html') or ''
-                if SHOPIFY_MARKER not in body_html:
-                    body_html = body_html + '\n' + SHOPIFY_MARKER
-                patch_resp = requests.put(
-                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(p['id']) + '.json',
-                    headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
-                    json={'product': {
-                        'id': p['id'],
-                        'metafields_global_title_tag': clean_title,
-                        'body_html': body_html
-                    }},
-                    timeout=15
-                )
-                import sys
-                print('CLEANUP #' + str(p['id']) + ' status=' + str(patch_resp.status_code), file=sys.stderr)
-                print('CLEANUP title_before=' + repr(seo_title[:60]), file=sys.stderr)
-                print('CLEANUP title_after=' + repr(clean_title[:60]), file=sys.stderr)
-                if patch_resp.status_code not in (200, 201):
-                    print('CLEANUP ERROR=' + patch_resp.text[:200], file=sys.stderr)
-                    errors.append(str(p['id']) + ': ' + patch_resp.text[:100])
-                else:
-                    fixed += 1
+            all_products += resp.json().get('products', [])
             url = None
             link = resp.headers.get('Link', '')
             if 'rel="next"' in link:
-                import re as _re
                 m = _re.search(r'<([^>]+)>; *rel="next"', link)
                 if m: url = m.group(1)
+
+        print('CLEANUP: ' + str(len(all_products)) + ' produits', file=sys.stderr)
+
+        for p in all_products:
+            pid = p['id']
+            # Récupérer les metafields de ce produit
+            mf_resp = requests.get(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '/metafields.json',
+                headers={'X-Shopify-Access-Token': token}, timeout=15
+            )
+            metafields = mf_resp.json().get('metafields', [])
+            seo_mf = next((m for m in metafields if m.get('key') == 'title_tag'), None)
+            if not seo_mf:
+                continue
+            seo_title = seo_mf.get('value', '')
+            if SHOPIFY_MARKER not in seo_title:
+                continue
+
+            print('CLEANUP fixing #' + str(pid) + ': ' + repr(seo_title[-50:]), file=sys.stderr)
+            clean_title = seo_title.replace(SHOPIFY_MARKER, '').strip()
+
+            # Mettre à jour le metafield SEO title
+            patch = requests.put(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/metafields/' + str(seo_mf['id']) + '.json',
+                headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                json={'metafield': {'id': seo_mf['id'], 'value': clean_title, 'type': 'single_line_text_field'}},
+                timeout=15
+            )
+            print('CLEANUP patch status=' + str(patch.status_code), file=sys.stderr)
+            if patch.status_code in (200, 201):
+                fixed += 1
+                # Ajouter le marqueur dans body_html si absent
+                body_html = p.get('body_html') or ''
+                if SHOPIFY_MARKER not in body_html:
+                    requests.put(
+                        'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '.json',
+                        headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                        json={'product': {'id': pid, 'body_html': body_html + '\n' + SHOPIFY_MARKER}},
+                        timeout=15
+                    )
+            else:
+                errors.append(str(pid) + ': ' + patch.text[:100])
+
         return jsonify({'fixed': fixed, 'errors': errors})
     except Exception as e:
+        import traceback
+        print('CLEANUP ERROR: ' + traceback.format_exc(), file=sys.stderr)
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
