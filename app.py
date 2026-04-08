@@ -515,34 +515,43 @@ def shopify_cleanup_markers():
     token = shopify_token_store.get('current')
     if not token:
         return jsonify({'error': 'Non connecte a Shopify'}), 401
-    import re as _re
     fixed = 0
     errors = []
     try:
-        url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,title,metafields_global_title_tag'
+        # Récupérer body_html aussi pour ne pas l'écraser
+        url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,metafields_global_title_tag,body_html'
         while url:
             resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=30)
             products = resp.json().get('products', [])
             for p in products:
                 seo_title = p.get('metafields_global_title_tag') or ''
-                if SHOPIFY_MARKER in seo_title:
-                    clean_title = seo_title.replace(SHOPIFY_MARKER, '').strip()
-                    patch_resp = requests.put(
-                        'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(p['id']) + '.json',
-                        headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
-                        json={'product': {'id': p['id'], 'metafields_global_title_tag': clean_title,
-                                          'body_html': (p.get('body_html') or '') + '\n' + SHOPIFY_MARKER}},
-                        timeout=15
-                    )
-                    if patch_resp.status_code in (200, 201):
-                        fixed += 1
-                    else:
-                        errors.append(str(p['id']))
+                if SHOPIFY_MARKER not in seo_title:
+                    continue
+                # Nettoyer le titre
+                clean_title = seo_title.replace(SHOPIFY_MARKER, '').strip()
+                # Ajouter le marqueur dans body_html si pas déjà présent
+                body_html = p.get('body_html') or ''
+                if SHOPIFY_MARKER not in body_html:
+                    body_html = body_html + '\n' + SHOPIFY_MARKER
+                patch_resp = requests.put(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(p['id']) + '.json',
+                    headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                    json={'product': {
+                        'id': p['id'],
+                        'metafields_global_title_tag': clean_title,
+                        'body_html': body_html
+                    }},
+                    timeout=15
+                )
+                if patch_resp.status_code in (200, 201):
+                    fixed += 1
+                else:
+                    errors.append(str(p['id']) + ': ' + patch_resp.text[:100])
             url = None
             link = resp.headers.get('Link', '')
             if 'rel="next"' in link:
-                import re as _re2
-                m = _re2.search(r'<([^>]+)>; *rel="next"', link)
+                import re as _re
+                m = _re.search(r'<([^>]+)>; *rel="next"', link)
                 if m: url = m.group(1)
         return jsonify({'fixed': fixed, 'errors': errors})
     except Exception as e:
