@@ -230,8 +230,6 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" id="eb-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
       <button class="btn-outline btn-sm" id="eb-etsy-mode" onclick="toggleEtsyMode()">🏷 Mode Etsy</button>
       <button class="btn-outline btn-sm" id="eb-select-all" onclick="ebayToggleSelectAll()">☐ Tout sélectionner</button>
-      <button class="btn-outline btn-sm" onclick="document.getElementById('rapport-import').click()">📋 Importer rapport</button>
-      <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div id="eb-pagination-top"></div>
@@ -241,9 +239,11 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
   <div id="ebay-connect-prompt" class="card">
     <div class="card-title">Connexion eBay requise</div>
     <p style="font-size:12px;margin-bottom:16px">Configurez vos identifiants eBay dans l'onglet Paramètres puis cliquez ci-dessous.</p>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-dark" onclick="ebayReload(false)">Charger articles non traités</button>
       <button class="btn-outline" onclick="ebayReload(true)">Tout réimporter</button>
+      <button class="btn-outline" onclick="document.getElementById('rapport-import').click()">📋 Importer depuis rapport</button>
+      <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
     </div>
   </div>
 </div>
@@ -264,8 +264,6 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" onclick="etsyReload()">↺ Recharger</button>
       <button class="btn-outline btn-sm" id="et-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
       <button class="btn-outline btn-sm" id="et-select-all" onclick="etsyToggleSelectAll()">☐ Tout sélectionner</button>
-      <button class="btn-outline btn-sm" onclick="document.getElementById('rapport-import').click()">📋 Importer rapport</button>
-      <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div class="search-bar">
@@ -307,8 +305,6 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" id="sh-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
       <button class="btn-danger btn-sm" onclick="shopifyCleanupMarkers()" title="Retire le marqueur fmf-shopify des SEO titles et le place correctement dans body_html">🧹 Nettoyer marqueurs</button>
       <button class="btn-outline btn-sm" id="sh-select-all" onclick="shopifyToggleSelectAll()">☐ Tout sélectionner</button>
-      <button class="btn-outline btn-sm" onclick="document.getElementById('rapport-import').click()">📋 Importer rapport</button>
-      <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div class="search-bar">
@@ -569,8 +565,26 @@ async function callClaude(messages, useHaiku) {
   });
   var data = await resp.json();
   if (!resp.ok || data.error) throw new Error((data.error && data.error.message) || JSON.stringify(data.error));
-  var raw = data.content[0].text.trim().replace(/^```json\s*/i,'').replace(/^```/,'').replace(/```$/,'').trim();
-  return JSON.parse(raw);
+  var raw = data.content[0].text.trim();
+  // Nettoyer les balises markdown
+  raw = raw.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim();
+  // Extraire le JSON si entouré d'autre texte
+  var jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) raw = jsonMatch[0];
+  // Nettoyer les caractères de contrôle qui cassent JSON.parse
+  raw = raw.replace(/[ -]/g, function(c) {
+    if (c === '\n' || c === '\r' || c === '\t') return c;
+    return '';
+  });
+  try {
+    return JSON.parse(raw);
+  } catch(e) {
+    // Tentative de réparation : échapper les guillemets non échappés dans les valeurs
+    var fixed = raw.replace(/:\s*"((?:[^"\\]|\\.)*)"/g, function(m, v) {
+      return ': "' + v.replace(/\n/g,'\\n').replace(/\r/g,'') + '"';
+    });
+    return JSON.parse(fixed);
+  }
 }
 
 async function fetchImageB64(url) {
@@ -897,9 +911,28 @@ async function ebayPublishOne(i) {
     finalTitle = finalTitle.substring(0, 80);
   }
   var finalDesc = item.newDescription + '\n' + MARKER;
-  var conditionMap = {'new':1000,'new with tags':1000,'new without tags':1500,'new with defects':1750,'pre-owned':3000,'used':3000,'very good':4000,'good':5000,'acceptable':6000,'for parts':7000};
+  var conditionMap = {
+    'new':1000,'new with tags':1000,'new with box':1000,'new without tags':1500,
+    'new with defects':1750,'new other':1750,
+    'pre-owned':3000,'used':3000,'vintage':3000,'antique':3000,
+    'very good':4000,'very good condition':4000,
+    'good':5000,'good condition':5000,
+    'acceptable':6000,'acceptable condition':6000,'fair':6000,
+    'for parts':7000,'not working':7000,'parts only':7000
+  };
   var condText = ((item.newSpecifics && item.newSpecifics['Condition']) || (item.existingSpecifics && item.existingSpecifics['Condition']) || 'used').toLowerCase().trim();
-  var conditionId = conditionMap[condText] || 3000;
+  var conditionId = conditionMap[condText];
+  // Chercher par correspondance partielle si pas trouvé exactement
+  if (!conditionId) {
+    var keys = Object.keys(conditionMap);
+    for (var ki = 0; ki < keys.length; ki++) {
+      if (condText.indexOf(keys[ki]) >= 0 || keys[ki].indexOf(condText) >= 0) {
+        conditionId = conditionMap[keys[ki]];
+        break;
+      }
+    }
+  }
+  conditionId = conditionId || 3000;
   var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(finalTitle) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description><ConditionID>' + conditionId + '</ConditionID>' + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
   try {
     var doc = await callEbayXML('ReviseItem', xml);
