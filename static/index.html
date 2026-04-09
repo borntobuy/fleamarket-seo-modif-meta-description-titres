@@ -1254,7 +1254,8 @@ function shopifyFilter() {
   var q   = document.getElementById('sh-search').value.toLowerCase();
   var flt = document.getElementById('sh-filter').value;
   shFiltered = shPairs.filter(function(p) {
-    var matchQ   = !q || p.ebay.title.toLowerCase().includes(q);
+    var shTitle = (p.shopify ? p.shopify.title : (p.ebay ? p.ebay.title : ''));
+    var matchQ   = !q || shTitle.toLowerCase().includes(q);
     var matchFlt = flt === 'all'
       || (flt === 'diff'    && p.diffs.length > 0)
       || (flt === 'noseo'   && !p.hasSeo)
