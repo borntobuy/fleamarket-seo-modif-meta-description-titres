@@ -572,10 +572,7 @@ async function callClaude(messages, useHaiku) {
   var jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (jsonMatch) raw = jsonMatch[0];
   // Nettoyer les caractères de contrôle qui cassent JSON.parse
-  raw = raw.replace(/[ -]/g, function(c) {
-    if (c === '\n' || c === '\r' || c === '\t') return c;
-    return '';
-  });
+  raw = raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
   try {
     return JSON.parse(raw);
   } catch(e) {
