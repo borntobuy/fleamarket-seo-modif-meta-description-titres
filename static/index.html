@@ -230,6 +230,8 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" id="eb-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
       <button class="btn-outline btn-sm" id="eb-etsy-mode" onclick="toggleEtsyMode()">🏷 Mode Etsy</button>
       <button class="btn-outline btn-sm" id="eb-select-all" onclick="ebayToggleSelectAll()">☐ Tout sélectionner</button>
+      <button class="btn-outline btn-sm" onclick="document.getElementById('rapport-import').click()">📋 Importer rapport</button>
+      <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div id="eb-pagination-top"></div>
@@ -262,6 +264,8 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" onclick="etsyReload()">↺ Recharger</button>
       <button class="btn-outline btn-sm" id="et-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
       <button class="btn-outline btn-sm" id="et-select-all" onclick="etsyToggleSelectAll()">☐ Tout sélectionner</button>
+      <button class="btn-outline btn-sm" onclick="document.getElementById('rapport-import').click()">📋 Importer rapport</button>
+      <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div class="search-bar">
@@ -303,6 +307,8 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" id="sh-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
       <button class="btn-danger btn-sm" onclick="shopifyCleanupMarkers()" title="Retire le marqueur fmf-shopify des SEO titles et le place correctement dans body_html">🧹 Nettoyer marqueurs</button>
       <button class="btn-outline btn-sm" id="sh-select-all" onclick="shopifyToggleSelectAll()">☐ Tout sélectionner</button>
+      <button class="btn-outline btn-sm" onclick="document.getElementById('rapport-import').click()">📋 Importer rapport</button>
+      <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
     <div class="search-bar">
@@ -830,7 +836,7 @@ async function ebayGenerateOne(i) {
     var existingSpecsStr = Object.entries(ebListings[i].existingSpecifics).map(function(kv) { return kv[0] + ': ' + kv[1]; }).join('\n') || 'Aucun';
     var prompt = etsyOnlyMode
       ? 'You are an SEO expert for Fleamarketfrance. Analyze photos and title. Generate ONLY 13 Etsy tags (max 20 chars each) and alt texts.\nCURRENT TITLE: ' + ebListings[i].title + '\nRespond ONLY with valid JSON: {"etsyTags":["tag1"],"altTexts":["alt1"]}'
-      : 'You are an SEO expert for Fleamarketfrance, a French vintage/antiques shop selling on eBay to international buyers (mainly US and UK).\nAnalyze the product photos (if provided) AND the information below, then generate fully optimized content.\n\nCURRENT TITLE: ' + ebListings[i].title + '\nCURRENT DESCRIPTION: ' + (ebListings[i].description||'').replace(/<[^>]+>/g,' ').substring(0,1000) + '\nEXISTING ITEM SPECIFICS:\n' + existingSpecsStr + '\n\nRULES — follow ALL strictly:\n\n1. KEYWORD: Find the single best SEO keyword for this item (1 to 6 words max, based on photos + title + description). It MUST appear in: the new title, as <h2> in the description, in the first paragraph, and naturally 1-2 times every 100 words throughout the description. Do not stuff — integrate naturally.\n\n2. NEW TITLE: Maximum 80 characters total. Keep the series of digits at the very END of the original title UNCHANGED and at the end of the new title. Include the keyword naturally. KEEP "Vintage" or "Antique" when present in the original title — these are important search terms. If needed to stay under 80 chars, remove the LEAST searched words for this specific item. Keep words buyers actually search. "Vintage", "Antique", "French" are almost always worth keeping. Words like "Glazed", "Made in France" (redundant with French), can be removed first. Use judgment.\n\n3. DESCRIPTION: Target 320 words (minimum 280, maximum 360). English only. Flowing prose, NO bullet points. Tone: precise, factual, concise. Write like a specialist antique dealer writing a catalogue entry — state facts, describe what you observe, give context. STRICTLY FORBIDDEN words (zero exceptions, do not use under any circumstance): beautiful, perfect, remarkable, magnificent, impressive, exceptional, stunning, lovely, charming, wonderful, delightful, exquisite, timeless, enduring, spirit, soul, journey, treasure, superb, outstanding, fantastic, incredible, splendid, gorgeous, elegant (unless it is a factual style description e.g. "Empire style"). If you use any of these words, the output is invalid. Replace them with factual observations: instead of "beautiful grain" write "visible wood grain"; instead of "perfect condition" write "good condition with minor wear"; instead of "timeless design" write "classic form".\nCRITICAL — ENCODING RULE: Use only plain ASCII characters. Write fractions as decimals (5.5" not 5½"), avoid accented characters (decor not décor, brocante not brocante with accents). Use standard inch symbol (") and cm.\nCRITICAL — ACCURACY RULES:\n- Base EVERYTHING strictly on what is explicitly visible in the photos AND stated in the existing title/description. Do NOT invent materials, shapes, origins or features not clearly present.\n- The seller existing description is a primary source — preserve its key facts, expand on them, never contradict them.\n- If unsure about a detail, describe only what you can clearly observe. No guessing, no embellishment.\n- Each regeneration MUST produce a DIFFERENT text — vary the opening sentence, paragraph structure and vocabulary while keeping the same facts.\nWrap the ENTIRE description in: <div style=\"font-family:Arial,sans-serif;font-size:24px;text-align:center;\">\nStructure with these exact HTML tags:\n- <h2 style=\"font-family:Arial,sans-serif;font-size:24px;text-align:center;\">keyword</h2>\n- <p> Paragraph 1: introduce the item, its nature and French origin — MUST include the keyword naturally in this paragraph </p>\n- <p> Paragraph 2: describe visual details, materials and style — only what is clearly visible or explicitly stated, no invention </p>\n- <p> Paragraph 3: MUST include dimensions if mentioned anywhere (title, description, specifics or visible in photos). If dimensions are only in cm, convert them to inches too and show BOTH (e.g. 18.5cm x 8cm / 7.3\" x 3.1\"). If dimensions are only in inches, convert to cm too. Include condition and notable details. </p>\n- <p> Paragraph 4 (optional): suggest decorative use or collectible value </p>\n- <p> EXACTLY this sentence and nothing else: \"95% of my items are tariff-free to the US.\" </p>\n</div>\n\n4. ITEM SPECIFICS: Return a complete set. Keep correct existing values, overwrite wrong ones using photo evidence, add ALL missing relevant fields (Material, Style, Period/Era, Country of Origin, Color, Type, Dimensions if visible, Condition, Theme). IMPORTANT: for the Condition field, always reuse the existing value from EXISTING ITEM SPECIFICS if present. If absent, default to "Used".\n\n5. ETSY TAGS: Exactly 13 tags, each max 20 characters, optimized for Etsy search. Mix specific and broad terms.\n\n6. ALT TEXTS: One descriptive alt text per product photo (max 250 chars each, describe what is visible + material + origin).\n\nRespond ONLY with valid JSON, no markdown, no backticks:\n{\"keyword\":\"...\",\"newTitle\":\"...\",\"description\":\"...\",\"itemSpecifics\":{\"k\":\"v\"},\"etsyTags\":[\"t1\"],\"altTexts\":[\"a1\"]};'
+      : 'You are an SEO expert for Fleamarketfrance, a French vintage/antiques shop selling on eBay to international buyers (mainly US and UK).\nAnalyze the product photos (if provided) AND the information below, then generate fully optimized content.\n\nCURRENT TITLE: ' + ebListings[i].title + '\nCURRENT DESCRIPTION: ' + (ebListings[i].description||'').replace(/<[^>]+>/g,' ').substring(0,1000) + '\nEXISTING ITEM SPECIFICS:\n' + existingSpecsStr + '\n\nRULES — follow ALL strictly:\n\n1. KEYWORD: Find the single best SEO keyword for this item (1 to 6 words max, based on photos + title + description). It MUST appear in: the new title, as <h2> in the description, in the first paragraph, and naturally 1-2 times every 100 words throughout the description. Do not stuff — integrate naturally.\n\n2. NEW TITLE: Maximum 80 characters total. Keep the series of digits at the very END of the original title UNCHANGED and at the end of the new title. Include the keyword naturally. KEEP "Vintage" or "Antique" when present in the original title — these are important search terms. If needed to stay under 80 chars, remove the LEAST searched words for this specific item. Keep words buyers actually search. "Vintage", "Antique", "French" are almost always worth keeping. Words like "Glazed", "Made in France" (redundant with French), can be removed first. Use judgment.\n\n3. DESCRIPTION: Target 320 words (minimum 280, maximum 360). English only. Flowing prose, NO bullet points. Tone: precise, factual, concise. Write like a specialist antique dealer writing a catalogue entry — state facts, describe what you observe, give context. STRICTLY FORBIDDEN words (zero exceptions, do not use under any circumstance): beautiful, perfect, remarkable, magnificent, impressive, exceptional, stunning, lovely, charming, wonderful, delightful, exquisite, timeless, enduring, spirit, soul, journey, treasure, superb, outstanding, fantastic, incredible, splendid, gorgeous, elegant (unless it is a factual style description e.g. "Empire style"). If you use any of these words, the output is invalid. Replace them with factual observations: instead of "beautiful grain" write "visible wood grain"; instead of "perfect condition" write "good condition with minor wear"; instead of "timeless design" write "classic form".\nCRITICAL — ENCODING RULE: Use only plain ASCII characters. Write fractions as decimals (5.5" not 5½"), avoid accented characters (decor not décor, brocante not brocante with accents). Use standard inch symbol (") and cm.\nCRITICAL — ACCURACY RULES:\n- Base EVERYTHING strictly on what is explicitly visible in the photos AND stated in the existing title/description. Do NOT invent materials, shapes, origins or features not clearly present.\n- The seller existing description is a primary source — preserve its key facts, expand on them, never contradict them.\n- If unsure about a detail, describe only what you can clearly observe. No guessing, no embellishment.\n- Each regeneration MUST produce a DIFFERENT text — vary the opening sentence, paragraph structure and vocabulary while keeping the same facts.\nWrap the ENTIRE description in: <div style=\"font-family:Arial,sans-serif;font-size:24px;text-align:center;\">\nStructure with these exact HTML tags:\n- <h2 style=\"font-family:Arial,sans-serif;font-size:24px;text-align:center;\">keyword</h2>\n- <p> Paragraph 1: introduce the item, its nature and French origin — MUST include the keyword naturally in this paragraph </p>\n- <p> Paragraph 2: describe visual details, materials and style — only what is clearly visible or explicitly stated, no invention </p>\n- <p> Paragraph 3: MUST include dimensions if mentioned anywhere (title, description, specifics or visible in photos). If dimensions are only in cm, convert them to inches too and show BOTH (e.g. 18.5cm x 8cm / 7.3\" x 3.1\"). If dimensions are only in inches, convert to cm too. Include condition and notable details. </p>\n- <p> Paragraph 4 (optional): suggest decorative use or collectible value </p>\n- <p> EXACTLY this sentence and nothing else: \"95% of my items are tariff-free to the US.\" </p>\n</div>\n\n4. ITEM SPECIFICS: Return a complete set. Keep correct existing values, overwrite wrong ones using photo evidence, add ALL missing relevant fields (Material, Style, Period/Era, Country of Origin, Color, Type, Dimensions if visible, Condition, Theme). IMPORTANT: for the Condition field, always reuse the existing value from EXISTING ITEM SPECIFICS if present. If absent, default to "Used". IMPORTANT: always include "Item Height" and "Item Width" fields if dimensions are mentioned anywhere — extract them from title, description or photos. Use inches as unit (e.g. "7.5\"").\n\n5. ETSY TAGS: Exactly 13 tags, each max 20 characters, optimized for Etsy search. Mix specific and broad terms.\n\n6. ALT TEXTS: One descriptive alt text per product photo (max 250 chars each, describe what is visible + material + origin).\n\nRespond ONLY with valid JSON, no markdown, no backticks:\n{\"keyword\":\"...\",\"newTitle\":\"...\",\"description\":\"...\",\"itemSpecifics\":{\"k\":\"v\"},\"etsyTags\":[\"t1\"],\"altTexts\":[\"a1\"]};'
     userContent.push({type:'text', text: prompt});
     var parsed = await callClaude([{role:'user', content:userContent}], etsyOnlyMode);
     ebListings[i].etsyTags  = parsed.etsyTags  || [];
@@ -883,11 +889,18 @@ async function ebayPublishOne(i) {
   var specsXML = Object.entries(item.newSpecifics).map(function(kv) {
     return '<NameValueList><n>' + escXML(kv[0]) + '</n><Value>' + escXML(String(kv[1])) + '</Value></NameValueList>';
   }).join('');
+  // Vérifier longueur titre
+  var finalTitle = item.newTitle || item.title;
+  if (finalTitle.length > 80) {
+    logError('eBay', item.id, item.title, 'Titre trop long (' + finalTitle.length + ' chars): ' + finalTitle);
+    setStatus('ebay', 'Titre trop long pour #' + item.id + ' (' + finalTitle.length + ' chars) — truncating', 'error');
+    finalTitle = finalTitle.substring(0, 80);
+  }
   var finalDesc = item.newDescription + '\n' + MARKER;
   var conditionMap = {'new':1000,'new with tags':1000,'new without tags':1500,'new with defects':1750,'pre-owned':3000,'used':3000,'very good':4000,'good':5000,'acceptable':6000,'for parts':7000};
   var condText = ((item.newSpecifics && item.newSpecifics['Condition']) || (item.existingSpecifics && item.existingSpecifics['Condition']) || 'used').toLowerCase().trim();
   var conditionId = conditionMap[condText] || 3000;
-  var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(item.newTitle || item.title) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description><ConditionID>' + conditionId + '</ConditionID>' + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
+  var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(finalTitle) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description><ConditionID>' + conditionId + '</ConditionID>' + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
   try {
     var doc = await callEbayXML('ReviseItem', xml);
     var ack = doc.getElementsByTagName('Ack')[0];
@@ -1573,6 +1586,116 @@ async function shopifyExportSelected() {
   btn.disabled = false; btn.textContent = '→ Exporter sélectionnés vers Shopify';
   shopifyUpdateCounts();
   setStatus('shopify', '✓ ' + success + ' article(s) exportés vers Shopify.', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMPORT DEPUIS RAPPORT D'ERREURS
+// ═══════════════════════════════════════════════════════════════
+async function ebayImportFromRapport(input) {
+  var file = input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  var text = await file.text();
+
+  // Extraire les Item IDs du rapport (format: Article : #XXXXXXXXXX - Titre)
+  var matches = text.match(/Article\s*:\s*#(\d+)/g) || [];
+  var itemIds = [...new Set(matches.map(function(m) { return m.match(/\d+/)[0]; }))];
+
+  // Exclure les erreurs non-Claude (Auction ended, Title too long, etc.)
+  // En gardant uniquement les IDs associés à des erreurs Claude/eBay/Shopify
+  if (!itemIds.length) {
+    setStatus('ebay', 'Aucun article trouvé dans le rapport.', 'error');
+    return;
+  }
+
+  var c = getCreds();
+  if (!c['s-ebay-token']) {
+    setStatus('ebay', 'Token eBay manquant.', 'error');
+    return;
+  }
+
+  setStatus('ebay', 'Import de ' + itemIds.length + ' article(s) depuis le rapport...', 'info');
+  ebayShowMain();
+  startOp('eb-stop');
+
+  var imported = 0;
+  var errors   = 0;
+
+  for (var idx = 0; idx < itemIds.length; idx++) {
+    if (stopRequested) break;
+    var itemId = itemIds[idx];
+
+    // Vérifier si l'article est déjà chargé
+    var existing = ebListings.find(function(l) { return l.id === itemId; });
+    if (existing) {
+      // Remettre en pending pour régénération
+      existing.status = 'pending';
+      imported++;
+      continue;
+    }
+
+    setStatus('ebay', 'Chargement ' + (idx+1) + '/' + itemIds.length + ' — #' + itemId, 'info');
+
+    try {
+      var xml = '<?xml version="1.0" encoding="utf-8"?><GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><ItemID>' + itemId + '</ItemID><DetailLevel>ReturnAll</DetailLevel><IncludeItemSpecifics>true</IncludeItemSpecifics></GetItemRequest>';
+      var doc = await callEbayXML('GetItem', xml);
+
+      var ack = doc.getElementsByTagName('Ack')[0];
+      if (!ack || (ack.textContent !== 'Success' && ack.textContent !== 'Warning')) {
+        var msg = doc.getElementsByTagName('ShortMessage')[0] ? doc.getElementsByTagName('ShortMessage')[0].textContent : 'Erreur eBay';
+        logError('eBay', itemId, '', msg);
+        errors++;
+        continue;
+      }
+
+      var item = doc.getElementsByTagName('Item')[0];
+      if (!item) { errors++; continue; }
+
+      var desc  = item.getElementsByTagName('Description')[0] ? item.getElementsByTagName('Description')[0].textContent : '';
+      var pics  = Array.from(item.getElementsByTagName('PictureURL')).map(function(p) { return p.textContent.trim(); }).filter(Boolean);
+      var specs = {};
+      Array.from(item.getElementsByTagName('NameValueList')).forEach(function(nvl) {
+        var n = nvl.getElementsByTagName('Name')[0]  ? nvl.getElementsByTagName('Name')[0].textContent  : '';
+        var v = nvl.getElementsByTagName('Value')[0] ? nvl.getElementsByTagName('Value')[0].textContent : '';
+        if (n && v) specs[n] = v;
+      });
+
+      ebListings.push({
+        id:               itemId,
+        title:            item.getElementsByTagName('Title')[0] ? item.getElementsByTagName('Title')[0].textContent : '',
+        description:      desc,
+        pictures:         pics,
+        existingSpecifics: specs,
+        sku:              item.getElementsByTagName('SKU')[0]            ? item.getElementsByTagName('SKU')[0].textContent            : '',
+        price:            item.getElementsByTagName('CurrentPrice')[0]   ? item.getElementsByTagName('CurrentPrice')[0].textContent   : '',
+        qty:              item.getElementsByTagName('Quantity')[0]       ? item.getElementsByTagName('Quantity')[0].textContent       : '',
+        alreadyDone:      false,
+        status:           'pending',
+        selected:         true,
+        newTitle:         null, newDescription: null, keyword: null,
+        newSpecifics:     {}, etsyTags: [], altTexts: []
+      });
+      imported++;
+    } catch(e) {
+      if (e.name !== 'AbortError') {
+        logError('eBay', itemId, '', e.message);
+        errors++;
+      }
+    }
+
+    await new Promise(function(r) { setTimeout(r, 300); });
+  }
+
+  endOp('eb-stop');
+
+  ebFiltered = ebListings.slice();
+  ebPage = 1;
+  ebCounts.total = ebListings.length;
+  ebayUpdateCounts();
+  ebayRenderPage();
+
+  setStatus('ebay', '✓ ' + imported + ' article(s) importé(s) depuis le rapport.' + (errors ? ' ' + errors + ' erreur(s).' : ''), 'success');
 }
 
 // ═══════════════════════════════════════════════════════════════
