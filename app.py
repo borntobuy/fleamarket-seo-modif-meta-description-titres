@@ -470,7 +470,8 @@ def shopify_get_products():
                     'sku': sku, 'price': price, 'seoTitle': seo_title, 'seoDesc': seo_desc,
                     'hasSeo': bool(seo_title and seo_desc), 'alreadyDone': already_done,
                     'bodyHtml': body_html,
-                    'images':  [img.get('src','') for img in (p.get('images') or [])]
+                    'images':  [img.get('src','') for img in (p.get('images') or [])],
+                    'imageIds': [{'id': img.get('id'), 'src': img.get('src','')} for img in (p.get('images') or [])]
                 })
             url  = None
             link = resp.headers.get('Link', '')
@@ -505,6 +506,18 @@ def shopify_update_seo():
             payload['product']['body_html'] = description + '\n' + SHOPIFY_MARKER
         if handle:
             payload['product']['handle'] = handle
+
+        # Mettre à jour les alt texts des images
+        alt_texts = data.get('altTexts', [])
+        image_ids = data.get('imageIds', [])
+        for idx2, img_data in enumerate(image_ids):
+            if idx2 < len(alt_texts) and alt_texts[idx2] and img_data.get('id'):
+                requests.put(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '/images/' + str(img_data['id']) + '.json',
+                    headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                    json={'image': {'id': img_data['id'], 'alt': alt_texts[idx2]}},
+                    timeout=10
+                )
         resp = requests.put(
             'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json',
             headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
