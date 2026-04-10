@@ -946,8 +946,20 @@ async function ebayPublishOne(i) {
   try {
     var doc = await callEbayXML('ReviseItem', xml);
     var ack = doc.getElementsByTagName('Ack')[0];
-    if (ack && ack.textContent !== 'Success' && ack.textContent !== 'Warning')
-      throw new Error(doc.getElementsByTagName('ShortMessage')[0] ? doc.getElementsByTagName('ShortMessage')[0].textContent : 'Erreur eBay');
+    var errMsg = doc.getElementsByTagName('ShortMessage')[0] ? doc.getElementsByTagName('ShortMessage')[0].textContent : '';
+    // Si erreur condition id, retenter sans ConditionID
+    if (ack && ack.textContent !== 'Success' && ack.textContent !== 'Warning') {
+      if (errMsg.toLowerCase().includes('condition')) {
+        var xmlNoCondition = xml.replace(/<ConditionID>[^<]*<\/ConditionID>/, '');
+        var doc2 = await callEbayXML('ReviseItem', xmlNoCondition);
+        var ack2 = doc2.getElementsByTagName('Ack')[0];
+        if (ack2 && ack2.textContent !== 'Success' && ack2.textContent !== 'Warning')
+          throw new Error(doc2.getElementsByTagName('ShortMessage')[0] ? doc2.getElementsByTagName('ShortMessage')[0].textContent : 'Erreur eBay');
+        doc = doc2;
+      } else {
+        throw new Error(errMsg || 'Erreur eBay');
+      }
+    }
     if (ebListings[i].status === 'generated') { ebCounts.generated--; ebCounts.pushed++; }
     ebListings[i].status = 'updated'; ebListings[i].alreadyDone = true;
     ebayUpdateCounts(); ebayRefreshCard(i);
