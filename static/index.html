@@ -457,6 +457,16 @@ function ebayToggleSelectAll() {
 }
 function ebaySetSelected(i, val) { if (ebListings[i]) ebListings[i].selected = val; }
 
+function fixEncoding(str) {
+  // Corriger les bugs d'encodage latin1/utf8 courants
+  try {
+    // Tentative de décodage latin1 -> utf8
+    return decodeURIComponent(escape(str));
+  } catch(e) {
+    return str;
+  }
+}
+
 function etsyToggleSelectAll() {
   etsyAllSelected = !etsyAllSelected;
   etPairs.forEach(function(p) { if (p.etsy) p.checked = etsyAllSelected; });
@@ -900,8 +910,8 @@ async function ebayPublishOne(i) {
   var specsXML = Object.entries(item.newSpecifics).map(function(kv) {
     return '<NameValueList><n>' + escXML(kv[0]) + '</n><Value>' + escXML(String(kv[1])) + '</Value></NameValueList>';
   }).join('');
-  // Vérifier longueur titre
-  var finalTitle = item.newTitle || item.title;
+  // Vérifier longueur titre et corriger encodage
+  var finalTitle = fixEncoding(item.newTitle || item.title);
   if (finalTitle.length > 80) {
     logError('eBay', item.id, item.title, 'Titre trop long (' + finalTitle.length + ' chars): ' + finalTitle);
     setStatus('ebay', 'Titre trop long pour #' + item.id + ' (' + finalTitle.length + ' chars) — truncating', 'error');
@@ -930,7 +940,9 @@ async function ebayPublishOne(i) {
     }
   }
   conditionId = conditionId || 3000;
-  var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(finalTitle) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description><ConditionID>' + conditionId + '</ConditionID>' + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
+  // Envoyer ConditionID : depuis les specifics existants ou 3000 (Used) par défaut
+  var conditionXML = '<ConditionID>' + conditionId + '</ConditionID>';
+  var xml = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + item.id + '</ItemID><Title>' + escXML(finalTitle) + '</Title><Description><![CDATA[' + finalDesc + ']]></Description>' + conditionXML + (specsXML ? '<ItemSpecifics>' + specsXML + '</ItemSpecifics>' : '') + '</Item></ReviseItemRequest>';
   try {
     var doc = await callEbayXML('ReviseItem', xml);
     var ack = doc.getElementsByTagName('Ack')[0];
