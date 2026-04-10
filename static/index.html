@@ -886,6 +886,9 @@ async function ebayGenerateAll() {
   var btn = document.getElementById('eb-gen-all');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Génération...';
   startOp('eb-stop');
+  var ebKeepalive = setInterval(function() {
+    fetch('/etsy/status').catch(function() {});
+  }, 60000);
   for (var i = 0; i < ebListings.length; i++) {
     if (stopRequested) break;
     if (ebListings[i].status === 'pending' || ebListings[i].status === 'done') {
@@ -893,6 +896,7 @@ async function ebayGenerateAll() {
       await new Promise(function(r) { setTimeout(r, 600); });
     }
   }
+  clearInterval(ebKeepalive);
   endOp('eb-stop');
   btn.disabled = false; btn.textContent = '① Regénérer tout';
   setStatus('ebay', (stopRequested ? 'Arrêté. ' : '') + ebCounts.generated + ' description(s) générée(s).', 'success');
@@ -1505,13 +1509,18 @@ async function shopifyGenerateAllSeo() {
   var btn = document.getElementById('sh-gen-seo-all');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Génération...';
   startOp('sh-stop');
+  // Keepalive : ping le serveur toutes les 60s pour éviter mise en veille
+  var keepaliveInterval = setInterval(function() {
+    fetch('/shopify/status').catch(function() {});
+  }, 60000);
   for (var i = 0; i < shPairs.length; i++) {
     if (stopRequested) break;
-    if (!shPairs[i].hasSeo || !shPairs[i].newSeoTitle) {
+    if (shPairs[i].checked && (!shPairs[i].hasSeo || !shPairs[i].newSeoTitle)) {
       await shopifyGenerateSeoOne(i);
       await new Promise(function(r) { setTimeout(r, 500); });
     }
   }
+  clearInterval(keepaliveInterval);
   endOp('sh-stop');
   btn.disabled = false; btn.textContent = '🔍 Générer SEO manquant';
   setStatus('shopify', 'Génération SEO terminée.', 'success');
