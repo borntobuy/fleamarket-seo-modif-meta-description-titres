@@ -1560,7 +1560,9 @@ async function shopifyExportOne(i) {
         seoTitle:    pair.newSeoTitle || pair.seoTitle,
         seoDesc:     pair.newSeoDesc  || pair.seoDesc,
         description: pair.descToPush  || '',
-        handle:      pair.newHandle   || ''
+        handle:      pair.newHandle   || '',
+        altTexts:    pair.newAltTexts || [],
+        imageIds:    pair.shopify.imageIds || []
       })
     });
     var data = await seoResp.json();
@@ -1614,7 +1616,8 @@ async function shopifyExportSelected() {
             seoDesc:     pair.newSeoDesc   || pair.seoDesc,
             description: pair.descToPush   || '',
             handle:      pair.newHandle    || '',
-            altTexts:    pair.newAltTexts  || []
+            altTexts:    pair.newAltTexts  || [],
+            imageIds:    pair.shopify.imageIds || []
           })
         });
         var seoData = await seoResp.json();
