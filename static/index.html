@@ -1298,7 +1298,7 @@ async function shopifyReload(forceAll) {
 
     shPairs = [];
     allShopify.forEach(function(sh) {
-      var hasSeo  = !!(sh.seoTitle && sh.seoDesc);
+      var hasSeo  = !!(sh.seoTitle && sh.seoTitle.length > 5 && sh.seoDesc && sh.seoDesc.length > 5);
       var hasDesc = !!(sh.bodyHtml && sh.bodyHtml.includes('<!-- fmf-shopify -->'));
       var needsWork = !hasSeo || !hasDesc;
       shPairs.push({
@@ -1322,7 +1322,7 @@ async function shopifyReload(forceAll) {
     shFiltered = shPairs.slice();
     shPage = 1;
     shCounts.total     = shPairs.length;
-    shCounts.noseo     = shPairs.filter(function(p) { return !p.hasSeo; }).length;
+    shCounts.noseo     = shPairs.filter(function(p) { return p.status === 'noseo'; }).length;
     shCounts.pushed    = 0;
     shCounts.generated = 0;
     shCounts.errors    = 0;
