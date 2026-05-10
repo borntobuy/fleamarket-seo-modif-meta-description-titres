@@ -973,6 +973,13 @@ async function ebayPublishOne(i) {
     if (ebListings[i].status === 'generated') { ebCounts.generated--; ebCounts.pushed++; }
     ebListings[i].status = 'updated'; ebListings[i].alreadyDone = true;
     ebayUpdateCounts(); ebayRefreshCard(i);
+    // Retirer le marqueur Shopify si SKU présent — l'article devra être re-optimisé sur Shopify
+    if (ebListings[i].sku && shopifyConnected) {
+      fetch('/shopify/remove_marker', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({sku: ebListings[i].sku})
+      }).catch(function() {});
+    }
   } catch(e) {
     logError('eBay', item.id, item.title, e.message);
     setStatus('ebay', 'Erreur eBay #' + item.id + ' : ' + e.message, 'error');
