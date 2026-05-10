@@ -1292,6 +1292,7 @@ async function shopifyReload(forceAll) {
     var fetchData = await fetchResp.json();
     if (fetchData.error) throw new Error(fetchData.error);
     var allShopify  = fetchData.products    || [];
+    console.log('Shopify products reçus:', allShopify.length, '| Premier seoTitle:', allShopify[0] ? allShopify[0].seoTitle : 'N/A');
     var totalStore  = fetchData.total_store || allShopify.length;
     var pagesLoaded = fetchData.pages       || 1;
     setStatus('shopify', allShopify.length + ' / ' + totalStore + ' produit(s) recuperes (' + pagesLoaded + ' page(s)).', 'info');
