@@ -783,8 +783,10 @@ function ebayBuildCard(item, i) {
   var regenLabel = etsyOnlyMode ? '🏷 Regénérer tags' : 'Regénérer';
 
   var titleHTML = item.newTitle
-    ? '<div class="listing-title" style="text-decoration:line-through;color:#aaa;font-size:11px">' + escHTML(item.title) + '</div><div class="listing-title">' + escHTML(item.newTitle) + ' <span style="font-size:9px;color:' + (item.newTitle.length > 80 ? 'var(--rust)' : 'var(--sage)') + '">' + item.newTitle.length + '/80</span></div>'
-    : '<div class="listing-title">' + escHTML(item.title) + '</div>';
+    ? '<div style="margin-bottom:4px"><span style="font-size:9px;color:#aaa;text-decoration:line-through">' + escHTML(item.title) + '</span></div>'
+      + '<input type="text" class="title-editor" id="title-orig-' + i + '" value="' + escHTML(item.userTitle || item.title) + '" oninput="ebayUpdateUserTitle(' + i + ', this.value)" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--cream);margin-bottom:4px" placeholder="Modifier le titre original...">'
+      + '<div class="listing-title">' + escHTML(item.newTitle) + ' <span style="font-size:9px;color:' + (item.newTitle.length > 80 ? 'var(--rust)' : 'var(--sage)') + '">' + item.newTitle.length + '/80</span></div>'
+    : '<input type="text" class="title-editor" id="title-orig-' + i + '" value="' + escHTML(item.userTitle || item.title) + '" oninput="ebayUpdateUserTitle(' + i + ', this.value)" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--cream)" placeholder="Modifier le titre original...">';
 
   var thumbsHTML = item.pictures.length
     ? '<div class="thumbs">' + item.pictures.slice(0,4).map(function(u) { return '<img class="thumb" src="' + u + '" onerror="this.style.display=\'none\'">'; }).join('') + '</div>'
@@ -833,6 +835,10 @@ function ebayBuildCard(item, i) {
     + specsHTML + etsyTagsHTML + actionsHTML
     + '</div>';
   return div;
+}
+
+function ebayUpdateUserTitle(i, val) {
+  if (ebListings[i]) ebListings[i].userTitle = val;
 }
 
 function ebayUpdateDesc(i, val) {
