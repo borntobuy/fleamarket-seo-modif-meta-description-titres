@@ -402,13 +402,17 @@ def get_all_seo_metafields(token):
         edges = data.get('data', {}).get('products', {}).get('edges', [])
         for edge in edges:
             node = edge['node']
-            # ID GraphQL = "gid://shopify/Product/12345" -> extraire le nombre
             gid = node['id']
             pid = int(gid.split('/')[-1])
             seo = node.get('seo', {})
+            seo_title = seo.get('title') or ''
+            seo_desc  = seo.get('description') or ''
+            if seo_title:  # Log uniquement si SEO présent
+                import sys
+                print('GraphQL SEO found: ' + str(pid) + ' | ' + seo_title[:40], file=sys.stderr)
             result[pid] = {
-                'seoTitle': seo.get('title') or '',
-                'seoDesc':  seo.get('description') or ''
+                'seoTitle': seo_title,
+                'seoDesc':  seo_desc
             }
         page_info = data.get('data', {}).get('products', {}).get('pageInfo', {})
         if not page_info.get('hasNextPage'):
