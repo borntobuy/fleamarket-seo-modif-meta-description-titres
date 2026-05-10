@@ -1302,6 +1302,7 @@ async function shopifyReload(forceAll) {
       var hasSeo  = !!(sh.seoTitle && sh.seoTitle.length > 5 && sh.seoDesc && sh.seoDesc.length > 5);
       var hasDesc = !!(sh.bodyHtml && sh.bodyHtml.includes('<!-- fmf-shopify -->'));
       var needsWork = !hasSeo || !hasDesc;
+      if (allShopify.indexOf(sh) === 0) console.log('DEBUG first sh:', sh.seoTitle, '| hasSeo:', hasSeo, '| seoDesc:', sh.seoDesc ? sh.seoDesc.substring(0,30) : 'EMPTY');
       shPairs.push({
         ebay:        null,
         shopify:     sh,
