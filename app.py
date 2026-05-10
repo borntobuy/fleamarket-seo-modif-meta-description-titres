@@ -684,5 +684,44 @@ def shopify_cleanup_markers():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/shopify/remove_marker', methods=['POST'])
+def shopify_remove_marker():
+    """Retire le marqueur fmf-shopify du body_html d'un produit via son SKU."""
+    data  = request.json or {}
+    sku   = data.get('sku', '').strip()
+    token = shopify_token_store.get('current')
+    if not token or not sku:
+        return jsonify({'skipped': True})
+    try:
+        # Chercher le produit par SKU
+        resp = requests.get(
+            'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/variants.json?sku=' + sku + '&fields=id,product_id',
+            headers={'X-Shopify-Access-Token': token}, timeout=15
+        )
+        variants = resp.json().get('variants', [])
+        if not variants:
+            return jsonify({'skipped': True, 'reason': 'SKU not found'})
+        product_id = variants[0]['product_id']
+        # Récupérer le body_html actuel
+        prod_resp = requests.get(
+            'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json?fields=id,body_html',
+            headers={'X-Shopify-Access-Token': token}, timeout=15
+        )
+        product  = prod_resp.json().get('product', {})
+        body_html = product.get('body_html') or ''
+        if SHOPIFY_MARKER not in body_html:
+            return jsonify({'skipped': True, 'reason': 'No marker found'})
+        # Retirer le marqueur
+        clean_body = body_html.replace(SHOPIFY_MARKER, '').strip()
+        requests.put(
+            'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json',
+            headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+            json={'product': {'id': product_id, 'body_html': clean_body}},
+            timeout=15
+        )
+        return jsonify({'success': True, 'product_id': product_id})
+    except Exception as e:
+        return jsonify({'skipped': True, 'error': str(e)})
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
