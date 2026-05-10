@@ -483,6 +483,11 @@ def shopify_get_products():
                 if m:
                     url = m.group(1)
 
+        import sys
+        seo_count = sum(1 for p in all_products if p.get('seoTitle'))
+        print('SHOPIFY: total=' + str(len(all_products)) + ' with_seo=' + str(seo_count), file=sys.stderr)
+        if all_products:
+            print('FIRST seoTitle=' + repr(all_products[0].get('seoTitle','')[:50]), file=sys.stderr)
         return jsonify({'products': all_products, 'total': len(all_products), 'total_store': total_count, 'pages': page_num})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
