@@ -458,9 +458,8 @@ def shopify_get_products():
                 seo_title  = seo.get('seoTitle', '')
                 seo_desc   = seo.get('seoDesc', '')
 
-                has_marker    = SHOPIFY_MARKER in body_html
-                has_clean_seo = bool(seo_title) and bool(seo_desc) and SHOPIFY_MARKER not in seo_title
-                already_done  = has_marker or has_clean_seo
+                # Un article est traité UNIQUEMENT s'il a le marqueur dans body_html
+                already_done = SHOPIFY_MARKER in body_html
 
                 if not force_all and already_done:
                     continue
