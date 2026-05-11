@@ -483,11 +483,6 @@ def shopify_get_products():
                 if m:
                     url = m.group(1)
 
-        import sys
-        seo_count = sum(1 for p in all_products if p.get('seoTitle'))
-        print('SHOPIFY: total=' + str(len(all_products)) + ' with_seo=' + str(seo_count), file=sys.stderr)
-        if all_products:
-            print('FIRST seoTitle=' + repr(all_products[0].get('seoTitle','')[:50]), file=sys.stderr)
         return jsonify({'products': all_products, 'total': len(all_products), 'total_store': total_count, 'pages': page_num})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -731,6 +726,58 @@ def shopify_remove_marker():
         return jsonify({'success': True, 'product_id': product_id})
     except Exception as e:
         return jsonify({'skipped': True, 'error': str(e)})
+
+@app.route('/shopify/mark_existing_seo', methods=['POST'])
+def shopify_mark_existing_seo():
+    """Ajoute le marqueur fmf-shopify aux articles qui ont deja un SEO title et meta propres."""
+    token = shopify_token_store.get('current')
+    if not token:
+        return jsonify({'error': 'Non connecte'}), 401
+    import sys, re as _re
+    data   = request.json or {}
+    offset = data.get('offset', 0)
+    marked = data.get('marked', 0)
+    BATCH  = 20
+    try:
+        # Récupérer tous les SEO via GraphQL
+        all_seo = get_all_seo_metafields(token)
+        # Récupérer les produits avec body_html
+        url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json?limit=250&fields=id,body_html'
+        all_products = []
+        while url:
+            resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=30)
+            all_products += resp.json().get('products', [])
+            url = None
+            link = resp.headers.get('Link', '')
+            if 'rel="next"' in link:
+                m = _re.search(r'<([^>]+)>; *rel="next"', link)
+                if m: url = m.group(1)
+        total = len(all_products)
+        batch = all_products[offset:offset + BATCH]
+        for p in batch:
+            pid       = p['id']
+            body_html = p.get('body_html') or ''
+            if SHOPIFY_MARKER in body_html:
+                continue
+            seo = all_seo.get(pid, {})
+            seo_title = seo.get('seoTitle', '')
+            seo_desc  = seo.get('seoDesc', '')
+            if not seo_title or not seo_desc:
+                continue
+            if SHOPIFY_MARKER in seo_title:
+                continue
+            # Article avec SEO propre mais sans marqueur → ajouter le marqueur
+            requests.put(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(pid) + '.json',
+                headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                json={'product': {'id': pid, 'body_html': body_html + '\n' + SHOPIFY_MARKER}},
+                timeout=15
+            )
+            marked += 1
+            print('MARK: #' + str(pid) + ' marked', file=sys.stderr)
+        return jsonify({'marked': marked, 'offset': offset + BATCH, 'total': total, 'done': offset + BATCH >= total})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
