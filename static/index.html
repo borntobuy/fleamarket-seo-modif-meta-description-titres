@@ -881,10 +881,15 @@ function ebayUpdateDesc(i, val) {
 }
 
 function ebayRefreshCard(i) {
-  // i est l'index dans ebListings - trouver l'index dans ebFiltered
-  var fi = ebFiltered.indexOf(ebListings[i]);
-  var el = document.getElementById('eb-item-' + fi);
+  // i est l'index dans ebListings - la carte a cet id
+  var el = document.getElementById('eb-item-' + i);
   if (el) el.replaceWith(ebayBuildCard(ebListings[i], i));
+  // Si pas trouvé par index ebListings, chercher dans ebFiltered
+  if (!el) {
+    var fi = ebFiltered.indexOf(ebListings[i]);
+    var el2 = document.getElementById('eb-item-' + fi);
+    if (el2) el2.replaceWith(ebayBuildCard(ebListings[i], i));
+  }
 }
 
 async function ebayGenerateOne(i) {
@@ -937,7 +942,10 @@ async function ebayGenerateAll() {
     if (stopRequested) break;
     var idx = ebListings.indexOf(ebFiltered[fi]);
     if (idx < 0) continue;
-    if (ebListings[idx].status === 'pending' || ebListings[idx].status === 'done') {
+    if ((ebListings[idx].status === 'pending' || ebListings[idx].status === 'done') && ebListings[idx].selected !== false) {
+      // Aller à la page qui contient cet article pour voir la génération en temps réel
+      var targetPage = Math.floor(fi / PER_PAGE) + 1;
+      if (targetPage !== ebPage) { ebPage = targetPage; ebayRenderPage(); }
       await ebayGenerateOne(idx);
       await new Promise(function(r) { setTimeout(r, 600); });
     }
