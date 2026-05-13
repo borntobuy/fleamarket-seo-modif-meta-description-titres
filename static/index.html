@@ -835,13 +835,6 @@ function ebayBuildCard(item, i) {
     actionsHTML = '<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px"><button class="btn-outline btn-sm" onclick="ebayGenerateOne(' + i + ')">' + regenLabel + '</button></div>';
   }
 
-  var remarquesHTML = '<div class="compare-field" style="margin-bottom:8px">'
-    + '<label style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--rust)">Instructions spéciales pour Claude</label>'
-    + '<textarea class="desc-editor" style="min-height:50px;border-color:var(--rust);background:#fff5f5" '
-    + 'placeholder="Ex: dimensions 10x15cm, mentionner marque Girod, titre doit être Honey Pot..." '
-    + 'oninput="ebaySetRemarks(' + i + ', this.value)">'
-    + escHTML(item.remarks || '')
-    + '</textarea></div>';
 
   div.innerHTML = '<div class="listing-header">'
     + ebCheckbox
@@ -850,7 +843,7 @@ function ebayBuildCard(item, i) {
     + '</div>'
     + '<div class="listing-meta">' + (badgeMap[item.status] || '') + '<div class="listing-id">#' + escHTML(item.id) + '</div></div>'
     + '</div>'
-    + '<div class="listing-body">' + remarquesHTML + thumbsHTML
+    + '<div class="listing-body">' + thumbsHTML
     + '<div class="compare-grid"><div><h4>Description actuelle</h4><div class="compare-field"><div class="val">' + escHTML(descOld) + '</div></div></div>'
     + '<div><h4>Nouvelle description</h4>' + descNew + (item.keyword ? '<div style="margin-top:4px"><span class="keyword-tag">🔑 ' + escHTML(item.keyword) + '</span></div>' : '') + '</div></div>'
     + specsHTML + etsyTagsHTML + actionsHTML
