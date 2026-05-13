@@ -881,7 +881,9 @@ function ebayUpdateDesc(i, val) {
 }
 
 function ebayRefreshCard(i) {
-  var el = document.getElementById('eb-item-' + i);
+  // i est l'index dans ebListings - trouver l'index dans ebFiltered
+  var fi = ebFiltered.indexOf(ebListings[i]);
+  var el = document.getElementById('eb-item-' + fi);
   if (el) el.replaceWith(ebayBuildCard(ebListings[i], i));
 }
 
