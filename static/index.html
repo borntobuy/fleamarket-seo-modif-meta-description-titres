@@ -232,6 +232,16 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" id="eb-select-all" onclick="ebayToggleSelectAll()">☐ Tout sélectionner</button>
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
     </div>
+    <div id="eb-global-instructions" style="margin-bottom:12px;display:none">
+      <div class="field">
+        <label style="color:var(--rust)">Instructions globales pour tous les articles filtrés</label>
+        <textarea id="eb-global-remarks" class="desc-editor" style="min-height:50px;border-color:var(--rust);background:#fff5f5" placeholder="Ex: inclure dimensions 10x15cm en cm et inches, mentionner marque Girod de Savoie..."></textarea>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn-danger btn-sm" onclick="ebayApplyGlobalRemarks()">Appliquer à tous les articles filtrés</button>
+          <button class="btn-outline btn-sm" onclick="ebayClearGlobalRemarks()">Effacer</button>
+        </div>
+      </div>
+    </div>
     <div id="eb-pagination-top"></div>
     <div class="listings-grid" id="eb-grid"></div>
     <div id="eb-pagination-bot"></div>
@@ -738,6 +748,7 @@ async function ebaySearch() {
   });
   ebPage = 1;
   setStatus('ebay', ebFiltered.length + ' résultat(s) pour "' + q + '".', ebFiltered.length ? 'success' : 'error');
+  document.getElementById('eb-global-instructions').style.display = ebFiltered.length ? 'block' : 'none';
   ebayRenderPage();
 }
 
@@ -746,6 +757,7 @@ function ebayClearSearch() {
   ebFiltered = ebListings.slice();
   ebPage = 1;
   document.getElementById('ebay-status').style.display = 'none';
+  document.getElementById('eb-global-instructions').style.display = 'none';
   ebayRenderPage();
 }
 
@@ -848,6 +860,23 @@ function ebayBuildCard(item, i) {
 
 function ebayUpdateUserTitle(i, val) {
   if (ebListings[i]) ebListings[i].userTitle = val;
+}
+
+function ebayApplyGlobalRemarks() {
+  var remarks = document.getElementById('eb-global-remarks').value.trim();
+  if (!remarks) return;
+  ebFiltered.forEach(function(item) {
+    item.remarks = remarks;
+  });
+  // Rafraîchir l'affichage
+  ebayRenderPage();
+  setStatus('ebay', 'Instructions appliquées à ' + ebFiltered.length + ' article(s).', 'success');
+}
+
+function ebayClearGlobalRemarks() {
+  document.getElementById('eb-global-remarks').value = '';
+  ebFiltered.forEach(function(item) { item.remarks = ''; });
+  ebayRenderPage();
 }
 
 function ebaySetRemarks(i, val) {
