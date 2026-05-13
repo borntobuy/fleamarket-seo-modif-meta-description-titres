@@ -930,10 +930,13 @@ async function ebayGenerateAll() {
   var ebKeepalive = setInterval(function() {
     fetch('/etsy/status').catch(function() {});
   }, 60000);
-  for (var i = 0; i < ebListings.length; i++) {
+  // Itérer sur ebFiltered pour respecter le filtre/recherche actif
+  for (var fi = 0; fi < ebFiltered.length; fi++) {
     if (stopRequested) break;
-    if (ebListings[i].status === 'pending' || ebListings[i].status === 'done') {
-      await ebayGenerateOne(i);
+    var idx = ebListings.indexOf(ebFiltered[fi]);
+    if (idx < 0) continue;
+    if (ebListings[idx].status === 'pending' || ebListings[idx].status === 'done') {
+      await ebayGenerateOne(idx);
       await new Promise(function(r) { setTimeout(r, 600); });
     }
   }
@@ -1028,9 +1031,10 @@ async function ebayPushAll() {
   var btn = document.getElementById('eb-push-all');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Publication...';
   startOp('eb-stop');
-  for (var i = 0; i < ebListings.length; i++) {
+  for (let fi = 0; fi < ebFiltered.length; fi++) {
     if (stopRequested) break;
-    if (ebListings[i].status === 'generated' && ebListings[i].selected !== false) { await ebayPublishOne(i); await new Promise(function(r) { setTimeout(r, 400); }); }
+    var idx = ebListings.indexOf(ebFiltered[fi]); if (idx < 0 || stopRequested) continue;
+    if (ebListings[idx].status === 'generated' && ebListings[idx].selected !== false) { await ebayPublishOne(idx); await new Promise(function(r) { setTimeout(r, 400); }); }
   }
   endOp('eb-stop');
   btn.disabled = false; btn.textContent = '② Publier tout eBay';
