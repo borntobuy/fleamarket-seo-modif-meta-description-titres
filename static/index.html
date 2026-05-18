@@ -1021,8 +1021,10 @@ async function ebayPublishOne(i) {
     if (ebListings[i].status === 'generated') { ebCounts.generated--; ebCounts.pushed++; }
     ebListings[i].status = 'updated'; ebListings[i].alreadyDone = true;
     ebayUpdateCounts(); ebayRefreshCard(i);
-    // Retirer le marqueur Shopify si SKU présent — l'article devra être re-optimisé sur Shopify
-    if (ebListings[i].sku && shopifyConnected) {
+    // Retirer le marqueur Shopify uniquement si le titre ou la description ont été modifiés
+    var titleChanged = ebListings[i].userTitle && ebListings[i].userTitle !== ebListings[i].title;
+    var descChanged  = ebListings[i].newDescription ? true : false;
+    if (ebListings[i].sku && shopifyConnected && (titleChanged || descChanged)) {
       fetch('/shopify/remove_marker', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({sku: ebListings[i].sku})
