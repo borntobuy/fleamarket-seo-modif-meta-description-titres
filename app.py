@@ -507,6 +507,19 @@ def shopify_update_seo():
         }}
         if description:
             payload['product']['body_html'] = description + '\n' + SHOPIFY_MARKER
+        else:
+            # Pas de description fournie mais on doit quand même marquer l'article
+            # Récupérer le body_html actuel et ajouter le marqueur
+            try:
+                prod_resp = requests.get(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json?fields=id,body_html',
+                    headers={'X-Shopify-Access-Token': token}, timeout=15
+                )
+                current_body = prod_resp.json().get('product', {}).get('body_html') or ''
+                if SHOPIFY_MARKER not in current_body:
+                    payload['product']['body_html'] = current_body + '\n' + SHOPIFY_MARKER
+            except Exception:
+                pass
         if handle:
             payload['product']['handle'] = handle
 
