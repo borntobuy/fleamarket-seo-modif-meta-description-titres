@@ -792,5 +792,120 @@ def shopify_mark_existing_seo():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/shopify/create_redirects', methods=['POST'])
+def shopify_create_redirects():
+    """Crée des redirections 301 pour les anciennes URLs 404.
+    Prend une liste d'anciennes URLs, cherche les nouveaux handles via SKU/ref,
+    et crée les redirections Shopify."""
+    token = shopify_token_store.get('current')
+    if not token:
+        return jsonify({'error': 'Non connecte a Shopify'}), 401
+
+    import sys, re as _re
+    data       = request.json or {}
+    old_paths  = data.get('old_paths', [])  # liste de /products/ancien-handle
+    offset     = data.get('offset', 0)
+    created    = data.get('created', 0)
+    skipped    = data.get('skipped', 0)
+    BATCH      = 10
+
+    try:
+        batch = old_paths[offset:offset + BATCH]
+        total = len(old_paths)
+
+        for old_path in batch:
+            # Extraire le numéro de référence du handle
+            m = _re.search(r'(\d{6,})$', old_path.rstrip('/'))
+            if not m:
+                skipped += 1
+                continue
+
+            ref = m.group(1)
+
+            # Chercher le produit Shopify par SKU contenant cette référence
+            resp = requests.get(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json'
+                + '?fields=id,handle&limit=5',
+                headers={'X-Shopify-Access-Token': token},
+                params={'handle': ref},
+                timeout=15
+            )
+
+            # Chercher par variants SKU
+            sku_resp = requests.get(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/variants.json'
+                + '?fields=product_id,sku&limit=5',
+                headers={'X-Shopify-Access-Token': token},
+                params={'sku': ref},
+                timeout=15
+            )
+            variants = sku_resp.json().get('variants', [])
+
+            if not variants:
+                # Chercher dans le titre du produit
+                search_resp = requests.get(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json'
+                    + '?fields=id,handle,title&limit=5&title=' + ref,
+                    headers={'X-Shopify-Access-Token': token},
+                    timeout=15
+                )
+                products = search_resp.json().get('products', [])
+                if not products:
+                    skipped += 1
+                    print('REDIRECT skip: ref=' + ref + ' not found', file=sys.stderr)
+                    continue
+                product_id = products[0]['id']
+                new_handle = products[0]['handle']
+            else:
+                product_id = variants[0]['product_id']
+                # Récupérer le handle
+                prod_resp = requests.get(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json?fields=id,handle',
+                    headers={'X-Shopify-Access-Token': token},
+                    timeout=15
+                )
+                new_handle = prod_resp.json().get('product', {}).get('handle', '')
+
+            if not new_handle:
+                skipped += 1
+                continue
+
+            new_path = '/products/' + new_handle
+
+            # Ne pas créer si identique
+            if old_path == new_path:
+                skipped += 1
+                continue
+
+            # Créer la redirection 301
+            redir_resp = requests.post(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/redirects.json',
+                headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                json={'redirect': {'path': old_path, 'target': new_path}},
+                timeout=15
+            )
+            if redir_resp.status_code in (200, 201):
+                created += 1
+                print('REDIRECT created: ' + old_path + ' -> ' + new_path, file=sys.stderr)
+            elif redir_resp.status_code == 422:
+                # Redirection déjà existante
+                skipped += 1
+            else:
+                skipped += 1
+                print('REDIRECT error: ' + str(redir_resp.status_code) + ' ' + old_path, file=sys.stderr)
+
+        return jsonify({
+            'created': created,
+            'skipped': skipped,
+            'offset':  offset + BATCH,
+            'total':   total,
+            'done':    offset + BATCH >= total
+        })
+
+    except Exception as e:
+        import traceback
+        print('REDIRECT ERROR: ' + traceback.format_exc(), file=sys.stderr)
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
