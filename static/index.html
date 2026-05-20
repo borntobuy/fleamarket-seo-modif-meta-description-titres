@@ -313,7 +313,9 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline btn-sm" onclick="shopifyReload(false)">↺ Recharger non traités</button>
       <button class="btn-outline btn-sm" onclick="shopifyReload(true)">↺ Tout réimporter</button>
       <button class="btn-outline btn-sm" id="sh-stop" onclick="requestStop()" style="display:none">⏹ Stop</button>
-      <button class="btn-sage btn-sm" onclick="shopifyMarkExisting()" title="Ajoute le marqueur aux articles qui ont déjà un bon SEO">✓ Marquer existants</button>
+      <button class="btn-outline btn-sm" onclick="document.getElementById('gsc-404-input').click()" title="Importer les URLs 404 depuis Google Search Console pour créer les redirections 301">🔗 Corriger 404</button>
+      <input type="file" id="gsc-404-input" accept=".csv,.zip" style="display:none" onchange="shopifyFix404(this)">
+      <button class="btn-sage btn-sm" onclick="shopifyMarkExisting()"  title="Ajoute le marqueur aux articles qui ont déjà un bon SEO">✓ Marquer existants</button>
       <button class="btn-danger btn-sm" onclick="shopifyCleanupMarkers()" title="Retire le marqueur fmf-shopify des SEO titles et le place correctement dans body_html">🧹 Nettoyer marqueurs</button>
       <button class="btn-outline btn-sm" id="sh-select-all" onclick="shopifyToggleSelectAll()">☐ Tout sélectionner</button>
       <button style="margin-left:auto" class="btn-outline btn-sm" onclick="exportReport()">📄 Rapport</button>
@@ -1588,6 +1590,53 @@ async function shopifyGenerateAllSeo() {
   endOp('sh-stop');
   btn.disabled = false; btn.textContent = '🔍 Générer SEO manquant';
   setStatus('shopify', 'Génération SEO terminée.', 'success');
+}
+
+async function shopifyFix404(input) {
+  var file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  if (!shopifyConnected) { setStatus('shopify', 'Connectez Shopify d\'abord.', 'error'); return; }
+
+  var text = await file.text();
+  // Parser le CSV GSC - format: URL,Dernière exploration
+  var lines = text.split('\n').slice(1); // skip header
+  var oldPaths = [];
+  lines.forEach(function(line) {
+    var url = line.split(',')[0].trim().replace(/"/g,'');
+    if (url.includes('/products/')) {
+      var path = url.replace('https://fleamarketfrance.com', '').split('?')[0];
+      if (path) oldPaths.push(path);
+    }
+  });
+
+  if (!oldPaths.length) { setStatus('shopify', 'Aucune URL /products/ trouvée dans le fichier.', 'error'); return; }
+
+  var btn = event.target;
+  if (!confirm('Créer des redirections 301 pour ' + oldPaths.length + ' URLs 404 ?')) return;
+
+  var offset = 0, created = 0, skipped = 0;
+  btn.disabled = true;
+
+  try {
+    while (true) {
+      btn.innerHTML = '<span class="spinner"></span>' + Math.min(offset, oldPaths.length) + '/' + oldPaths.length + ' (' + created + ' créées)';
+      var resp = await fetch('/shopify/create_redirects', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({old_paths: oldPaths, offset: offset, created: created, skipped: skipped})
+      });
+      var data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      created = data.created; skipped = data.skipped; offset = data.offset;
+      setStatus('shopify', 'Redirections: ' + created + ' créées, ' + skipped + ' ignorées...', 'info');
+      if (data.done) break;
+      await new Promise(function(r) { setTimeout(r, 500); });
+    }
+    setStatus('shopify', '✓ ' + created + ' redirections 301 créées, ' + skipped + ' ignorées.', 'success');
+  } catch(e) {
+    setStatus('shopify', 'Erreur : ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = '🔗 Corriger 404';
 }
 
 async function shopifyMarkExisting() {
