@@ -471,13 +471,18 @@ function ebayToggleSelectAll() {
 function ebaySetSelected(i, val) { if (ebListings[i]) ebListings[i].selected = val; }
 
 function fixEncoding(str) {
-  // Corriger les bugs d'encodage latin1/utf8 courants
-  try {
-    // Tentative de décodage latin1 -> utf8
-    return decodeURIComponent(escape(str));
-  } catch(e) {
-    return str;
-  }
+  if (!str) return str;
+  // Table de correspondance des séquences mal encodées latin1->utf8
+  var replacements = [
+    ['Ã©','é'],['Ã¨','è'],['Ã ','à'],['Ã¢','â'],['Ã®','î'],
+    ['Ã´','ô'],['Ã»','û'],['Ã§','ç'],['Ã«','ë'],['Ã¯','ï'],
+    ['Ã¼','ü'],['Ã¶','ö'],['Ã¤','ä'],['Ã\u0089','É'],['Ã\u0080','À'],
+    ['â€™',"'"],['â€œ','"'],['Â½','½'],['Â¼','¼'],['Â¾','¾'],['Â°','°']
+  ];
+  replacements.forEach(function(r) { str = str.split(r[0]).join(r[1]); });
+  // "Ã " + lettre = "à " + lettre
+  str = str.replace(/Ã ([a-zA-Z])/g, 'à $1').replace(/Ã $/g, 'à');
+  return str;
 }
 
 function etsyToggleSelectAll() {
@@ -1875,7 +1880,7 @@ async function ebayImportFromRapport(input) {
       ebListings.push({
         id:               itemId,
         title:            item.getElementsByTagName('Title')[0] ? item.getElementsByTagName('Title')[0].textContent : '',
-        description:      desc,
+        description:      fixEncoding(desc),
         pictures:         pics,
         existingSpecifics: specs,
         sku:              item.getElementsByTagName('SKU')[0]            ? item.getElementsByTagName('SKU')[0].textContent            : '',
