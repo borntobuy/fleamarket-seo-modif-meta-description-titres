@@ -36,6 +36,7 @@ etsy_state_store  = {}
 
 _shopify_tok  = _load_token('shopify')
 shopify_token_store = {'current': _shopify_tok} if _shopify_tok else {}
+gsc_token_store     = {}
 shopify_state_store = {}
 
 # ── Page principale ────────────────────────────────────────────────────────
@@ -372,8 +373,8 @@ def shopify_status():
     return jsonify({'connected': 'current' in shopify_token_store})
 
 
-GSC_CLIENT_ID     = '846447177037-mjgvpc64v3ur4e60p2ctr12rmdugq6ae.apps.googleusercontent.com'
-GSC_CLIENT_SECRET = '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'
+GSC_CLIENT_ID     = 'TON_GSC_CLIENT_ID_ICI'
+GSC_CLIENT_SECRET = 'TON_GSC_CLIENT_SECRET_ICI'
 GSC_REDIRECT_URI  = 'https://fleamarket-seo-modif-meta-description.onrender.com/gsc/callback'
 GSC_SCOPE         = 'https://www.googleapis.com/auth/webmasters.readonly'
 
