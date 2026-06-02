@@ -810,7 +810,7 @@ def shopify_create_redirects():
     offset    = data.get('offset', 0)
     created   = data.get('created', 0)
     skipped   = data.get('skipped', 0)
-    BATCH     = 5  # réduit pour éviter le 429
+    BATCH     = 5
 
     try:
         batch = old_paths[offset:offset + BATCH]
@@ -818,7 +818,8 @@ def shopify_create_redirects():
 
         for old_path in batch:
             # Extraire le numéro de référence à la fin du handle
-            m = _re.search(r'(\d{5,})$', old_path.rstrip('/').split('/')[-1])
+            handle_part = old_path.rstrip('/').split('/')[-1]
+            m = _re.search(r'(\d{5,})$', handle_part)
             if not m:
                 skipped += 1
                 print('REDIRECT skip no-ref: ' + old_path, file=sys.stderr)
@@ -826,31 +827,34 @@ def shopify_create_redirects():
 
             ref = m.group(1)
 
-            # Chercher le produit par son titre contenant ce numéro
-            _time.sleep(0.5)  # éviter le 429
-            resp = requests.get(
-                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json',
-                headers={'X-Shopify-Access-Token': token},
-                params={'fields': 'id,handle,title', 'limit': 5, 'title': ref},
-                timeout=15
+            # Chercher via GraphQL - handle contient le numéro de référence
+            _time.sleep(0.5)
+            query = '''{
+  products(first: 3, query: "handle:*''' + ref + '''*") {
+    edges { node { id handle } }
+  }
+}'''
+            resp = requests.post(
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/graphql.json',
+                headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                json={'query': query}, timeout=15
             )
 
             if resp.status_code == 429:
-                _time.sleep(2)
-                resp = requests.get(
-                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json',
-                    headers={'X-Shopify-Access-Token': token},
-                    params={'fields': 'id,handle,title', 'limit': 5, 'title': ref},
-                    timeout=15
+                _time.sleep(3)
+                resp = requests.post(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/graphql.json',
+                    headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                    json={'query': query}, timeout=15
                 )
 
-            products = resp.json().get('products', [])
-            if not products:
+            edges = resp.json().get('data', {}).get('products', {}).get('edges', [])
+            if not edges:
                 skipped += 1
                 print('REDIRECT skip not-found: ref=' + ref, file=sys.stderr)
                 continue
 
-            new_handle = products[0]['handle']
+            new_handle = edges[0]['node']['handle']
             new_path   = '/products/' + new_handle
 
             # Ne pas créer si identique
@@ -879,10 +883,8 @@ def shopify_create_redirects():
                 print('REDIRECT error: ' + str(redir_resp.status_code) + ' ' + old_path, file=sys.stderr)
 
         return jsonify({
-            'created': created,
-            'skipped': skipped,
-            'offset':  offset + BATCH,
-            'total':   total,
+            'created': created, 'skipped': skipped,
+            'offset':  offset + BATCH, 'total': total,
             'done':    offset + BATCH >= total
         })
 
