@@ -409,9 +409,21 @@ let errorLog       = [];
 // ═══════════════════════════════════════════════════════════════
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
-  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); c.style.display = 'none'; });
   document.querySelector('.tab.' + name + '-tab, .tab[onclick*="' + name + '"]').classList.add('active');
-  document.getElementById('tab-' + name).classList.add('active');
+  var panel = document.getElementById('tab-' + name);
+  panel.classList.add('active');
+  panel.style.display = 'block';
+  // Vérifier statut GSC si on arrive sur cet onglet
+  if (name === 'gsc' && !gscConnected) {
+    fetch('/gsc/status').then(function(r) { return r.json(); }).then(function(s) {
+      if (s.connected) {
+        gscConnected = true;
+        document.getElementById('gsc-connect-prompt').style.display = 'none';
+        document.getElementById('gsc-main').style.display = 'block';
+      }
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
