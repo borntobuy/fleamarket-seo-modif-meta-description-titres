@@ -320,7 +320,7 @@ def etsy_update_listing():
 SHOPIFY_CLIENT_ID     = 'a8c98892cc8e9f40ec51e6a64f9bdc1d'
 SHOPIFY_CLIENT_SECRET = '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'
 SHOPIFY_REDIRECT_URI  = 'https://fleamarket-seo-modif-meta-description.onrender.com/shopify/callback'
-SHOPIFY_SCOPES        = 'read_products,write_products'
+SHOPIFY_SCOPES        = 'read_products,write_products,write_content'
 SHOPIFY_SHOP          = 'psangg-3f.myshopify.com'
 
 @app.route('/shopify/auth_url', methods=['POST'])
