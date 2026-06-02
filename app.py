@@ -373,8 +373,8 @@ def shopify_status():
     return jsonify({'connected': 'current' in shopify_token_store})
 
 
-GSC_CLIENT_ID     = '846447177037-mjgvpc64v3ur4e60p2ctr12rmdugq6ae.apps.googleusercontent.com'
-GSC_CLIENT_SECRET = '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'
+GSC_CLIENT_ID     = 'TON_GSC_CLIENT_ID_ICI'
+GSC_CLIENT_SECRET = 'TON_GSC_CLIENT_SECRET_ICI'
 GSC_REDIRECT_URI  = 'https://fleamarket-seo-modif-meta-description.onrender.com/gsc/callback'
 GSC_SCOPE         = 'https://www.googleapis.com/auth/webmasters.readonly'
 
@@ -800,83 +800,58 @@ def shopify_mark_existing_seo():
 
 @app.route('/shopify/create_redirects', methods=['POST'])
 def shopify_create_redirects():
-    """Crée des redirections 301 pour les anciennes URLs 404.
-    Prend une liste d'anciennes URLs, cherche les nouveaux handles via SKU/ref,
-    et crée les redirections Shopify."""
     token = shopify_token_store.get('current')
     if not token:
         return jsonify({'error': 'Non connecte a Shopify'}), 401
 
-    import sys, re as _re
-    data       = request.json or {}
-    old_paths  = data.get('old_paths', [])  # liste de /products/ancien-handle
-    offset     = data.get('offset', 0)
-    created    = data.get('created', 0)
-    skipped    = data.get('skipped', 0)
-    BATCH      = 10
+    import sys, re as _re, time as _time
+    data      = request.json or {}
+    old_paths = data.get('old_paths', [])
+    offset    = data.get('offset', 0)
+    created   = data.get('created', 0)
+    skipped   = data.get('skipped', 0)
+    BATCH     = 5  # réduit pour éviter le 429
 
     try:
         batch = old_paths[offset:offset + BATCH]
         total = len(old_paths)
 
         for old_path in batch:
-            # Extraire le numéro de référence du handle
-            m = _re.search(r'(\d{6,})$', old_path.rstrip('/'))
+            # Extraire le numéro de référence à la fin du handle
+            m = _re.search(r'(\d{5,})$', old_path.rstrip('/').split('/')[-1])
             if not m:
                 skipped += 1
+                print('REDIRECT skip no-ref: ' + old_path, file=sys.stderr)
                 continue
 
             ref = m.group(1)
 
-            # Chercher le produit Shopify par SKU contenant cette référence
+            # Chercher le produit par son titre contenant ce numéro
+            _time.sleep(0.5)  # éviter le 429
             resp = requests.get(
-                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json'
-                + '?fields=id,handle&limit=5',
+                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json',
                 headers={'X-Shopify-Access-Token': token},
-                params={'handle': ref},
+                params={'fields': 'id,handle,title', 'limit': 5, 'title': ref},
                 timeout=15
             )
 
-            # Chercher par variants SKU
-            sku_resp = requests.get(
-                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/variants.json'
-                + '?fields=product_id,sku&limit=5',
-                headers={'X-Shopify-Access-Token': token},
-                params={'sku': ref},
-                timeout=15
-            )
-            variants = sku_resp.json().get('variants', [])
-
-            if not variants:
-                # Chercher dans le titre du produit
-                search_resp = requests.get(
-                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json'
-                    + '?fields=id,handle,title&limit=5&title=' + ref,
+            if resp.status_code == 429:
+                _time.sleep(2)
+                resp = requests.get(
+                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products.json',
                     headers={'X-Shopify-Access-Token': token},
+                    params={'fields': 'id,handle,title', 'limit': 5, 'title': ref},
                     timeout=15
                 )
-                products = search_resp.json().get('products', [])
-                if not products:
-                    skipped += 1
-                    print('REDIRECT skip: ref=' + ref + ' not found', file=sys.stderr)
-                    continue
-                product_id = products[0]['id']
-                new_handle = products[0]['handle']
-            else:
-                product_id = variants[0]['product_id']
-                # Récupérer le handle
-                prod_resp = requests.get(
-                    'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/products/' + str(product_id) + '.json?fields=id,handle',
-                    headers={'X-Shopify-Access-Token': token},
-                    timeout=15
-                )
-                new_handle = prod_resp.json().get('product', {}).get('handle', '')
 
-            if not new_handle:
+            products = resp.json().get('products', [])
+            if not products:
                 skipped += 1
+                print('REDIRECT skip not-found: ref=' + ref, file=sys.stderr)
                 continue
 
-            new_path = '/products/' + new_handle
+            new_handle = products[0]['handle']
+            new_path   = '/products/' + new_handle
 
             # Ne pas créer si identique
             if old_path == new_path:
@@ -884,6 +859,7 @@ def shopify_create_redirects():
                 continue
 
             # Créer la redirection 301
+            _time.sleep(0.3)
             redir_resp = requests.post(
                 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/redirects.json',
                 headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
@@ -892,9 +868,11 @@ def shopify_create_redirects():
             )
             if redir_resp.status_code in (200, 201):
                 created += 1
-                print('REDIRECT created: ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                print('REDIRECT ok: ' + old_path + ' -> ' + new_path, file=sys.stderr)
             elif redir_resp.status_code == 422:
-                # Redirection déjà existante
+                skipped += 1  # déjà existante
+            elif redir_resp.status_code == 429:
+                _time.sleep(3)
                 skipped += 1
             else:
                 skipped += 1
@@ -913,9 +891,6 @@ def shopify_create_redirects():
         print('REDIRECT ERROR: ' + traceback.format_exc(), file=sys.stderr)
         return jsonify({'error': str(e)}), 500
 
-# ═══════════════════════════════════════════════════════════════
-# GOOGLE SEARCH CONSOLE OAuth + API
-# ═══════════════════════════════════════════════════════════════
 
 @app.route('/gsc/auth_url', methods=['POST'])
 def gsc_auth_url():
