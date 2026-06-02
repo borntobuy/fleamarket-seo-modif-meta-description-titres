@@ -372,6 +372,11 @@ def shopify_status():
     return jsonify({'connected': 'current' in shopify_token_store})
 
 
+GSC_CLIENT_ID     = '846447177037-mjgvpc64v3ur4e60p2ctr12rmdugq6ae.apps.googleusercontent.com'
+GSC_CLIENT_SECRET = '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'
+GSC_REDIRECT_URI  = 'https://fleamarket-seo-modif-meta-description.onrender.com/gsc/callback'
+GSC_SCOPE         = 'https://www.googleapis.com/auth/webmasters.readonly'
+
 SHOPIFY_MARKER = '<!-- fmf-shopify -->'
 
 def get_all_seo_metafields(token):
@@ -905,6 +910,161 @@ def shopify_create_redirects():
     except Exception as e:
         import traceback
         print('REDIRECT ERROR: ' + traceback.format_exc(), file=sys.stderr)
+        return jsonify({'error': str(e)}), 500
+
+# ═══════════════════════════════════════════════════════════════
+# GOOGLE SEARCH CONSOLE OAuth + API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/gsc/auth_url', methods=['POST'])
+def gsc_auth_url():
+    import secrets
+    state = secrets.token_urlsafe(16)
+    gsc_token_store['state'] = state
+    url = (
+        'https://accounts.google.com/o/oauth2/v2/auth'
+        '?client_id=' + GSC_CLIENT_ID +
+        '&redirect_uri=' + GSC_REDIRECT_URI +
+        '&response_type=code'
+        '&scope=' + GSC_SCOPE +
+        '&access_type=offline'
+        '&prompt=consent'
+        '&state=' + state
+    )
+    return jsonify({'url': url})
+
+@app.route('/gsc/callback')
+def gsc_callback():
+    code  = request.args.get('code')
+    state = request.args.get('state')
+    if not code or state != gsc_token_store.get('state'):
+        return 'Erreur OAuth GSC', 400
+    resp = requests.post('https://oauth2.googleapis.com/token', data={
+        'code':          code,
+        'client_id':     GSC_CLIENT_ID,
+        'client_secret': GSC_CLIENT_SECRET,
+        'redirect_uri':  GSC_REDIRECT_URI,
+        'grant_type':    'authorization_code'
+    })
+    tokens = resp.json()
+    gsc_token_store['access_token']  = tokens.get('access_token')
+    gsc_token_store['refresh_token'] = tokens.get('refresh_token')
+    return '<script>window.opener && window.opener.postMessage("gsc_connected","*"); window.close();</script>'
+
+@app.route('/gsc/status')
+def gsc_status():
+    return jsonify({'connected': bool(gsc_token_store.get('access_token'))})
+
+def gsc_get_token():
+    """Retourne un access token valide, rafraîchit si nécessaire."""
+    token = gsc_token_store.get('access_token')
+    if not token:
+        return None
+    # Tester le token
+    test = requests.get(
+        'https://www.googleapis.com/webmasters/v3/sites',
+        headers={'Authorization': 'Bearer ' + token}, timeout=10
+    )
+    if test.status_code == 401 and gsc_token_store.get('refresh_token'):
+        # Rafraîchir
+        resp = requests.post('https://oauth2.googleapis.com/token', data={
+            'refresh_token': gsc_token_store['refresh_token'],
+            'client_id':     GSC_CLIENT_ID,
+            'client_secret': GSC_CLIENT_SECRET,
+            'grant_type':    'refresh_token'
+        })
+        new_token = resp.json().get('access_token')
+        if new_token:
+            gsc_token_store['access_token'] = new_token
+            return new_token
+        return None
+    return token
+
+@app.route('/gsc/sites')
+def gsc_sites():
+    """Liste les sites GSC disponibles."""
+    token = gsc_get_token()
+    if not token:
+        return jsonify({'error': 'Non connecte'}), 401
+    resp = requests.get(
+        'https://www.googleapis.com/webmasters/v3/sites',
+        headers={'Authorization': 'Bearer ' + token}, timeout=15
+    )
+    return jsonify(resp.json())
+
+@app.route('/gsc/urls_404', methods=['POST'])
+def gsc_urls_404():
+    """Récupère toutes les URLs 404 sans limite de 1000."""
+    token = gsc_get_token()
+    if not token:
+        return jsonify({'error': 'Non connecte'}), 401
+    site_url = request.json.get('site_url', 'https://fleamarketfrance.com/')
+    import sys
+    try:
+        # Utiliser l'API URL Inspection / Coverage
+        # GSC API: searchanalytics pour les données de trafic
+        # Pour les erreurs d'indexation, on utilise l'API sitemaps + urlInspection
+        all_urls = []
+        # Requête pour récupérer les URLs avec erreur 404
+        resp = requests.post(
+            'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect',
+            headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+            json={'inspectionUrl': site_url, 'siteUrl': site_url},
+            timeout=15
+        )
+        print('GSC 404 test:', resp.status_code, file=sys.stderr)
+        return jsonify({'status': 'ok', 'test': resp.status_code})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/gsc/performance', methods=['POST'])
+def gsc_performance():
+    """Récupère les données de performance (impressions, clics, positions)."""
+    token = gsc_get_token()
+    if not token:
+        return jsonify({'error': 'Non connecte'}), 401
+    data     = request.json or {}
+    site_url = data.get('site_url', 'https://fleamarketfrance.com/')
+    start    = data.get('start_date', '2026-01-01')
+    end      = data.get('end_date',   '2026-06-01')
+    row_limit = data.get('row_limit', 1000)
+    start_row = data.get('start_row', 0)
+    try:
+        resp = requests.post(
+            'https://www.googleapis.com/webmasters/v3/sites/' +
+            requests.utils.quote(site_url, safe='') + '/searchAnalytics/query',
+            headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+            json={
+                'startDate':  start,
+                'endDate':    end,
+                'dimensions': ['page'],
+                'rowLimit':   row_limit,
+                'startRow':   start_row
+            },
+            timeout=30
+        )
+        return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/gsc/index_url', methods=['POST'])
+def gsc_index_url():
+    """Demande l'indexation d'une URL via GSC."""
+    token = gsc_get_token()
+    if not token:
+        return jsonify({'error': 'Non connecte'}), 401
+    url = request.json.get('url', '')
+    if not url:
+        return jsonify({'error': 'URL manquante'}), 400
+    try:
+        resp = requests.post(
+            'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect',
+            headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+            json={'inspectionUrl': url, 'siteUrl': 'https://fleamarketfrance.com/'},
+            timeout=15
+        )
+        return jsonify(resp.json())
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
