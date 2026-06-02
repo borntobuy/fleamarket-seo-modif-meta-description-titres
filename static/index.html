@@ -22,7 +22,7 @@ body{background:var(--cream);color:var(--dark);font-family:'DM Mono',monospace;m
 .tab:hover{color:var(--dark)}
 .tab.active{color:var(--dark);border-bottom-color:var(--gold)}
 .tab.ebay-tab.active{border-bottom-color:var(--blue)}
-.tab.etsy-tab.active{border-bottom-color:var(--etsy)}
+.tab.etsy-tab.active{border-bottom-color:var(--etsy)}.tab.gsc-tab .dot{background:#4285f4}.tab.gsc-tab.active{border-bottom-color:#4285f4}
 .tab.shopify-tab.active{border-bottom-color:var(--shopify)}
 .tab .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--border)}
 .tab.ebay-tab .dot{background:var(--blue)}
@@ -170,6 +170,7 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
 <div class="tabs">
   <button class="tab ebay-tab active" onclick="switchTab('ebay')"><span class="dot"></span>eBay SEO</button>
   <button class="tab etsy-tab" onclick="switchTab('etsy')"><span class="dot"></span>Etsy Sync</button>
+<button class="tab gsc-tab" onclick="switchTab('gsc')"><span class="dot"></span>📊 GSC</button>
   <button class="tab shopify-tab" onclick="switchTab('shopify')"><span class="dot"></span>Shopify SEO</button>
   <button class="tab" onclick="switchTab('settings')" style="margin-left:auto"><span class="dot" style="background:var(--border)"></span>Paramètres</button>
 </div>
@@ -255,6 +256,25 @@ button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;text-tr
       <button class="btn-outline" onclick="document.getElementById('rapport-import').click()">📋 Importer depuis rapport</button>
       <input type="file" id="rapport-import" accept=".txt" style="display:none" onchange="ebayImportFromRapport(this)">
     </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ GSC TAB ════════════════════════════════ -->
+<div class="tab-content" id="tab-gsc" style="display:none">
+  <div class="status-bar" id="gsc-status"></div>
+  <div id="gsc-connect-prompt" style="text-align:center;padding:60px 20px">
+    <h2 style="margin-bottom:16px">📊 Google Search Console</h2>
+    <p style="color:var(--text-light);margin-bottom:24px">Connecte GSC pour analyser tes performances, corriger les 404 et demander l'indexation.</p>
+    <button class="btn-dark" onclick="gscConnect()">Connecter Google Search Console</button>
+  </div>
+  <div id="gsc-main" style="display:none">
+    <div class="action-bar">
+      <button class="btn-dark btn-sm" onclick="gscLoadPerformance()">📈 Performances</button>
+      <button class="btn-outline btn-sm" onclick="gscLoad404()">🔗 URLs 404</button>
+      <button class="btn-outline btn-sm" onclick="gscFix404All()">🔧 Créer redirections 301</button>
+    </div>
+    <div id="gsc-summary" style="display:flex;gap:12px;margin:12px 0;flex-wrap:wrap"></div>
+    <div id="gsc-grid" class="listings-grid"></div>
   </div>
 </div>
 
@@ -1069,6 +1089,130 @@ function toggleEtsyMode() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ██████████████████████████  GSC TAB  ████████████████████████
+
+var gscConnected = false;
+var gsc404Data   = [];
+var gscPerfData  = [];
+
+async function gscConnect() {
+  var resp = await fetch('/gsc/auth_url', {method:'POST'});
+  var data = await resp.json();
+  var win  = window.open(data.url, 'gsc_oauth', 'width=500,height=600');
+  var timer = setInterval(async function() {
+    if (win.closed) {
+      clearInterval(timer);
+      var status = await fetch('/gsc/status').then(r=>r.json());
+      if (status.connected) {
+        gscConnected = true;
+        document.getElementById('gsc-connect-prompt').style.display = 'none';
+        document.getElementById('gsc-main').style.display = 'block';
+        setStatus('gsc', '✓ GSC connecté', 'success');
+      }
+    }
+  }, 1000);
+  window.addEventListener('message', async function(e) {
+    if (e.data === 'gsc_connected') {
+      gscConnected = true;
+      document.getElementById('gsc-connect-prompt').style.display = 'none';
+      document.getElementById('gsc-main').style.display = 'block';
+      setStatus('gsc', '✓ GSC connecté', 'success');
+    }
+  });
+}
+
+async function gscLoadPerformance() {
+  if (!gscConnected) { setStatus('gsc', 'Connectez GSC.', 'error'); return; }
+  setStatus('gsc', 'Chargement des performances...', 'info');
+  var allRows = [];
+  var startRow = 0;
+  var total = 0;
+  while (true) {
+    var resp = await fetch('/gsc/performance', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        site_url: 'https://fleamarketfrance.com/',
+        start_date: '2026-01-01',
+        end_date: new Date().toISOString().split('T')[0],
+        row_limit: 1000, start_row: startRow
+      })
+    });
+    var data = await resp.json();
+    if (data.error) { setStatus('gsc', 'Erreur: ' + data.error, 'error'); break; }
+    var rows = data.rows || [];
+    allRows = allRows.concat(rows);
+    total += rows.length;
+    setStatus('gsc', 'Chargement... ' + allRows.length + ' pages', 'info');
+    if (rows.length < 1000) break;
+    startRow += 1000;
+  }
+  gscPerfData = allRows;
+  gscRenderPerformance();
+}
+
+function gscRenderPerformance() {
+  var grid = document.getElementById('gsc-grid');
+  var summary = document.getElementById('gsc-summary');
+  
+  // Trier par impressions décroissantes
+  var sorted = gscPerfData.slice().sort(function(a,b) { return b.impressions - a.impressions; });
+  
+  // Stats globales
+  var totalClicks      = gscPerfData.reduce(function(s,r) { return s + r.clicks; }, 0);
+  var totalImpressions = gscPerfData.reduce(function(s,r) { return s + r.impressions; }, 0);
+  var avgPosition      = gscPerfData.reduce(function(s,r) { return s + r.position; }, 0) / (gscPerfData.length || 1);
+  
+  summary.innerHTML = [
+    '<div class="stat-card"><div class="stat-value">' + totalClicks.toLocaleString() + '</div><div class="stat-label">Clics</div></div>',
+    '<div class="stat-card"><div class="stat-value">' + totalImpressions.toLocaleString() + '</div><div class="stat-label">Impressions</div></div>',
+    '<div class="stat-card"><div class="stat-value">' + avgPosition.toFixed(1) + '</div><div class="stat-label">Position moy.</div></div>',
+    '<div class="stat-card"><div class="stat-value">' + gscPerfData.length + '</div><div class="stat-label">Pages</div></div>',
+  ].join('');
+
+  // Identifier les opportunités (position 8-20, impressions > 50)
+  var opportunities = sorted.filter(function(r) { return r.position >= 8 && r.position <= 20 && r.impressions >= 50; });
+  
+  var html = '<h3 style="margin:16px 0 8px;font-size:13px">🎯 Opportunités (' + opportunities.length + ' pages en position 8-20 avec 50+ impressions)</h3>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+  html += '<tr style="background:var(--cream)"><th style="padding:6px;text-align:left">Page</th><th>Clics</th><th>Impressions</th><th>CTR</th><th>Position</th><th>Action</th></tr>';
+  
+  opportunities.slice(0, 50).forEach(function(r) {
+    var url = r.keys[0];
+    var path = url.replace('https://fleamarketfrance.com', '');
+    var ctr = ((r.clicks / r.impressions) * 100).toFixed(1);
+    var posColor = r.position <= 10 ? 'var(--sage)' : r.position <= 20 ? 'var(--gold)' : 'var(--rust)';
+    html += '<tr style="border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:6px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="' + url + '" target="_blank" style="color:var(--blue)">' + path + '</a></td>';
+    html += '<td style="text-align:center;padding:6px">' + r.clicks + '</td>';
+    html += '<td style="text-align:center;padding:6px">' + r.impressions + '</td>';
+    html += '<td style="text-align:center;padding:6px">' + ctr + '%</td>';
+    html += '<td style="text-align:center;padding:6px;color:' + posColor + ';font-weight:600">' + r.position.toFixed(1) + '</td>';
+    html += '<td style="text-align:center;padding:6px"><button class="btn-outline btn-sm" onclick="gscRequestIndex(this.dataset.url)" data-url="' + escHTML(url) + '">↑ Indexer</button></td>';
+    html += '</tr>';
+  });
+  html += '</table>';
+  
+  grid.innerHTML = html;
+  setStatus('gsc', '✓ ' + gscPerfData.length + ' pages chargées. ' + opportunities.length + ' opportunités détectées.', 'success');
+}
+
+async function gscLoad404() {
+  setStatus('gsc', 'Utilisez le bouton 🔗 Corriger 404 dans l\'onglet Shopify avec le fichier CSV GSC.', 'info');
+}
+
+async function gscFix404All() {
+  setStatus('gsc', 'Utilisez le bouton 🔗 Corriger 404 dans l\'onglet Shopify avec le fichier CSV GSC.', 'info');
+}
+
+async function gscRequestIndex(url) {
+  var resp = await fetch('/gsc/index_url', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({url: url})
+  });
+  var data = await resp.json();
+  setStatus('gsc', 'Indexation demandée pour: ' + url, 'success');
+}
+
 // ██████████████████████████  ETSY TAB  ████████████████████████
 // ═══════════════════════════════════════════════════════════════
 function etsyUpdateCounts() {
