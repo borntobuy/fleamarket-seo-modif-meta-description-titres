@@ -363,6 +363,8 @@ def shopify_callback():
             return '<html><body><p style="font-family:monospace;padding:20px;color:red">Erreur token: ' + err + '</p><script>try{window.opener.postMessage({shopifyError:"' + err[:100] + '"},"*");}catch(e){}setTimeout(function(){window.close();},3000);</script></body></html>'
         shopify_token_store['current'] = data['access_token']
         _save_token('shopify', data['access_token'])
+        import sys
+        print('SHOPIFY SCOPES: ' + str(data.get('scope', 'unknown')), flush=True)
         return '<html><body><p style="font-family:monospace;padding:20px;color:green">✓ Shopify connecté !</p><script>try{window.opener.postMessage({shopifySuccess:true},"*");}catch(e){}setTimeout(function(){window.close();},1500);</script></body></html>'
     except Exception as e:
         err = str(e)
