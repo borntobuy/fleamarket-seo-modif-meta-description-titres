@@ -822,7 +822,7 @@ def shopify_create_redirects():
         for old_path in batch:
             # Extraire le numéro de référence à la fin du handle
             handle_part = old_path.rstrip('/').split('/')[-1]
-            m = _re.search(r'(\d{5,})$', handle_part)
+            m = _re.search(r'(\d{2,})$', handle_part)
             if not m:
                 skipped += 1
                 print('REDIRECT skip no-ref: ' + old_path, file=sys.stderr)
@@ -853,12 +853,12 @@ def shopify_create_redirects():
 
             edges = resp.json().get('data', {}).get('products', {}).get('edges', [])
             if not edges:
-                skipped += 1
-                print('REDIRECT skip not-found: ref=' + ref, file=sys.stderr)
-                continue
-
-            new_handle = edges[0]['node']['handle']
-            new_path   = '/products/' + new_handle
+                # Produit introuvable (vendu/supprimé) -> rediriger vers la collection
+                new_path = '/collections/all'
+                print('REDIRECT fallback (not found): ref=' + ref + ' -> /collections/all', file=sys.stderr)
+            else:
+                new_handle = edges[0]['node']['handle']
+                new_path   = '/products/' + new_handle
 
             # Ne pas créer si identique
             if old_path == new_path:
