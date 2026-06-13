@@ -36,7 +36,8 @@ etsy_state_store  = {}
 
 _shopify_tok  = _load_token('shopify')
 shopify_token_store = {'current': _shopify_tok} if _shopify_tok else {}
-gsc_token_store     = {}
+_gsc_tok      = _load_token('gsc')
+gsc_token_store     = _gsc_tok if _gsc_tok else {}
 shopify_state_store = {}
 
 # ── Page principale ────────────────────────────────────────────────────────
@@ -375,8 +376,8 @@ def shopify_status():
     return jsonify({'connected': 'current' in shopify_token_store})
 
 
-GSC_CLIENT_ID     = 'TON_GSC_CLIENT_ID_ICI'
-GSC_CLIENT_SECRET = 'TON_GSC_CLIENT_SECRET_ICI'
+GSC_CLIENT_ID     = '846447177037-mjgvpc64v3ur4e60p2ctr12rmdugq6ae.apps.googleusercontent.com'
+GSC_CLIENT_SECRET = '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'
 GSC_REDIRECT_URI  = 'https://fleamarket-seo-modif-meta-description.onrender.com/gsc/callback'
 GSC_SCOPE         = 'https://www.googleapis.com/auth/webmasters.readonly'
 
@@ -916,9 +917,11 @@ def gsc_auth_url():
 @app.route('/gsc/callback')
 def gsc_callback():
     code  = request.args.get('code')
-    state = request.args.get('state')
-    if not code or state != gsc_token_store.get('state'):
-        return 'Erreur OAuth GSC', 400
+    error = request.args.get('error')
+    if error:
+        return 'Erreur OAuth GSC: ' + error, 400
+    if not code:
+        return 'Erreur OAuth GSC: code manquant', 400
     resp = requests.post('https://oauth2.googleapis.com/token', data={
         'code':          code,
         'client_id':     GSC_CLIENT_ID,
@@ -928,7 +931,9 @@ def gsc_callback():
     })
     tokens = resp.json()
     gsc_token_store['access_token']  = tokens.get('access_token')
-    gsc_token_store['refresh_token'] = tokens.get('refresh_token')
+    if tokens.get('refresh_token'):
+        gsc_token_store['refresh_token'] = tokens.get('refresh_token')
+    _save_token('gsc', gsc_token_store)
     return '<script>window.opener && window.opener.postMessage("gsc_connected","*"); window.close();</script>'
 
 @app.route('/gsc/status')
@@ -956,6 +961,7 @@ def gsc_get_token():
         new_token = resp.json().get('access_token')
         if new_token:
             gsc_token_store['access_token'] = new_token
+            _save_token('gsc', gsc_token_store)
             return new_token
         return None
     return token
