@@ -617,7 +617,7 @@ async function callClaude(messages, useHaiku) {
     body: JSON.stringify({
       api_key: c['s-anthropic'],
       payload: {
-        model: useHaiku ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-20250514',
+        model: useHaiku ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6',
         max_tokens: 2500,
         messages: messages
       }
