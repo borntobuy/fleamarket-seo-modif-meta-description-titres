@@ -825,7 +825,7 @@ def shopify_create_redirects():
             m = _re.search(r'(\d{2,})$', handle_part)
             if not m:
                 skipped += 1
-                print('REDIRECT skip no-ref: ' + old_path, file=sys.stderr)
+                print('SKIP (pas de reference numerique trouvee): ' + old_path, file=sys.stderr)
                 continue
 
             ref = m.group(1)
@@ -855,7 +855,7 @@ def shopify_create_redirects():
             if not edges:
                 # Produit introuvable (vendu/supprimé) -> rediriger vers la collection
                 new_path = '/collections/all'
-                print('REDIRECT fallback (not found): ref=' + ref + ' -> /collections/all', file=sys.stderr)
+                print('FALLBACK (produit introuvable sur Shopify, ref=' + ref + '): ' + old_path + ' -> /collections/all', file=sys.stderr)
             else:
                 new_handle = edges[0]['node']['handle']
                 new_path   = '/products/' + new_handle
@@ -875,15 +875,16 @@ def shopify_create_redirects():
             )
             if redir_resp.status_code in (200, 201):
                 created += 1
-                print('REDIRECT ok: ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                print('OK (ref=' + ref + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
             elif redir_resp.status_code == 422:
-                skipped += 1  # déjà existante
+                skipped += 1
+                print('SKIP (redirection deja existante): ' + old_path + ' -> ' + new_path, file=sys.stderr)
             elif redir_resp.status_code == 429:
                 _time.sleep(3)
                 skipped += 1
             else:
                 skipped += 1
-                print('REDIRECT error: ' + str(redir_resp.status_code) + ' ' + old_path, file=sys.stderr)
+                print('ERREUR HTTP ' + str(redir_resp.status_code) + ' pour ' + old_path + ' -> ' + new_path, file=sys.stderr)
 
         return jsonify({
             'created': created, 'skipped': skipped,
