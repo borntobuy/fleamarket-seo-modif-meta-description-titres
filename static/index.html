@@ -520,6 +520,8 @@ function fixEncoding(str) {
   replacements.forEach(function(r) { str = str.split(r[0]).join(r[1]); });
   // "Ã " + lettre = "à " + lettre
   str = str.replace(/Ã ([a-zA-Z])/g, 'à $1').replace(/Ã $/g, 'à');
+  // Â suivi d'espace insécable ou espace normal = artefact d'encodage, supprimer
+  str = str.replace(/Â /g, ' ').replace(/Â /g, ' ').replace(/ /g, ' ');
   return str;
 }
 
@@ -766,7 +768,7 @@ async function ebayReload(forceAll) {
         totalPages = tp ? parseInt(tp.textContent) : 1;
       }
       Array.from(doc.getElementsByTagName('Item')).forEach(function(item) {
-        var desc = item.getElementsByTagName('Description')[0] ? item.getElementsByTagName('Description')[0].textContent : '';
+        var desc = item.getElementsByTagName('Description')[0] ? fixEncoding(item.getElementsByTagName('Description')[0].textContent) : '';
         if (!forceAll && desc.includes(MARKER)) return;
         var pics = Array.from(item.getElementsByTagName('PictureURL')).map(function(p) { return p.textContent.trim(); }).filter(Boolean);
         var specs = {};
@@ -2061,7 +2063,7 @@ async function ebayImportFromRapport(input) {
       var item = doc.getElementsByTagName('Item')[0];
       if (!item) { errors++; continue; }
 
-      var desc  = item.getElementsByTagName('Description')[0] ? item.getElementsByTagName('Description')[0].textContent : '';
+      var desc  = item.getElementsByTagName('Description')[0] ? fixEncoding(item.getElementsByTagName('Description')[0].textContent) : '';
       var pics  = Array.from(item.getElementsByTagName('PictureURL')).map(function(p) { return p.textContent.trim(); }).filter(Boolean);
       var specs = {};
       Array.from(item.getElementsByTagName('NameValueList')).forEach(function(nvl) {
