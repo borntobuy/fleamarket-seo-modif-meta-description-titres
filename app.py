@@ -68,6 +68,15 @@ def anthropic_proxy():
     data    = request.json
     api_key = data.get('api_key', '').strip()
     payload = data.get('payload', {})
+    # Corriger l'encodage dans les messages avant envoi à Claude
+    if payload and 'messages' in payload:
+        for msg in payload['messages']:
+            if isinstance(msg.get('content'), list):
+                for block in msg['content']:
+                    if block.get('type') == 'text' and block.get('text'):
+                        block['text'] = fix_encoding(block['text'])
+            elif isinstance(msg.get('content'), str):
+                msg['content'] = fix_encoding(msg['content'])
     if not api_key:
         return jsonify({'error': {'message': 'Clé Anthropic manquante.'}}), 400
     try:
@@ -380,6 +389,27 @@ GSC_CLIENT_ID     = '846447177037-mjgvpc64v3ur4e60p2ctr12rmdugq6ae.apps.googleus
 GSC_CLIENT_SECRET = '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'
 GSC_REDIRECT_URI  = 'https://fleamarket-seo-modif-meta-description.onrender.com/gsc/callback'
 GSC_SCOPE         = 'https://www.googleapis.com/auth/webmasters.readonly'
+
+def fix_encoding(text):
+    """Corrige les bugs d'encodage latin1/UTF-8 courants dans les textes eBay."""
+    if not text:
+        return text
+    try:
+        # Tentative de décodage latin1 -> utf8
+        return text.encode('latin1').decode('utf-8')
+    except Exception:
+        pass
+    # Table de correspondance manuelle
+    replacements = [
+        ('Ã©', 'é'), ('Ã¨', 'è'), ('Ã ', 'à'), ('Ã¢', 'â'),
+        ('Ã®', 'î'), ('Ã´', 'ô'), ('Ã»', 'û'), ('Ã§', 'ç'),
+        ('Ã«', 'ë'), ('Ã¯', 'ï'), ('Ã¼', 'ü'), ('Ã¶', 'ö'),
+        ('Ã¤', 'ä'), ('â€™', "'"), ('â€œ', '"'), ('â€', '"'),
+        ('Â½', '½'), ('Â¼', '¼'), ('Â°', '°'),
+    ]
+    for bad, good in replacements:
+        text = text.replace(bad, good)
+    return text
 
 SHOPIFY_MARKER = '<!-- fmf-shopify -->'
 
