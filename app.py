@@ -852,7 +852,7 @@ def shopify_create_redirects():
         for old_path in batch:
             # Extraire le numéro de référence à la fin du handle
             handle_part = old_path.rstrip('/').split('/')[-1]
-            m = _re.search(r'(\d{2,})$', handle_part)
+            m = _re.search(r'(\d{5,})$', handle_part)
             if not m:
                 skipped += 1
                 print('SKIP (pas de reference numerique trouvee): ' + old_path, file=sys.stderr)
@@ -893,6 +893,15 @@ def shopify_create_redirects():
             # Ne pas créer si identique
             if old_path == new_path:
                 skipped += 1
+                continue
+
+            # Vérifier cohérence des références numériques
+            import re as _re2
+            old_ref_m = _re2.search(r'(\d{5,})$', old_path.rstrip('/').split('/')[-1])
+            new_ref_m = _re2.search(r'(\d{5,})$', new_handle)
+            if old_ref_m and new_ref_m and old_ref_m.group(1) != new_ref_m.group(1):
+                skipped += 1
+                print('SKIP refs differentes (' + old_ref_m.group(1) + '!=' + new_ref_m.group(1) + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
                 continue
 
             # Créer la redirection 301
@@ -1117,6 +1126,49 @@ def gsc_index_url():
             timeout=15
         )
         return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/shopify/cleanup_bad_redirects', methods=['POST'])
+def shopify_cleanup_bad_redirects():
+    """Supprime les redirections où la ref source != ref cible (mauvaises redirections Girod)."""
+    token = shopify_token_store.get('current')
+    if not token:
+        return jsonify({'error': 'Non connecte'}), 401
+    import sys, re as _re
+    deleted = 0
+    kept = 0
+    try:
+        # Récupérer toutes les redirections par pages
+        url = 'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/redirects.json?limit=250'
+        while url:
+            resp = requests.get(url, headers={'X-Shopify-Access-Token': token}, timeout=30)
+            redirects = resp.json().get('redirects', [])
+            for r in redirects:
+                src = r.get('path', '')
+                tgt = r.get('target', '')
+                src_ref = _re.search(r'(\d{5,})$', src.rstrip('/').split('/')[-1])
+                tgt_ref = _re.search(r'(\d{5,})$', tgt.rstrip('/').split('/')[-1])
+                if src_ref and tgt_ref and src_ref.group(1) != tgt_ref.group(1):
+                    # Mauvaise redirection - supprimer
+                    del_resp = requests.delete(
+                        'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/redirects/' + str(r['id']) + '.json',
+                        headers={'X-Shopify-Access-Token': token}, timeout=15
+                    )
+                    if del_resp.status_code == 200:
+                        deleted += 1
+                        print('DELETED bad redirect: ' + src + ' -> ' + tgt, file=sys.stderr)
+                    else:
+                        kept += 1
+                else:
+                    kept += 1
+            # Pagination
+            url = None
+            link = resp.headers.get('Link', '')
+            if 'rel="next"' in link:
+                m = _re.search(r'<([^>]+)>; *rel="next"', link)
+                if m: url = m.group(1)
+        return jsonify({'deleted': deleted, 'kept': kept})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
