@@ -907,8 +907,15 @@ def shopify_create_redirects():
                 created += 1
                 print('OK (ref=' + ref + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
             elif redir_resp.status_code == 422:
+                # 422 peut signifier: déjà existante OU cible invalide OU conflit
+                err_detail = ''
+                try:
+                    err_json = redir_resp.json()
+                    err_detail = str(err_json.get('errors', redir_resp.text[:100]))
+                except Exception:
+                    err_detail = redir_resp.text[:100]
                 skipped += 1
-                print('SKIP (redirection deja existante): ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                print('SKIP 422 (' + err_detail + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
             elif redir_resp.status_code == 429:
                 _time.sleep(3)
                 skipped += 1
