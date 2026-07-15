@@ -907,15 +907,44 @@ def shopify_create_redirects():
                 created += 1
                 print('OK (ref=' + ref + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
             elif redir_resp.status_code == 422:
-                # 422 peut signifier: déjà existante OU cible invalide OU conflit
-                err_detail = ''
+                # 422 "has already been taken" = redirection existe déjà mais pointe peut-être
+                # vers une mauvaise destination. Chercher et mettre à jour.
                 try:
-                    err_json = redir_resp.json()
-                    err_detail = str(err_json.get('errors', redir_resp.text[:100]))
-                except Exception:
-                    err_detail = redir_resp.text[:100]
-                skipped += 1
-                print('SKIP 422 (' + err_detail + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                    # Récupérer la redirection existante pour ce path
+                    existing = requests.get(
+                        'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/redirects.json',
+                        headers={'X-Shopify-Access-Token': token},
+                        params={'path': old_path, 'limit': 1},
+                        timeout=15
+                    )
+                    existing_redirects = existing.json().get('redirects', [])
+                    if existing_redirects:
+                        redir_id = existing_redirects[0]['id']
+                        current_target = existing_redirects[0].get('target', '')
+                        if current_target != new_path:
+                            # Mettre à jour la redirection vers la bonne destination
+                            update = requests.put(
+                                'https://' + SHOPIFY_SHOP + '/admin/api/2024-01/redirects/' + str(redir_id) + '.json',
+                                headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'},
+                                json={'redirect': {'id': redir_id, 'target': new_path}},
+                                timeout=15
+                            )
+                            if update.status_code in (200, 201):
+                                created += 1
+                                print('UPDATED (was ' + current_target + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                            else:
+                                skipped += 1
+                                print('SKIP UPDATE FAILED: ' + old_path, file=sys.stderr)
+                        else:
+                            skipped += 1
+                            print('SKIP (deja correcte): ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                    else:
+                        # Pas de redirection trouvée mais 422 - conflit avec handle actif
+                        skipped += 1
+                        print('SKIP (conflit handle actif): ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                except Exception as ex:
+                    skipped += 1
+                    print('SKIP 422 ERROR: ' + str(ex) + ' ' + old_path, file=sys.stderr)
             elif redir_resp.status_code == 429:
                 _time.sleep(3)
                 skipped += 1
