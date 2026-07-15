@@ -884,7 +884,8 @@ def shopify_create_redirects():
             edges = resp.json().get('data', {}).get('products', {}).get('edges', [])
             if not edges:
                 # Produit introuvable (vendu/supprimé) -> rediriger vers la collection
-                new_path = '/collections/all'
+                new_path   = '/collections/all'
+                new_handle = ''
                 print('FALLBACK (produit introuvable sur Shopify, ref=' + ref + '): ' + old_path + ' -> /collections/all', file=sys.stderr)
             else:
                 new_handle = edges[0]['node']['handle']
@@ -895,14 +896,15 @@ def shopify_create_redirects():
                 skipped += 1
                 continue
 
-            # Vérifier cohérence des références numériques
-            import re as _re2
-            old_ref_m = _re2.search(r'(\d{5,})$', old_path.rstrip('/').split('/')[-1])
-            new_ref_m = _re2.search(r'(\d{5,})$', new_handle)
-            if old_ref_m and new_ref_m and old_ref_m.group(1) != new_ref_m.group(1):
-                skipped += 1
-                print('SKIP refs differentes (' + old_ref_m.group(1) + '!=' + new_ref_m.group(1) + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
-                continue
+            # Vérifier cohérence des références numériques (seulement pour les redirections produit)
+            if new_handle:
+                import re as _re2
+                old_ref_m = _re2.search(r'(\d{5,})$', old_path.rstrip('/').split('/')[-1])
+                new_ref_m = _re2.search(r'(\d{5,})$', new_handle)
+                if old_ref_m and new_ref_m and old_ref_m.group(1) != new_ref_m.group(1):
+                    skipped += 1
+                    print('SKIP refs differentes (' + old_ref_m.group(1) + '!=' + new_ref_m.group(1) + '): ' + old_path + ' -> ' + new_path, file=sys.stderr)
+                    continue
 
             # Créer la redirection 301
             _time.sleep(0.3)
