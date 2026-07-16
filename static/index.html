@@ -535,10 +535,12 @@ function etsyToggleSelectAll() {
 }
 
 function shopifyToggleSelectAll() {
-  shopifyAllSelected = !shopifyAllSelected;
-  shPairs.forEach(function(p) { p.checked = shopifyAllSelected; });
+  // Sélectionner uniquement les articles visibles (shFiltered)
+  var allChecked = shFiltered.every(function(p) { return p.checked; });
+  shFiltered.forEach(function(p) { p.checked = !allChecked; });
+  shopifyAllSelected = !allChecked;
   var btn = document.getElementById('sh-select-all');
-  if (btn) btn.textContent = shopifyAllSelected ? '☑ Tout deselectionnner' : '☐ Tout selectionner';
+  if (btn) btn.textContent = !allChecked ? '☑ Tout désélectionner' : '☐ Tout sélectionner';
   shopifyRenderPage();
 }
 
@@ -1576,7 +1578,7 @@ async function shopifyReload(forceAll) {
     shFiltered = shPairs.slice();
     shPage = 1;
     shCounts.total     = shPairs.length;
-    shCounts.noseo     = shPairs.filter(function(p) { return !p.hasDesc; }).length;
+    shCounts.noseo     = shFiltered.filter(function(p) { return !p.hasDesc; }).length;
     shCounts.pushed    = 0;
     shCounts.generated = 0;
     shCounts.errors    = 0;
@@ -1780,10 +1782,10 @@ async function shopifyGenerateAllSeo() {
   var keepaliveInterval = setInterval(function() {
     fetch('/shopify/status').catch(function() {});
   }, 60000);
-  for (var i = 0; i < shPairs.length; i++) {
+  for (var i = 0; i < shFiltered.length; i++) {
     if (stopRequested) break;
-    if (shPairs[i].checked && (!shPairs[i].hasSeo || !shPairs[i].newSeoTitle)) {
-      await shopifyGenerateSeoOne(i);
+    if (shFiltered[i].checked && (!shFiltered[i].hasSeo || !shFiltered[i].newSeoTitle)) {
+      await shopifyGenerateSeoOne(shPairs.indexOf(shFiltered[i]));
       await new Promise(function(r) { setTimeout(r, 500); });
     }
   }
@@ -1953,8 +1955,8 @@ async function shopifyExportOne(i) {
 }
 
 async function shopifyExportSelected() {
-  var toExport = shPairs.filter(function(p) { return p.checked && p.shopify && p.newSeoTitle; });
-  var checkedNoSeo = shPairs.filter(function(p) { return p.checked && p.shopify && !p.newSeoTitle; }).length;
+  var toExport = shFiltered.filter(function(p) { return p.checked && p.shopify && p.newSeoTitle; });
+  var checkedNoSeo = shFiltered.filter(function(p) { return p.checked && p.shopify && !p.newSeoTitle; }).length;
   if (!toExport.length) {
     setStatus('shopify', checkedNoSeo ? checkedNoSeo + ' article(s) coché(s) sans SEO généré — lancez d\'abord la génération.' : 'Sélectionnez des articles à exporter.', 'error');
     return;
