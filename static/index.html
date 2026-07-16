@@ -1570,7 +1570,7 @@ async function shopifyReload(forceAll) {
         newSeoTitle: null,
         newSeoDesc:  null,
         newHandle:   null,
-        checked:     needsWork,
+        checked:     false,
         status:      !hasSeo ? 'noseo' : (!hasDesc ? 'nodesc' : 'ok')
       });
     });
@@ -1593,6 +1593,11 @@ async function shopifyReload(forceAll) {
 function shopifyFilter() {
   var q   = document.getElementById('sh-search').value.toLowerCase();
   var flt = document.getElementById('sh-filter').value;
+  // Décocher tous quand on change le filtre
+  shPairs.forEach(function(p) { p.checked = false; });
+  shopifyAllSelected = false;
+  var btn = document.getElementById('sh-select-all');
+  if (btn) btn.textContent = '☐ Tout sélectionner';
   shFiltered = shPairs.filter(function(p) {
     var shTitle = (p.shopify ? p.shopify.title : (p.ebay ? p.ebay.title : ''));
     var matchQ   = !q || shTitle.toLowerCase().includes(q);
