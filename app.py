@@ -863,7 +863,7 @@ def shopify_create_redirects():
             # Chercher via GraphQL - handle contient le numéro de référence
             _time.sleep(0.5)
             query = '''{
-  products(first: 3, query: "handle:*''' + ref + '''* OR title:*''' + ref + '''*") {
+  products(first: 3, query: "(handle:*''' + ref + '''* OR title:*''' + ref + '''*) AND status:active") {
     edges { node { id handle title } }
   }
 }'''
