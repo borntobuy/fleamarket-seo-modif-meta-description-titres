@@ -884,9 +884,9 @@ def shopify_create_redirects():
             edges = resp.json().get('data', {}).get('products', {}).get('edges', [])
             if not edges:
                 # Produit introuvable (vendu/supprimé) -> rediriger vers la collection
-                new_path   = '/collections/all'
+                new_path   = '/collections/all-products'
                 new_handle = ''
-                print('FALLBACK (produit introuvable sur Shopify, ref=' + ref + '): ' + old_path + ' -> /collections/all', file=sys.stderr)
+                print('FALLBACK (produit introuvable sur Shopify, ref=' + ref + '): ' + old_path + ' -> /collections/all-products', file=sys.stderr)
             else:
                 new_handle = edges[0]['node']['handle']
                 new_path   = '/products/' + new_handle
