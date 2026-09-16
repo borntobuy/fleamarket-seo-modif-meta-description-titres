@@ -497,7 +497,17 @@ def shopify_get_products():
                 sku       = p['variants'][0].get('sku', '')   if p.get('variants') else ''
                 price     = p['variants'][0].get('price', '') if p.get('variants') else ''
 
-                seo        = all_seo.get(p['id'], {})
+                # Ne garder que les articles en stock (stock total > 0)
+                total_stock = 0
+                for v in (p.get('variants') or []):
+                    try:
+                        total_stock += int(v.get('inventory_quantity') or 0)
+                    except (TypeError, ValueError):
+                        pass
+                if total_stock <= 0:
+                    continue
+
+                seo         = all_seo.get(p['id'], {})
                 seo_title  = seo.get('seoTitle', '')
                 seo_desc   = seo.get('seoDesc', '')
 
