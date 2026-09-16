@@ -1600,7 +1600,7 @@ function shopifyFilter() {
   if (btn) btn.textContent = '☐ Tout sélectionner';
   shFiltered = shPairs.filter(function(p) {
     var shTitle = (p.shopify ? p.shopify.title : (p.ebay ? p.ebay.title : ''));
-    var matchQ   = !q || shTitle.toLowerCase().includes(q);
+    var matchQ   = !q || q.split(/\s+/).filter(Boolean).every(function(w) { return shTitle.toLowerCase().includes(w); });
     var matchFlt = flt === 'all'
       || (flt === 'diff'    && p.diffs.length > 0)
       || (flt === 'noseo'   && !p.hasSeo)
