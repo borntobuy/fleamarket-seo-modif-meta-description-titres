@@ -235,6 +235,95 @@ def ls_ebay_profiles():
         return jsonify({'error': str(e)}), 500
 
 
+@ls_bp.route('/ls/ebay_categories')
+def ls_ebay_categories():
+    """Categories feuilles suggerees par eBay (site US) pour un titre."""
+    q = (request.args.get('q') or '').strip()[:350]
+    if not q:
+        return jsonify({'categories': []})
+    try:
+        root = _ebay_call('GetSuggestedCategories', '<Query>%s</Query>' % xml_escape(q))
+        out = []
+        for sc in root.iter(EBAY_NS + 'SuggestedCategory'):
+            cat = sc.find(EBAY_NS + 'Category')
+            if cat is None:
+                continue
+            cid = _t(cat, EBAY_NS + 'CategoryID')
+            name = _t(cat, EBAY_NS + 'CategoryName')
+            parents = [p.text for p in cat.findall(EBAY_NS + 'CategoryParentName') if p.text]
+            if cid:
+                out.append({'id': cid, 'name': name, 'path': ' > '.join(parents + [name]),
+                            'percent': _t(sc, EBAY_NS + 'PercentItemFound')})
+        if not out:
+            errs = _errors(root)
+            if errs:
+                return jsonify({'error': errs[0][1]}), 502
+        return jsonify({'categories': out[:8]})
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+_aspect_cache = {}
+
+
+@ls_bp.route('/ls/ebay_aspects')
+def ls_ebay_aspects():
+    """Caracteristiques (requises/recommandees, valeurs autorisees) + etats valides d'une categorie."""
+    cid = (request.args.get('category_id') or '').strip()
+    if not cid.isdigit():
+        return jsonify({'error': 'category_id invalide'}), 400
+    if cid in _aspect_cache:
+        return jsonify(_aspect_cache[cid])
+    try:
+        root = _ebay_call(
+            'GetCategorySpecifics',
+            '<CategorySpecific><CategoryID>%s</CategoryID></CategorySpecific>'
+            '<MaxValuesPerName>40</MaxValuesPerName><MaxNames>60</MaxNames>' % cid)
+        aspects = []
+        for nr in root.iter(EBAY_NS + 'NameRecommendation'):
+            name = _t(nr, EBAY_NS + 'Name')
+            vr = nr.find(EBAY_NS + 'ValidationRules')
+            usage = _t(vr, EBAY_NS + 'UsageConstraint') if vr is not None else ''
+            mode = _t(vr, EBAY_NS + 'SelectionMode') if vr is not None else ''
+            maxv = _t(vr, EBAY_NS + 'MaxValues') if vr is not None else ''
+            values = [v.text for v in nr.findall(EBAY_NS + 'ValueRecommendation/' + EBAY_NS + 'Value') if v.text]
+            if name:
+                aspects.append({'name': name, 'usage': usage or 'Optional', 'mode': mode or 'FreeText',
+                                'max': int(maxv) if maxv.isdigit() else 1, 'values': values})
+        order = {'Required': 0, 'Recommended': 1, 'Optional': 2}
+        aspects.sort(key=lambda a: order.get(a['usage'], 2))
+
+        conditions = []
+        try:
+            r2 = _ebay_call('GetCategoryFeatures',
+                            '<CategoryID>%s</CategoryID><FeatureID>ConditionValues</FeatureID>'
+                            '<FeatureID>ConditionEnabled</FeatureID><DetailLevel>ReturnAll</DetailLevel>' % cid)
+            cat = r2.find('.//' + EBAY_NS + 'Category')
+            if cat is not None:
+                for c in cat.iter(EBAY_NS + 'Condition'):
+                    conditions.append({'id': _t(c, EBAY_NS + 'ID'), 'name': _t(c, EBAY_NS + 'DisplayName')})
+            if not conditions:
+                sd = r2.find('.//' + EBAY_NS + 'SiteDefaults')
+                # etat par defaut du site, non specifique : on ne le liste pas, eBay validera
+        except Exception as e:
+            print('[ls/ebay_aspects] conditions:', e, file=sys.stderr)
+
+        res = {'category_id': cid, 'aspects': aspects, 'conditions': conditions}
+        if aspects:
+            _aspect_cache[cid] = res
+        elif not aspects:
+            errs = _errors(root)
+            if errs:
+                res['warning'] = errs[0][1]
+        return jsonify(res)
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 def _suggest_category(title):
     root = _ebay_call('GetSuggestedCategories', '<Query>%s</Query>' % xml_escape(title[:350]))
     for c in root.iter(EBAY_NS + 'SuggestedCategory'):
@@ -273,9 +362,11 @@ def ls_ebay_create():
 
         specifics = ''
         for k, v in (d.get('item_specifics') or {}).items():
-            if k and v:
-                specifics += ('<NameValueList><Name>%s</Name><Value>%s</Value></NameValueList>'
-                              % (xml_escape(str(k)[:65]), xml_escape(str(v)[:65])))
+            vals = [x for x in (v if isinstance(v, list) else [v]) if str(x or '').strip()]
+            if k and vals:
+                specifics += '<NameValueList><Name>%s</Name>%s</NameValueList>' % (
+                    xml_escape(str(k)[:65]),
+                    ''.join('<Value>%s</Value>' % xml_escape(str(x).strip()[:65]) for x in vals[:30]))
         specifics_xml = '<ItemSpecifics>%s</ItemSpecifics>' % specifics if specifics else ''
 
         pics = ''.join('<PictureURL>%s</PictureURL>' % xml_escape(u) for u in (d.get('image_urls') or [])[:24])
@@ -289,7 +380,7 @@ def ls_ebay_create():
             '<Description>%s</Description>'
             '<PrimaryCategory><CategoryID>%s</CategoryID></PrimaryCategory>'
             '<StartPrice currencyID="USD">%.2f</StartPrice>'
-            '<ConditionID>%s</ConditionID>'
+            '%s'
             '<Country>FR</Country><Currency>USD</Currency><Location>France</Location>'
             '<ListingDuration>GTC</ListingDuration><ListingType>FixedPriceItem</ListingType>'
             '<Quantity>1</Quantity>'
@@ -301,7 +392,7 @@ def ls_ebay_create():
             '</SellerProfiles>'
             '</Item>'
         ) % (xml_escape(title), _cdata(description), xml_escape(category_id), price,
-             xml_escape(str(d.get('condition_id') or '3000')),
+             ('<ConditionID>%s</ConditionID>' % xml_escape(str(d['condition_id']))) if d.get('condition_id') else '',
              sku_xml, specifics_xml, pics_xml,
              xml_escape(ship_id), xml_escape(pay_id), xml_escape(ret_id))
 
