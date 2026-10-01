@@ -226,7 +226,7 @@ def etsy_callback():
         }
         etsy_token_store['current'] = etsy_data
         _save_token('etsy', etsy_data)
-        return '<html><body><p style="font-family:monospace;padding:20px;color:green">✓ Etsy connecté !</p><script>try{window.opener.postMessage({etsySuccess:true},"*");}catch(e){}setTimeout(function(){window.close();},1500);</script></body></html>'
+        return '<html><body><p style="font-family:monospace;padding:20px;color:green">✓ Etsy connecté !</p><script>try{window.opener.postMessage({etsySuccess:true,tokens:' + json.dumps(etsy_data) + '},"*");}catch(e){}setTimeout(function(){window.close();},1500);</script></body></html>'
     except Exception as e:
         err = str(e)
         return '<html><body><p style="font-family:monospace;padding:20px;color:red">Erreur: ' + err + '</p><script>try{window.opener.postMessage({etsyError:"' + err[:100] + '"},"*");}catch(e){}setTimeout(function(){window.close();},3000);</script></body></html>'
@@ -377,7 +377,7 @@ def shopify_callback():
         _save_token('shopify', data['access_token'])
         import sys
         print('SHOPIFY SCOPES: ' + str(data.get('scope', 'unknown')), flush=True)
-        return '<html><body><p style="font-family:monospace;padding:20px;color:green">✓ Shopify connecté !</p><script>try{window.opener.postMessage({shopifySuccess:true},"*");}catch(e){}setTimeout(function(){window.close();},1500);</script></body></html>'
+        return '<html><body><p style="font-family:monospace;padding:20px;color:green">✓ Shopify connecté !</p><script>try{window.opener.postMessage({shopifySuccess:true,token:' + json.dumps(data['access_token']) + '},"*");}catch(e){}setTimeout(function(){window.close();},1500);</script></body></html>'
     except Exception as e:
         err = str(e)
         return '<html><body><p style="font-family:monospace;padding:20px;color:red">Erreur: ' + err + '</p><script>try{window.opener.postMessage({shopifyError:"' + err[:100] + '"},"*");}catch(e){}setTimeout(function(){window.close();},3000);</script></body></html>'
