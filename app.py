@@ -174,7 +174,7 @@ def etsy_auth_url():
         return jsonify({'error': 'Etsy API key manquante'}), 400
     verifier, challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(16)
-    etsy_state_store[state] = {'verifier': verifier, 'api_key': api_key}
+    etsy_state_store[state] = {'verifier': verifier, 'api_key': api_key, 'secret': data.get('secret', '').strip()}
     redirect_uri = 'https://fleamarket-seo-modif-meta-description.onrender.com/etsy/callback'
     url = (
         'https://www.etsy.com/oauth/connect'
@@ -222,7 +222,7 @@ def etsy_callback():
             'access_token':  token_data['access_token'],
             'refresh_token': token_data.get('refresh_token', ''),
             'expires_at':    time.time() + token_data.get('expires_in', 3600) - 60,
-            'api_key':       api_key
+            'api_key':       api_key, 'secret': stored.get('secret', '')
         }
         etsy_token_store['current'] = etsy_data
         _save_token('etsy', etsy_data)
@@ -275,7 +275,7 @@ def etsy_api_proxy():
             headers={
                 'Authorization': 'Bearer ' + token,
                 'Content-Type':  'application/json',
-                'x-api-key':     api_key
+                'x-api-key':     api_key + (':' + etsy_token_store['current'].get('secret', '') if etsy_token_store['current'].get('secret') else '')
             },
             json=body,
             timeout=30
@@ -311,7 +311,7 @@ def etsy_update_listing():
         if clean_tags:  payload['tags']         = clean_tags
         resp = requests.patch(
             'https://openapi.etsy.com/v3/application/listings/' + listing_id,
-            headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'x-api-key': api_key},
+            headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'x-api-key': api_key + (':' + etsy_token_store['current'].get('secret', '') if etsy_token_store['current'].get('secret') else '')},
             json=payload,
             timeout=30
         )
