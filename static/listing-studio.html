@@ -115,9 +115,24 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
   </div>
   <div class="hdr-right">
     <input id="apiKey" class="key-input" type="password" placeholder="Clé Anthropic sk-ant-..." oninput="saveKey()">
+    <button class="btn btn-outline" style="padding:5px 12px;font-size:12px" onclick="toggleSettings()">⚙ Réglages</button>
     <span id="etsyDot" class="plat-dot ko" onclick="connectEtsy()">Etsy ✕</span>
     <span id="shopifyDot" class="plat-dot ko" onclick="connectShopify()">Shopify ✕</span>
   </div>
+</div>
+
+<!-- Reglages (une seule fois, gardes dans ce navigateur) -->
+<div id="settingsPanel" style="display:none;background:#fff;border-bottom:1px solid #dee2e6;padding:14px 24px;font-size:13px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:10px">
+    <label>eBay App ID<br><input type="password" id="set-ebay-app" placeholder="XXXX-PRD-XXXX" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></label>
+    <label>eBay Cert ID<br><input type="password" id="set-ebay-cert" placeholder="PRD-XXXX" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></label>
+    <label>eBay User Token<br><input type="password" id="set-ebay-token" placeholder="AgAAAA..." style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></label>
+    <label>Etsy API Key (Keystring)<br><input type="password" id="set-etsy-key" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></label>
+    <label>Etsy Shared Secret<br><input type="password" id="set-etsy-secret" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px"></label>
+  </div>
+  <button class="btn btn-primary" style="padding:7px 16px;font-size:13px" onclick="saveSettings()">Enregistrer</button>
+  <span id="setMsg" class="info-text" style="margin-left:10px"></span>
+  <div class="info-text" style="margin-top:6px">À remplir une seule fois. Gardé dans ce navigateur (mêmes champs que l'outil SEO pour eBay), jamais affiché ailleurs.</div>
 </div>
 
 <!-- Expedition -->
@@ -207,7 +222,10 @@ function lsFetch(url, opts = {}) {
 window.onload = () => {
   const saved = localStorage.getItem('ls_api_key') || seoCreds()['s-anthropic'];
   if (saved) document.getElementById('apiKey').value = saved;
-  checkPlatforms().then(loadShipping);
+  fillSettings();
+  const c = seoCreds();
+  if (!c['s-ebay-app'] || !c['s-ebay-cert'] || !c['s-ebay-token']) document.getElementById('settingsPanel').style.display = '';
+  restoreTokens().then(checkPlatforms).then(loadShipping);
 };
 
 // ── Profils d'expedition (eBay + Etsy), choisis ensuite article par article ──
@@ -216,6 +234,7 @@ let etsyInfo = { shopId: null, shipping: [], readiness: [] };
 let etsyTaxo = null;
 
 async function etsyApi(method, path, body) {
+  await ensureEtsyFresh();
   const r = await fetch(BASE + '/etsy/api', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ method, path, body })
@@ -1232,36 +1251,98 @@ async function publishShopify(idx) {
 // ══════════════════════════════════════════════════════
 // OAuth helpers
 // ══════════════════════════════════════════════════════
-async function connectEtsy() {
-  const apiKey = (seoCreds()['s-etsy-key'] || '') || prompt('Etsy API Key (Keystring) :');
-  if (!apiKey) return;
-  const secret = prompt('Etsy Shared Secret (visible à côté de la Keystring sur etsy.com/developers/your-apps) :');
-  if (!secret) return;
-  const r = await fetch(BASE + '/etsy/auth_url', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey, secret })
-  });
+// ── Reglages ────────────────────────────────────────
+const SET_MAP = { 'set-ebay-app': 's-ebay-app', 'set-ebay-cert': 's-ebay-cert', 'set-ebay-token': 's-ebay-token', 'set-etsy-key': 's-etsy-key' };
+function toggleSettings() {
+  const p = document.getElementById('settingsPanel');
+  p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+function fillSettings() {
+  const c = seoCreds();
+  Object.keys(SET_MAP).forEach(id => { if (c[SET_MAP[id]]) document.getElementById(id).value = c[SET_MAP[id]]; });
+  const sec = localStorage.getItem('ls_etsy_secret'); if (sec) document.getElementById('set-etsy-secret').value = sec;
+}
+async function saveSettings() {
+  const c = seoCreds();
+  Object.keys(SET_MAP).forEach(id => { const v = document.getElementById(id).value.trim(); if (v) c[SET_MAP[id]] = v; });
+  localStorage.setItem('fmf_v2_creds', JSON.stringify(c));
+  localStorage.setItem('ls_etsy_secret', document.getElementById('set-etsy-secret').value.trim());
+  document.getElementById('setMsg').textContent = 'Enregistré ✓';
+  setTimeout(() => { document.getElementById('setMsg').textContent = ''; }, 2500);
+  await loadShipping();
+}
+
+// ── Jetons Etsy / Shopify gardes dans le navigateur (survivent aux redemarrages de Render) ──
+function getEtsyTokens() { try { return JSON.parse(localStorage.getItem('ls_tokens_etsy') || 'null'); } catch (_) { return null; } }
+const JSON_H = { 'Content-Type': 'application/json' };
+
+async function freshEtsy(et) {
+  if (!et || !et.refresh_token) return et;
+  if (et.expires_at - Date.now() / 1000 > 300) return et;
+  const r = await fetch(BASE + '/ls/etsy_refresh', { method: 'POST', headers: JSON_H,
+    body: JSON.stringify({ api_key: et.api_key, refresh_token: et.refresh_token, secret: et.secret }) });
   const d = await r.json();
-  if (d.auth_url) {
-    const w = window.open(d.auth_url, 'etsy_oauth', 'width=600,height=700');
-    window.addEventListener('message', async ev => {
-      if (ev.data && ev.data.etsySuccess) { w.close(); await checkPlatforms(); await loadShipping(); }
-    }, { once: true });
+  if (d.error) return et;
+  localStorage.setItem('ls_tokens_etsy', JSON.stringify(d));
+  await fetch(BASE + '/ls/restore', { method: 'POST', headers: JSON_H, body: JSON.stringify({ etsy: d, force: true }) });
+  return d;
+}
+async function ensureEtsyFresh() { try { await freshEtsy(getEtsyTokens()); } catch (_) {} }
+
+async function restoreTokens() {
+  try {
+    let et = getEtsyTokens();
+    const sh = localStorage.getItem('ls_token_shopify') || null;
+    if (!et && !sh) return;
+    if (et) et = await freshEtsy(et);
+    await fetch(BASE + '/ls/restore', { method: 'POST', headers: JSON_H, body: JSON.stringify({ etsy: et, shopify: sh }) });
+  } catch (_) {}
+}
+
+window.addEventListener('message', async ev => {
+  if (ev.origin !== location.origin) return;
+  const m = ev.data || {};
+  if (m.etsySuccess) {
+    if (m.tokens) localStorage.setItem('ls_tokens_etsy', JSON.stringify(m.tokens));
+    await checkPlatforms(); await loadShipping();
   }
+  if (m.shopifySuccess) {
+    if (m.token) localStorage.setItem('ls_token_shopify', m.token);
+    await checkPlatforms();
+  }
+  if (m.etsyError) alert('Etsy : ' + m.etsyError);
+  if (m.shopifyError) alert('Shopify : ' + m.shopifyError);
+});
+
+// ── Connexion (la fenetre est ouverte tout de suite pour ne pas etre bloquee) ──
+async function connectEtsy() {
+  const w = window.open('about:blank', 'etsy_oauth', 'width=600,height=700');
+  if (!w) { alert('Autorise les fenêtres popup pour ce site, puis réessaie.'); return; }
+  const key = (seoCreds()['s-etsy-key'] || '').trim();
+  const secret = (localStorage.getItem('ls_etsy_secret') || '').trim();
+  if (!key || !secret) {
+    w.close();
+    document.getElementById('settingsPanel').style.display = '';
+    alert('Renseigne la clé Etsy et le Shared secret dans Réglages, clique Enregistrer, puis reclique sur Etsy.');
+    return;
+  }
+  try {
+    const r = await fetch(BASE + '/etsy/auth_url', { method: 'POST', headers: JSON_H, body: JSON.stringify({ api_key: key, secret }) });
+    const d = await r.json();
+    if (!d.auth_url) throw new Error(d.error || 'adresse de connexion absente');
+    w.location.href = d.auth_url;
+  } catch (e) { w.close(); alert('Etsy : ' + e.message); }
 }
 
 async function connectShopify() {
-  const r = await fetch(BASE + '/shopify/auth_url', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
-  });
-  const d = await r.json();
-  if (d.auth_url) {
-    const w = window.open(d.auth_url, 'shopify_oauth', 'width=600,height=700');
-    window.addEventListener('message', async ev => {
-      if (ev.data && ev.data.shopifySuccess) { w.close(); await checkPlatforms(); }
-    }, { once: true });
-  }
+  const w = window.open('about:blank', 'shopify_oauth', 'width=600,height=700');
+  if (!w) { alert('Autorise les fenêtres popup pour ce site, puis réessaie.'); return; }
+  try {
+    const r = await fetch(BASE + '/shopify/auth_url', { method: 'POST', headers: JSON_H, body: '{}' });
+    const d = await r.json();
+    if (!d.auth_url) throw new Error(d.error || 'adresse de connexion absente');
+    w.location.href = d.auth_url;
+  } catch (e) { w.close(); alert('Shopify : ' + e.message); }
 }
 </script>
 </body>
