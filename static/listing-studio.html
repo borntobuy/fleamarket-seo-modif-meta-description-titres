@@ -132,7 +132,16 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
   </div>
   <button class="btn btn-primary" style="padding:7px 16px;font-size:13px" onclick="saveSettings()">Enregistrer</button>
   <span id="setMsg" class="info-text" style="margin-left:10px"></span>
-  <div class="info-text" style="margin-top:6px">À remplir une seule fois. Gardé dans ce navigateur (mêmes champs que l'outil SEO pour eBay), jamais affiché ailleurs.</div>
+  <div class="info-text" style="margin-top:6px">Gardé dans ce navigateur. Option recommandée : mettre ces valeurs dans les variables d'environnement Render (plus rien à ressaisir ni à reconnecter).</div>
+  <div style="margin-top:12px;padding:10px;background:#f8f9fa;border-radius:8px">
+    <b>Variables d'environnement Render</b> <span id="envInfo" class="info-text"></span>
+    <div class="info-text" style="margin:4px 0 8px">Noms à créer dans Render → Environment : EBAY_APP_ID, EBAY_CERT_ID, EBAY_USER_TOKEN, ETSY_API_KEY, ETSY_SHARED_SECRET, ETSY_REFRESH_TOKEN, SHOPIFY_ACCESS_TOKEN, GITHUB_TOKEN.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+      <label>ETSY_REFRESH_TOKEN (après avoir cliqué sur Etsy une fois)<br><input type="text" id="env-etsy-rt" readonly onclick="this.select()" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px;background:#fff"></label>
+      <label>SHOPIFY_ACCESS_TOKEN (après avoir cliqué sur Shopify une fois)<br><input type="text" id="env-shopify" readonly onclick="this.select()" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px;background:#fff"></label>
+    </div>
+    <div class="info-text" style="margin-top:6px">Clique dans un champ pour le sélectionner, copie-le (Ctrl+C) et colle-le dans Render. Ne le partage à personne.</div>
+  </div>
 </div>
 
 <!-- Expedition -->
@@ -223,10 +232,25 @@ window.onload = () => {
   const saved = localStorage.getItem('ls_api_key') || seoCreds()['s-anthropic'];
   if (saved) document.getElementById('apiKey').value = saved;
   fillSettings();
-  const c = seoCreds();
-  if (!c['s-ebay-app'] || !c['s-ebay-cert'] || !c['s-ebay-token']) document.getElementById('settingsPanel').style.display = '';
-  restoreTokens().then(checkPlatforms).then(loadShipping);
+  fetch(BASE + '/ls/env_status').then(r => r.json()).catch(() => ({})).then(env => {
+    window.__env = env || {};
+    const c = seoCreds();
+    const ebayOk = env.ebay || (c['s-ebay-app'] && c['s-ebay-cert'] && c['s-ebay-token']);
+    if (!ebayOk) document.getElementById('settingsPanel').style.display = '';
+    const ei = document.getElementById('envInfo');
+    if (ei) ei.textContent = '— détectées : ' + ['ebay', 'etsy', 'shopify', 'github'].map(k => k + (env[k] ? ' ✓' : ' ✕')).join(' · ');
+    showTokensForEnv();
+    return restoreTokens().then(checkPlatforms).then(loadShipping);
+  });
 };
+
+function showTokensForEnv() {
+  const et = getEtsyTokens();
+  const a = document.getElementById('env-etsy-rt'), b = document.getElementById('env-shopify');
+  if (a && et && et.refresh_token) a.value = et.refresh_token;
+  const sh = localStorage.getItem('ls_token_shopify');
+  if (b && sh) b.value = sh;
+}
 
 // ── Profils d'expedition (eBay + Etsy), choisis ensuite article par article ──
 let ebayProfiles = { shipping: [], payment: [], return: [] };
@@ -289,8 +313,9 @@ async function checkPlatforms() {
     ]);
     const ed = document.getElementById('etsyDot');
     const sd = document.getElementById('shopifyDot');
-    if (er.connected) { ed.textContent = 'Etsy ✓'; ed.className = 'plat-dot ok'; }
-    if (sr.connected) { sd.textContent = 'Shopify ✓'; sd.className = 'plat-dot ok'; }
+    ed.textContent = er.connected ? 'Etsy ✓' : 'Etsy ✕'; ed.className = 'plat-dot ' + (er.connected ? 'ok' : 'ko');
+    sd.textContent = sr.connected ? 'Shopify ✓' : 'Shopify ✕'; sd.className = 'plat-dot ' + (sr.connected ? 'ok' : 'ko');
+    showTokensForEnv();
   } catch(e) {}
 }
 
@@ -951,7 +976,11 @@ function refreshShippingSelects(idx) {
   }
   const et = document.getElementById(`etsy-ship-${idx}`);
   if (et) {
-    const saved = (articles[idx].shipEtsy) || localStorage.getItem('ls_ship_etsy');
+    // defaut : profil Etsy a 39 (1er article) / 25 (suivants), sinon dernier choix
+    const hasCost = (p, v) => (p.shipping_profile_destinations || []).some(d => d.primary_cost && Math.round(d.primary_cost.amount / d.primary_cost.divisor) === v);
+    const def39 = etsyInfo.shipping.find(p => hasCost(p, 39) && (p.shipping_profile_destinations || []).some(d => d.secondary_cost && Math.round(d.secondary_cost.amount / d.secondary_cost.divisor) === 25))
+      || etsyInfo.shipping.find(p => hasCost(p, 39));
+    const saved = (articles[idx].shipEtsy) || (def39 ? def39.shipping_profile_id : localStorage.getItem('ls_ship_etsy'));
     et.innerHTML = optionsHtml(etsyInfo.shipping, 'shipping_profile_id', p => {
       const costs = (p.shipping_profile_destinations || []).slice(0, 2).map(d => d.primary_cost ? (d.primary_cost.amount / d.primary_cost.divisor).toFixed(2) + ' ' + d.primary_cost.currency_code : '').filter(Boolean).join(' / ');
       return p.title + (costs ? ' — ' + costs : '');
