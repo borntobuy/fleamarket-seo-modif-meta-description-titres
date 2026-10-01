@@ -120,6 +120,15 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
   </div>
 </div>
 
+<!-- Expedition -->
+<div style="padding:12px 24px 0;display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:13px">
+  <b>Expédition (USD) :</b>
+  <label>eBay <select id="shipEbay" style="padding:6px;border-radius:6px;border:1px solid #ced4da;min-width:220px"><option value="">— chargement… —</option></select></label>
+  <label>Etsy <select id="shipEtsy" style="padding:6px;border-radius:6px;border:1px solid #ced4da;min-width:220px"><option value="">— connecter Etsy —</option></select></label>
+  <button class="btn btn-outline" style="padding:6px 12px;font-size:12px" onclick="loadShipping()">↻ Recharger les profils</button>
+  <span id="shipInfo" class="info-text"></span>
+</div>
+
 <!-- Drop zone -->
 <div class="drop-wrap">
   <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
@@ -186,8 +195,58 @@ const BASE = '';  // same-origin
 window.onload = () => {
   const saved = localStorage.getItem('ls_api_key');
   if (saved) document.getElementById('apiKey').value = saved;
-  checkPlatforms();
+  checkPlatforms().then(loadShipping);
 };
+
+// ── Profils d'expedition ─────────────────────────────
+let ebayProfiles = { shipping: [], payment: [], return: [] };
+let etsyShopId = null;
+
+async function loadShipping() {
+  const info = document.getElementById('shipInfo');
+  info.textContent = '';
+  // eBay
+  const se = document.getElementById('shipEbay');
+  try {
+    const d = await fetch(BASE + '/ls/ebay_profiles').then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    ebayProfiles = d;
+    const prev = localStorage.getItem('ls_ship_ebay');
+    se.innerHTML = d.shipping.length
+      ? d.shipping.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.summary ? ' — ' + esc(p.summary) : ''}</option>`).join('')
+      : '<option value="">Aucun profil eBay trouvé</option>';
+    if (prev && d.shipping.some(p => p.id === prev)) se.value = prev;
+  } catch (e) {
+    se.innerHTML = '<option value="">eBay : ' + esc(e.message).slice(0, 60) + '</option>';
+  }
+  se.onchange = () => localStorage.setItem('ls_ship_ebay', se.value);
+
+  // Etsy
+  const st = document.getElementById('shipEtsy');
+  try {
+    const shopD = await fetch(BASE + '/etsy/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'GET', path: '/application/users/me/shops' })
+    }).then(r => r.json());
+    etsyShopId = shopD.shop_id || (shopD.results && shopD.results[0] && shopD.results[0].shop_id);
+    if (!etsyShopId) throw new Error('Etsy non connecté');
+    const pd = await fetch(BASE + '/etsy/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'GET', path: `/application/shops/${etsyShopId}/shipping-profiles` })
+    }).then(r => r.json());
+    const list = pd.results || [];
+    const prev = localStorage.getItem('ls_ship_etsy');
+    st.innerHTML = list.length ? list.map(p => {
+      const dest = (p.shipping_profile_destinations || [])[0];
+      const cost = dest && dest.primary_cost ? (dest.primary_cost.amount / dest.primary_cost.divisor).toFixed(2) + ' ' + dest.primary_cost.currency_code : '';
+      return `<option value="${p.shipping_profile_id}">${esc(p.title)}${cost ? ' — ' + cost : ''}</option>`;
+    }).join('') : '<option value="">Aucun profil Etsy</option>';
+    if (prev && list.some(p => String(p.shipping_profile_id) === prev)) st.value = prev;
+  } catch (e) {
+    st.innerHTML = '<option value="">Etsy : ' + esc(e.message).slice(0, 50) + '</option>';
+  }
+  st.onchange = () => localStorage.setItem('ls_ship_etsy', st.value);
+}
 
 function saveKey() {
   localStorage.setItem('ls_api_key', document.getElementById('apiKey').value);
@@ -292,7 +351,7 @@ async function claudeCall(messages, maxTokens = 2048) {
     body: JSON.stringify({
       api_key: key,
       payload: {
-        model: 'claude-opus-4-5',
+        model: 'claude-sonnet-4-6',
         max_tokens: maxTokens,
         messages
       }
@@ -455,6 +514,86 @@ function openLightbox(src) {
 // ══════════════════════════════════════════════════════
 // Step 2 — Generate listing content
 // ══════════════════════════════════════════════════════
+function htmlToPlain(html) {
+  return String(html || '')
+    .replace(/<\/(p|h2|h1|div)>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Titre final = base tronquee + espace + suffixe (jjmmaa + n du jour)
+function withSuffix(base, suffix, max) {
+  const room = max - suffix.length - 1;
+  let b = String(base || '').replace(/\s+/g, ' ').trim();
+  b = b.replace(/\s*\b\d{6,8}\s*$/, '').trim(); // retire un eventuel suffixe deja ajoute par l'IA
+  if (b.length > room) b = b.slice(0, room).replace(/\s+\S*$/, '').trim();
+  return b + ' ' + suffix;
+}
+
+async function reserveRef(art) {
+  if (art.sku && art.suffix) return;
+  const r = await fetch(BASE + '/ls/reserve', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count: 1 })
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  art.sku = d.items[0].sku;
+  art.suffix = d.items[0].suffix;
+}
+
+function buildPrompt(art, kwText, baseMaxEbay, baseMaxEtsy) {
+  return `You are an SEO expert for Fleamarketfrance, a French vintage/antiques shop selling to international buyers (mainly US and UK) on eBay, Etsy and Shopify.
+Analyze the product photos AND the information below, then generate fully optimized content.
+
+DETECTED ITEM (from photos, may be approximate): ${art.title} (category: ${art.category})
+SELLER INFORMATION / SPECIAL INSTRUCTIONS (apply with highest priority, override standard rules if needed; the seller knows the object, not you): ${kwText}
+
+RULES - follow ALL strictly:
+
+1. KEYWORD: Find the single best SEO keyword for this item (1 to 6 words max). It MUST appear in: the new title, as <h2> in the description, in the first paragraph, and naturally 1-2 times every 100 words throughout the description. Do not stuff - integrate naturally.
+
+2. TITLES: Do NOT add any reference number or date at the end, it is added automatically afterwards.
+- "newTitle" (eBay): MAXIMUM ${baseMaxEbay} characters. Keep "Vintage", "Antique", "French" when relevant. Preserve the object name and material exactly as given by the seller (Honey Pot stays Honey Pot, Stoneware stays Stoneware). If a large or unusual size is a selling point, give inches first (7" not 18cm).
+- "etsyTitle": MAXIMUM ${baseMaxEtsy} characters, same rules, a bit richer in keywords.
+
+3. DESCRIPTION: Target 320 words (minimum 280, maximum 360). English only. Flowing prose, NO bullet points. Tone: precise, factual, concise. Write like a specialist antique dealer writing a catalogue entry - state facts, describe what you observe, give context. STRICTLY FORBIDDEN words (zero exceptions): beautiful, perfect, remarkable, magnificent, impressive, exceptional, stunning, lovely, charming, wonderful, delightful, exquisite, timeless, enduring, spirit, soul, journey, treasure, superb, outstanding, fantastic, incredible, splendid, gorgeous, elegant (unless a factual style description e.g. "Empire style"). Replace them with factual observations: instead of "beautiful grain" write "visible wood grain"; instead of "perfect condition" write "good condition with minor wear"; instead of "timeless design" write "classic form".
+CRITICAL - COLOR RULE: never use color terms that are also food/product names for pottery or ceramics (NEVER "mustard yellow": use "golden yellow", "ochre", "amber yellow").
+CRITICAL - ENCODING RULE: plain ASCII characters only. Fractions as decimals (5.5" not 5 1/2), no accented characters (decor, not accented), standard inch symbol (") and cm.
+CRITICAL - ACCURACY RULES:
+- The seller information is the primary source of truth for object name and geographic origin. NEVER change Italian to French, French to English, etc.
+- Visual guides only (seller info always wins): cylindrical yellow or green glazed terracotta pots = French jam pots (pots a confiture); round/bulbous pots wider at the belly than the top, yellow/amber/brown glaze with dark brown drips, small footed base = French honey pots (pots a miel); large beige pots with loop handles = Italian sardine pots.
+- If the photos suggest a different origin than the seller information, you may note it as a possibility in the description but NEVER change the origin in the title, H2 or keyword.
+- PHOTO ANALYSIS: scan all photos. If any photo shows a maker's mark, stamp, signature, label or hallmark, mention it explicitly. If any photo shows damage, chips, cracks or repairs, mention them honestly.
+- If unsure about a detail, describe only what you can clearly observe. No guessing, no embellishment.
+- FORBIDDEN opening patterns: "This authentic", "This [adj] vintage", "This [object] originates", "Originally used in French households", "This piece represents", "Originating from". Start instead with the object itself, its context, maker, era, use, or a specific visible detail.
+Wrap the ENTIRE description in: <div style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">
+Structure with these exact HTML tags:
+- <h2 style="font-family:Arial,sans-serif;font-size:24px;text-align:center;">keyword</h2>
+- <p> Paragraph 1: introduce the item, its nature and French origin - MUST include the keyword naturally </p>
+- <p> Paragraph 2: visual details, materials and style - only what is clearly visible or explicitly stated </p>
+- <p> Paragraph 3: MUST include dimensions - MANDATORY for every item. Extract from the seller information or estimate from photos. Always show BOTH cm AND inches (e.g. 18.5cm x 8cm / 7.3" x 3.1"). If only one unit is given, convert. If nothing is available, estimate from photos and state it as approximate. NEVER omit dimensions. </p>
+- <p> Paragraph 4 (optional): suggest decorative use or collectible value </p>
+- <p> EXACTLY this sentence and nothing else: "95% of my items are tariff-free to the US." </p>
+</div>
+
+4. ITEM SPECIFICS: build a complete set from what you observe and what the seller states. Include all relevant fields: Material, Style, Period/Era, Country of Origin, Color, Type, Theme, Brand/Maker, and dimensions (Item Height / Item Width in inches when known). Only include fields you are confident about. Condition goes in "condition" not here.
+
+5. ETSY TAGS: exactly 13 tags, each max 20 characters, mix of specific and broad terms.
+
+6. ALT TEXTS: one descriptive alt text per product photo (max 250 chars each: what is visible + material + origin).
+
+7. SEO: "seoTitle" max 70 characters, "seoDesc" max 160 characters (for the Shopify page, no reference number).
+
+8. PRICE: "price" = realistic selling price in US dollars (number only) for this item on the US market.
+
+Respond ONLY with valid JSON, no markdown, no backticks:
+{"keyword":"...","newTitle":"...","etsyTitle":"...","description":"...","itemSpecifics":{"k":"v"},"etsyTags":["t1"],"altTexts":["a1"],"seoTitle":"...","seoDesc":"...","price":0}`;
+}
+
 async function generateOne(idx) {
   const art = articles[idx];
   const btn = document.querySelector(`#row-${idx} .btn-gen`);
@@ -463,62 +602,60 @@ async function generateOne(idx) {
   btn.innerHTML = '<span class="spinner"></span>';
 
   try {
-    // Resize photos for generation (higher quality)
+    await reserveRef(art); // SKU + suffixe de titre (une seule fois par article)
+
     const resized = await Promise.all(art.photoIds.slice(0, 6).map(pi =>
       resizeDataUrl(photos[pi].dataUrl, 1024)
     ));
-
     const imageBlocks = resized.map((t, i) => [
       { type: 'text', text: `Photo ${i+1}/${resized.length}:` },
       { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(t) } }
     ]).flat();
 
-    const kwText = art.keywords.trim() || '(aucune info supplémentaire)';
-    const prompt = `Tu es un expert en brocante et antiquités françaises, vendant principalement aux acheteurs américains.
-
-Article: "${art.title}" — Catégorie: "${art.category}"
-Informations du vendeur: ${kwText}
-
-Génère des listings optimisés pour eBay, Etsy et Shopify. Retourne UNIQUEMENT du JSON valide:
-
-{
-  "ebay": {
-    "title": "max 80 caractères, optimisé SEO pour acheteurs US, mots-clés vintage/antique/french",
-    "description": "description HTML complète (300-500 mots), mentionner état, dimensions si connues, expédition depuis France",
-    "condition": "Used",
-    "price_suggestion": 0,
-    "item_specifics": {"Material":"...", "Country/Region of Manufacture":"France", "Style":"..."}
-  },
-  "etsy": {
-    "title": "max 140 caractères, naturel et riche en mots-clés",
-    "description": "description longue (400-600 mots), histoire/contexte, dimensions, état, expédition",
-    "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
-    "price_suggestion": 0
-  },
-  "shopify": {
-    "title": "titre produit concis",
-    "body_html": "description HTML (300-500 mots)",
-    "seo_title": "max 70 caractères",
-    "seo_description": "max 160 caractères",
-    "alt_texts": ["description alt photo 1", "description alt photo 2"]
-  }
-}`;
+    const kwText = art.keywords.trim() || '(none)';
+    const maxEbay = 80 - art.suffix.length - 1;
+    const maxEtsy = 140 - art.suffix.length - 1;
 
     const text = await claudeCall([{
       role: 'user',
-      content: [...imageBlocks, { type: 'text', text: prompt }]
-    }], 3000);
+      content: [...imageBlocks, { type: 'text', text: buildPrompt(art, kwText, maxEbay, maxEtsy) }]
+    }], 4000);
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Réponse JSON invalide');
-    art.generated = JSON.parse(jsonMatch[0]);
+    const g = JSON.parse(jsonMatch[0].replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''));
+
+    const price = Math.round(Number(g.price) || 0);
+    const etsyTitle = withSuffix(g.etsyTitle || g.newTitle, art.suffix, 140);
+    art.generated = {
+      keyword: g.keyword || '',
+      ebay: {
+        title: withSuffix(g.newTitle, art.suffix, 80),
+        description: g.description || '',
+        price_suggestion: price,
+        item_specifics: g.itemSpecifics || {}
+      },
+      etsy: {
+        title: etsyTitle,
+        description: htmlToPlain(g.description),
+        tags: (g.etsyTags || []).slice(0, 13),
+        price_suggestion: price
+      },
+      shopify: {
+        title: etsyTitle,
+        body_html: g.description || '',
+        seo_title: String(g.seoTitle || '').slice(0, 70),
+        seo_description: String(g.seoDesc || '').slice(0, 160),
+        alt_texts: g.altTexts || [],
+        price_suggestion: price
+      }
+    };
 
     setStatus(idx, 'ready', 'Prêt');
     renderGenerated(idx);
-
-    const expandBtn = document.getElementById(`expand-${idx}`);
-    expandBtn.style.display = '';
-    togglePanel(idx); // open automatically
+    document.getElementById(`expand-${idx}`).style.display = '';
+    const row = document.getElementById(`panel-${idx}`);
+    if (row.style.display === 'none') togglePanel(idx);
 
   } catch(e) {
     setStatus(idx, 'error', 'Erreur');
@@ -553,6 +690,7 @@ function renderGenerated(idx) {
   const panel = document.getElementById(`gen-panel-${idx}`);
 
   panel.innerHTML = `
+    <div style="font-size:12px;color:#495057;margin-bottom:8px">SKU <b id="sku-${idx}">${esc(art.sku)}</b> · Réf. titre <b>${esc(art.suffix)}</b> · Mot-clé SEO : <b>${esc(g.keyword)}</b></div>
     <div class="gen-tabs">
       <button class="gen-tab active" onclick="switchTab(${idx},'ebay',this)">eBay</button>
       <button class="gen-tab" onclick="switchTab(${idx},'etsy',this)">Etsy</button>
@@ -565,7 +703,7 @@ function renderGenerated(idx) {
         <div class="gen-value" contenteditable="true" id="ebay-title-${idx}">${esc(g.ebay.title)}</div></div>
       <div class="gen-field"><div class="gen-label">Description</div>
         <div class="gen-value" contenteditable="true" id="ebay-desc-${idx}" style="max-height:120px;overflow:auto">${g.ebay.description}</div></div>
-      <div class="gen-field"><div class="gen-label">Prix suggéré</div>
+      <div class="gen-field"><div class="gen-label">Prix ($ USD)</div>
         <div class="gen-value" contenteditable="true" id="ebay-price-${idx}">${g.ebay.price_suggestion || ''}</div></div>
       <div class="pub-row">
         <button class="btn-pub ebay" onclick="publishEbay(${idx})">Créer listing eBay</button>
@@ -578,10 +716,10 @@ function renderGenerated(idx) {
       <div class="gen-field"><div class="gen-label">Titre Etsy</div>
         <div class="gen-value" contenteditable="true" id="etsy-title-${idx}">${esc(g.etsy.title)}</div></div>
       <div class="gen-field"><div class="gen-label">Description</div>
-        <div class="gen-value" contenteditable="true" id="etsy-desc-${idx}" style="max-height:120px;overflow:auto">${esc(g.etsy.description)}</div></div>
+        <div class="gen-value" contenteditable="true" id="etsy-desc-${idx}" style="max-height:160px;overflow:auto;white-space:pre-wrap">${esc(g.etsy.description)}</div></div>
       <div class="gen-field"><div class="gen-label">Tags (${(g.etsy.tags||[]).length}/13)</div>
         <div class="gen-tags">${(g.etsy.tags||[]).map(t=>`<span class="gen-tag">${esc(t)}</span>`).join('')}</div></div>
-      <div class="gen-field"><div class="gen-label">Prix suggéré</div>
+      <div class="gen-field"><div class="gen-label">Prix ($ USD)</div>
         <div class="gen-value" contenteditable="true" id="etsy-price-${idx}">${g.etsy.price_suggestion || ''}</div></div>
       <div class="pub-row">
         <button class="btn-pub etsy" onclick="publishEtsy(${idx})">Créer listing Etsy</button>
@@ -599,6 +737,8 @@ function renderGenerated(idx) {
         <div class="gen-value" contenteditable="true" id="shopify-seo-title-${idx}">${esc(g.shopify.seo_title)}</div></div>
       <div class="gen-field"><div class="gen-label">SEO Description</div>
         <div class="gen-value" contenteditable="true" id="shopify-seo-desc-${idx}">${esc(g.shopify.seo_description)}</div></div>
+      <div class="gen-field"><div class="gen-label">Prix ($ USD)</div>
+        <div class="gen-value" contenteditable="true" id="shopify-price-${idx}">${g.shopify.price_suggestion || ''}</div></div>
       <div class="pub-row">
         <button class="btn-pub shopify" onclick="publishShopify(${idx})">Créer produit Shopify</button>
         <span id="pub-shopify-${idx}"></span>
@@ -622,6 +762,21 @@ function getEditable(id) {
 // ══════════════════════════════════════════════════════
 // Publish — eBay
 // ══════════════════════════════════════════════════════
+async function uploadPhotos(art) {
+  if (art.imageUrls) return art.imageUrls;
+  const imgs = await Promise.all(art.photoIds.slice(0, 12).map(async pi => ({
+    data: dataUrlToBase64(await resizeDataUrl(photos[pi].dataUrl, 1600))
+  })));
+  const r = await fetch(BASE + '/ls/upload', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ images: imgs })
+  });
+  const d = await r.json();
+  if (!d.files || !d.files.length) throw new Error('Upload photos échoué');
+  art.imageUrls = d.files.map(f => location.origin + f.url);
+  return art.imageUrls;
+}
+
 async function publishEbay(idx) {
   const art = articles[idx];
   const title = getEditable(`ebay-title-${idx}`);
@@ -633,10 +788,22 @@ async function publishEbay(idx) {
   const status = document.getElementById(`pub-ebay-${idx}`);
 
   try {
-    const r = await fetch(BASE + '/ebay/create_listing', {
+    const shipId = document.getElementById('shipEbay').value;
+    if (!shipId) throw new Error("Choisis un profil d'expédition eBay en haut de page");
+    const payId = (ebayProfiles.payment[0] || {}).id;
+    const retId = (ebayProfiles.return[0] || {}).id;
+    if (!payId || !retId) throw new Error('Profils paiement/retour eBay introuvables');
+    status.innerHTML = '<span class="info-text">envoi des photos…</span>';
+    const imageUrls = await uploadPhotos(art);
+    const r = await fetch(BASE + '/ls/ebay_create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description: desc, price, category_id: '11450', condition_id: '3000' })
+      body: JSON.stringify({
+        title, description: desc, price, sku: art.sku, condition_id: '3000',
+        item_specifics: (art.generated.ebay.item_specifics || {}),
+        image_urls: imageUrls,
+        shipping_profile_id: shipId, payment_profile_id: payId, return_profile_id: retId
+      })
     });
     const d = await r.json();
     if (d.error) throw new Error(JSON.stringify(d.error));
@@ -666,10 +833,8 @@ async function publishEtsy(idx) {
 
   // Need shop_id — fetch from /etsy/api
   try {
-    const meR = await fetch(BASE + '/etsy/api', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ method: 'GET', path: '/application/openapi-ping' })
-    });
+    const shipProfile = document.getElementById('shipEtsy').value;
+    if (!shipProfile) throw new Error("Choisis un profil d'expédition Etsy en haut de page");
     // Get shop id from shops endpoint
     const shopR = await fetch(BASE + '/etsy/api', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -687,8 +852,10 @@ async function publishEtsy(idx) {
         path: `/application/shops/${shopId}/listings`,
         body: {
           quantity: 1, title: title.slice(0, 140), description: desc,
-          price: { amount: Math.round(price * 100), divisor: 100, currency_code: 'EUR' },
+          price: price,
+          shipping_profile_id: Number(shipProfile),
           who_made: 'someone_else', when_made: 'before_2000',
+          is_supply: false,
           taxonomy_id: 68887559,
           tags, state: 'draft'
         }
@@ -697,7 +864,22 @@ async function publishEtsy(idx) {
     const d = await r.json();
     if (d.error) throw new Error(JSON.stringify(d.error));
     art.published.etsy = d.listing_id;
-    status.innerHTML = `<span class="pub-status">✓ draft #${d.listing_id}</span>`;
+    // SKU via l'inventaire (au mieux : n'echoue pas la publication)
+    let skuNote = '';
+    try {
+      const ir = await fetch(BASE + '/etsy/api', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: 'PUT', path: `/application/listings/${d.listing_id}/inventory`,
+          body: { products: [{ sku: art.sku, property_values: [],
+            offerings: [{ quantity: 1, is_enabled: true, price: price }] }],
+            price_on_property: [], quantity_on_property: [], sku_on_property: [] }
+        })
+      });
+      const idata = await ir.json();
+      if (idata.error) skuNote = ' (SKU non posé)';
+    } catch (_) { skuNote = ' (SKU non posé)'; }
+    status.innerHTML = `<span class="pub-status">✓ draft #${d.listing_id}${skuNote}</span>`;
     btn.textContent = 'Republier';
   } catch(e) {
     status.innerHTML = `<span class="pub-err">${e.message.slice(0,80)}</span>`;
@@ -716,6 +898,7 @@ async function publishShopify(idx) {
   const seoTitle  = getEditable(`shopify-seo-title-${idx}`);
   const seoDesc   = getEditable(`shopify-seo-desc-${idx}`);
   const altTexts  = art.generated.shopify.alt_texts || [];
+  const sPrice    = parseFloat(getEditable(`shopify-price-${idx}`)) || 0;
 
   const btn = document.querySelector(`#tab-${idx}-shopify .btn-pub`);
   btn.disabled = true; btn.textContent = '…';
@@ -743,6 +926,8 @@ async function publishShopify(idx) {
             vendor: 'Fleamarketfrance',
             product_type: art.category,
             status: 'draft',
+            variants: [{ price: sPrice.toFixed(2), sku: art.sku, inventory_management: 'shopify',
+                         inventory_quantity: 1, requires_shipping: true }],
             metafields_global_title_tag: seoTitle,
             metafields_global_description_tag: seoDesc,
             images
@@ -777,7 +962,7 @@ async function connectEtsy() {
   if (d.auth_url) {
     const w = window.open(d.auth_url, 'etsy_oauth', 'width=600,height=700');
     window.addEventListener('message', async ev => {
-      if (ev.data && ev.data.etsySuccess) { w.close(); await checkPlatforms(); }
+      if (ev.data && ev.data.etsySuccess) { w.close(); await checkPlatforms(); await loadShipping(); }
     }, { once: true });
   }
 }
