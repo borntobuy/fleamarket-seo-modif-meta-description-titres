@@ -648,6 +648,7 @@ def _ebay_active():
                 'sku': _t(it, EBAY_NS + 'SKU').strip(),
                 'price': _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'CurrentPrice'),
                 'url': _t(it, EBAY_NS + 'ListingDetails/' + EBAY_NS + 'ViewItemURL'),
+                'img': _t(it, EBAY_NS + 'PictureDetails/' + EBAY_NS + 'GalleryURL'),
             })
         total = int(_t(root, './/%sActiveList/%sPaginationResult/%sTotalNumberOfPages' % (EBAY_NS, EBAY_NS, EBAY_NS)) or 1)
         if page >= total or page >= 30:
@@ -695,7 +696,7 @@ def _etsy_active():
         raise StoreError('Boutique Etsy introuvable')
     out, offset = [], 0
     while True:
-        j = _etsy_get('/application/shops/%s/listings' % shop, {'state': 'active', 'limit': 100, 'offset': offset})
+        j = _etsy_get('/application/shops/%s/listings' % shop, {'state': 'active', 'limit': 100, 'offset': offset, 'includes': 'Images'})
         res = j.get('results', [])
         for it in res:
             pr = it.get('price') or {}
@@ -705,7 +706,8 @@ def _etsy_active():
             skus = it.get('skus') or []
             out.append({'id': str(it.get('listing_id')), 'title': it.get('title', ''),
                         'sku': (skus[0] if skus else '').strip(), 'price': price, 'url': it.get('url', ''),
-                        'shop': shop})
+                        'shop': shop,
+                        'img': ((it.get('images') or [{}])[0].get('url_75x75') or '')})
         offset += 100
         if not res or offset >= int(j.get('count', 0)) or offset > 5000:
             break
@@ -725,7 +727,7 @@ def _shopify_active():
     shop, h = _shopify_ctx()
     out = []
     url = 'https://%s/admin/api/2024-01/products.json' % shop
-    params = {'status': 'active', 'limit': 250, 'fields': 'id,title,handle,variants'}
+    params = {'status': 'active', 'limit': 250, 'fields': 'id,title,handle,variants,image'}
     for _ in range(40):
         r = requests.get(url, headers=h, params=params, timeout=40)
         if r.status_code != 200:
@@ -735,7 +737,8 @@ def _shopify_active():
             sku = next((v.get('sku') for v in vs if v.get('sku')), '') or ''
             out.append({'id': str(p['id']), 'title': p.get('title', ''), 'sku': sku.strip(),
                         'price': (vs[0].get('price') if vs else '') or '',
-                        'url': 'https://%s/products/%s' % (shop, p.get('handle', ''))})
+                        'url': 'https://%s/products/%s' % (shop, p.get('handle', '')),
+                        'img': ((p.get('image') or {}).get('src') or '')})
         nxt = (r.links or {}).get('next', {}).get('url')
         if not nxt:
             break
@@ -779,9 +782,12 @@ def _merge(current):
             tk = _norm_title(it['title'])
             ent = (by_sku.get(it['sku']) if it['sku'] else None) or by_t.get(tk)
             if ent is None or plat in ent['p']:
-                ent = {'sku': it['sku'], 'tkey': tk, 'title': it['title'], 'price': it['price'], 'p': {}}
+                ent = {'sku': it['sku'], 'tkey': tk, 'title': it['title'], 'price': it['price'], 'p': {}, 'img': ''}
                 merged.append(ent)
             ent['p'][plat] = {k: it[k] for k in ('id', 'url', 'shop') if k in it}
+            if it.get('img') and (plat == 'ebay' or not ent['img']):
+                ent['img'] = it['img']
+            ent.setdefault('price_by', {})[plat] = it['price']
             if it['sku'] and not ent['sku']:
                 ent['sku'] = it['sku']
             if it['sku']:
@@ -806,8 +812,10 @@ def _fetch_all():
 def _view(merged, status_by_key=None):
     rows = []
     for e in merged:
-        rows.append({'sku': e['sku'], 'title': e['title'], 'price': e['price'],
-                     'platforms': {p: e['p'][p].get('url', '') or True for p in e['p']}})
+        rows.append({'sku': e['sku'], 'title': e['title'], 'price': e['price'], 'img': e.get('img', ''),
+                     'price_by': e.get('price_by', {}),
+                     'platforms': {p: e['p'][p].get('url', '') or True for p in e['p']},
+                     'refs': {p: {k: e['p'][p][k] for k in ('id', 'shop') if k in e['p'][p]} for p in e['p']}})
     return rows
 
 
@@ -942,3 +950,154 @@ def ls_stock_sync():
         return jsonify({'error': 'stock: %s' % e}), 500
     finally:
         _sync_lock.release()
+
+
+# --------------------------------------------------------------------------
+# STOCK : actions groupees (desactiver, prix), lecture d'une annonce source,
+# proxy d'images pour l'export vers une autre plateforme
+# --------------------------------------------------------------------------
+def _set_price(plat, ref, price):
+    price = round(float(price), 2)
+    if price <= 0:
+        raise StoreError('prix invalide')
+    if plat == 'ebay':
+        root = _ebay_call('ReviseInventoryStatus',
+                          '<InventoryStatus><ItemID>%s</ItemID><StartPrice>%.2f</StartPrice></InventoryStatus>'
+                          % (xml_escape(ref['id']), price))
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            raise StoreError('eBay : ' + errs[0][1][:120])
+        return 'eBay %.2f' % price
+    if plat == 'shopify':
+        shop, h = _shopify_ctx()
+        r = requests.get('https://%s/admin/api/2024-01/products/%s.json' % (shop, ref['id']),
+                         headers=h, params={'fields': 'id,variants'}, timeout=30)
+        if r.status_code != 200:
+            raise StoreError('Shopify %s : %s' % (r.status_code, r.text[:100]))
+        for v in r.json().get('product', {}).get('variants', []):
+            u = requests.put('https://%s/admin/api/2024-01/variants/%s.json' % (shop, v['id']), headers=h,
+                             json={'variant': {'id': v['id'], 'price': '%.2f' % price}}, timeout=30)
+            if u.status_code != 200:
+                raise StoreError('Shopify %s : %s' % (u.status_code, u.text[:100]))
+        return 'Shopify %.2f' % price
+    if plat == 'etsy':
+        h = _etsy_ctx()
+        r = requests.get('https://openapi.etsy.com/v3/application/listings/%s/inventory' % ref['id'], headers=h, timeout=30)
+        if r.status_code != 200:
+            raise StoreError('Etsy %s : %s' % (r.status_code, r.text[:100]))
+        inv = r.json()
+        products = []
+        for pr in inv.get('products', []):
+            offs = []
+            for o in pr.get('offerings', []):
+                offs.append({'quantity': o.get('quantity', 1), 'is_enabled': o.get('is_enabled', True), 'price': price})
+            products.append({'sku': pr.get('sku', ''),
+                             'property_values': [{'property_id': pv.get('property_id'), 'property_name': pv.get('property_name'),
+                                                  'scale_id': pv.get('scale_id'), 'value_ids': pv.get('value_ids', []),
+                                                  'values': pv.get('values', [])} for pv in pr.get('property_values', [])],
+                             'offerings': offs})
+        body = {'products': products,
+                'price_on_property': inv.get('price_on_property') or [],
+                'quantity_on_property': inv.get('quantity_on_property') or [],
+                'sku_on_property': inv.get('sku_on_property') or []}
+        h2 = dict(h)
+        h2['Content-Type'] = 'application/json'
+        u = requests.put('https://openapi.etsy.com/v3/application/listings/%s/inventory' % ref['id'],
+                         headers=h2, json=body, timeout=30)
+        if u.status_code not in (200, 201):
+            raise StoreError('Etsy %s : %s' % (u.status_code, u.text[:100]))
+        return 'Etsy %.2f' % price
+    raise StoreError('plateforme inconnue')
+
+
+@ls_bp.route('/ls/stock_action', methods=['POST'])
+def ls_stock_action():
+    """{action: 'deactivate'|'price', platforms: [...], items: [{title, refs:{plat:{id,shop}}, price}]}"""
+    d = request.json or {}
+    action = d.get('action')
+    plats = [p for p in (d.get('platforms') or []) if p in PLATS]
+    items = d.get('items') or []
+    if action not in ('deactivate', 'price') or not plats or not items:
+        return jsonify({'error': 'parametres invalides'}), 400
+    if len(items) > 200:
+        return jsonify({'error': 'maximum 200 articles a la fois'}), 400
+    results = []
+    for it in items:
+        for p in plats:
+            ref = (it.get('refs') or {}).get(p)
+            if not ref:
+                continue
+            row = {'title': it.get('title', ''), 'platform': p}
+            try:
+                if action == 'deactivate':
+                    row['ok'] = _deactivate(p, ref)
+                else:
+                    row['ok'] = _set_price(p, ref, it.get('price'))
+            except Exception as e:
+                row['error'] = str(e)[:150]
+            results.append(row)
+    return jsonify({'results': results})
+
+
+@ls_bp.route('/ls/stock_source', methods=['POST'])
+def ls_stock_source():
+    """Lit une annonce existante (eBay > Shopify > Etsy) : titre, description, prix, photos, tags."""
+    refs = (request.json or {}).get('refs') or {}
+    out = {}
+    try:
+        if refs.get('ebay'):
+            root = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(refs['ebay']['id']))
+            it = root.find('.//%sItem' % EBAY_NS)
+            if it is not None:
+                out['ebay'] = {
+                    'title': _t(it, EBAY_NS + 'Title'), 'description': _t(it, EBAY_NS + 'Description'),
+                    'price': _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'CurrentPrice') or _t(it, EBAY_NS + 'StartPrice'),
+                    'sku': _t(it, EBAY_NS + 'SKU'),
+                    'images': [e.text for e in it.findall('.//%sPictureDetails/%sPictureURL' % (EBAY_NS, EBAY_NS)) if e.text],
+                }
+    except Exception as e:
+        out['ebay_error'] = str(e)[:120]
+    try:
+        if refs.get('shopify'):
+            shop, h = _shopify_ctx()
+            r = requests.get('https://%s/admin/api/2024-01/products/%s.json' % (shop, refs['shopify']['id']), headers=h, timeout=30)
+            if r.status_code == 200:
+                pr = r.json().get('product', {})
+                vs = pr.get('variants') or [{}]
+                out['shopify'] = {'title': pr.get('title', ''), 'description': pr.get('body_html', ''),
+                                  'price': vs[0].get('price', ''), 'sku': vs[0].get('sku', ''),
+                                  'images': [i.get('src') for i in pr.get('images', []) if i.get('src')],
+                                  'tags': [t.strip() for t in (pr.get('tags') or '').split(',') if t.strip()]}
+    except Exception as e:
+        out['shopify_error'] = str(e)[:120]
+    try:
+        if refs.get('etsy'):
+            j = _etsy_get('/application/listings/%s' % refs['etsy']['id'], {'includes': 'Images'})
+            pr = j.get('price') or {}
+            out['etsy'] = {'title': j.get('title', ''), 'description': j.get('description', ''),
+                           'price': ('%.2f' % (pr['amount'] / (pr.get('divisor') or 100))) if pr.get('amount') is not None else '',
+                           'sku': (j.get('skus') or [''])[0],
+                           'images': [i.get('url_fullxfull') for i in j.get('images', []) if i.get('url_fullxfull')],
+                           'tags': j.get('tags') or [], 'materials': j.get('materials') or []}
+    except Exception as e:
+        out['etsy_error'] = str(e)[:120]
+    return jsonify(out)
+
+
+_IMG_OK = re.compile(r'^https://([a-z0-9-]+\.)*(ebayimg\.com|etsystatic\.com|shopify\.com|shopifycdn\.com)/', re.I)
+
+
+@ls_bp.route('/ls/imgproxy')
+def ls_imgproxy():
+    from flask import Response
+    url = request.args.get('url', '')
+    if not _IMG_OK.match(url):
+        return jsonify({'error': 'hote non autorise'}), 400
+    try:
+        r = requests.get(url, timeout=25)
+        if r.status_code != 200 or len(r.content) > 12 * 1024 * 1024:
+            return jsonify({'error': 'image indisponible'}), 502
+        return Response(r.content, mimetype=r.headers.get('Content-Type', 'image/jpeg'),
+                        headers={'Cache-Control': 'public, max-age=3600'})
+    except Exception as e:
+        return jsonify({'error': str(e)[:100]}), 502
