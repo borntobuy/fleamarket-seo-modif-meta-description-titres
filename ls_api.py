@@ -82,34 +82,35 @@ def _ensure_branch(h):
         raise StoreError('Creation branche %s impossible (%s)' % (GH_BRANCH, c.status_code))
 
 
-def _load():
+def _load(path=None):
     """Retourne (data, sha). sha=None si le fichier n'existe pas encore."""
     h = _gh_headers()
-    r = requests.get('%s/repos/%s/contents/%s' % (GH_API, GH_REPO, GH_PATH),
+    r = requests.get('%s/repos/%s/contents/%s' % (GH_API, GH_REPO, path or GH_PATH),
                      headers=h, params={'ref': GH_BRANCH}, timeout=20)
     if r.status_code == 404:
         _ensure_branch(h)
-        return {'skus': {}, 'counters': {}}, None
+        return ({'skus': {}, 'counters': {}} if not path else {}), None
     if r.status_code != 200:
         raise StoreError('Lecture registre impossible (%s)' % r.status_code)
     j = r.json()
     raw = base64.b64decode(j['content']).decode('utf-8')
     data = json.loads(raw) if raw.strip() else {}
-    data.setdefault('skus', {})
-    data.setdefault('counters', {})
+    if not path:
+        data.setdefault('skus', {})
+        data.setdefault('counters', {})
     return data, j['sha']
 
 
-def _save(data, sha, message):
+def _save(data, sha, message, path=None):
     h = _gh_headers()
     body = {
         'message': message,
-        'content': base64.b64encode(json.dumps(data, ensure_ascii=False, indent=0).encode('utf-8')).decode('ascii'),
+        'content': base64.b64encode(json.dumps(data, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).decode('ascii'),
         'branch': GH_BRANCH,
     }
     if sha:
         body['sha'] = sha
-    r = requests.put('%s/repos/%s/contents/%s' % (GH_API, GH_REPO, GH_PATH), headers=h, json=body, timeout=25)
+    r = requests.put('%s/repos/%s/contents/%s' % (GH_API, GH_REPO, path or GH_PATH), headers=h, json=body, timeout=40)
     if r.status_code in (200, 201):
         return True
     if r.status_code in (409, 422):
@@ -619,6 +620,7 @@ def ls_etsy_refresh():
 # desactive sur les autres. Premier passage = simple etat des lieux, sans action.
 # --------------------------------------------------------------------------
 PLATS = ('ebay', 'etsy', 'shopify')
+STOCK_PATH = os.environ.get('LS_STOCK_PATH', 'ls_stock.json')
 MAX_AUTO = 10            # au-dela, on n'agit pas (protection contre une panne d'API)
 _sync_lock = threading.Lock()
 
@@ -812,8 +814,7 @@ def _view(merged, status_by_key=None):
 @ls_bp.route('/ls/stock')
 def ls_stock():
     try:
-        data, _ = _load()
-        st = data.get('stock') or {}
+        st, _ = _load(STOCK_PATH)
         items = list((st.get('items') or {}).values())
         return jsonify({'items': items, 'last': st.get('last'), 'errors': st.get('errors', {}),
                         'log': (st.get('log') or [])[-30:]})
@@ -836,8 +837,7 @@ def ls_stock_sync():
             return jsonify({'dry': True, 'items': _view(merged), 'errors': errors,
                             'counts': {p: len(current.get(p, [])) for p in PLATS}})
 
-        data, sha = _load()
-        st = data.get('stock') or {}
+        st, sha = _load(STOCK_PATH)
         items = st.get('items') or {}
         now = _today_key()[1]
         ok_plats = [p for p in PLATS if p in current]
@@ -870,8 +870,8 @@ def ls_stock_sync():
         first_run = not st.get('last')
         actions, blocked, newly_sold = [], [], []
         for k, it in items.items():
-            if it.get('status') != 'active':
-                continue
+            if it.get('status') != 'active' or not it.get('sku'):
+                continue  # sans SKU : rapprochement par titre trop risque, jamais d'action auto
             gone = [p for p in ok_plats if (it['p'].get(p) or {}).get('active') and
                     p not in next((m['p'] for m in merged if (m['sku'] and m['sku'] == it.get('sku')) or m['tkey'] == it.get('tkey')), {})]
             if not gone:
@@ -911,7 +911,16 @@ def ls_stock_sync():
                 it['status'] = 'sold'
                 it['sold_on'] = gone
                 it['sold_at'] = now
+                it['sold_ts'] = time.time()
 
+        # allegement : pas d'URL stockee, on oublie les vendus de plus de 90 jours
+        for it in items.values():
+            it.pop('tkey', None) if it.get('sku') else None
+            for ref in it['p'].values():
+                ref.pop('url', None)
+        cutoff = time.time() - 90 * 86400
+        for k in [k for k, i in items.items() if i.get('status') == 'sold' and i.get('sold_ts', 0) and i['sold_ts'] < cutoff]:
+            del items[k]
         st['items'] = items
         st['last'] = now
         st['errors'] = errors
@@ -919,15 +928,12 @@ def ls_stock_sync():
         for a in actions:
             log.append(dict(a, at=now))
         st['log'] = log[-200:]
-        data['stock'] = st
         saved = False
         for _ in range(5):
-            if _save(data, sha, 'ls: stock sync %s' % now):
+            if _save(st, sha, 'ls: stock sync %s' % now, STOCK_PATH):
                 saved = True
                 break
-            fresh, sha = _load()
-            fresh['stock'] = st
-            data = fresh
+            _fresh, sha = _load(STOCK_PATH)
         return jsonify({'ok': saved, 'first_run': first_run, 'checked': {p: len(current.get(p, [])) for p in PLATS},
                         'actions': actions, 'blocked': blocked, 'errors': errors})
     except StoreError as e:
