@@ -181,7 +181,7 @@ def etsy_auth_url():
         '?response_type=code'
         '&client_id=' + api_key +
         '&redirect_uri=' + redirect_uri +
-        '&scope=listings_r%20listings_w'
+        '&scope=listings_r%20listings_w%20shops_r'
         '&state=' + state +
         '&code_challenge=' + challenge +
         '&code_challenge_method=S256'
