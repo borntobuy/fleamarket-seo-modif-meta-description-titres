@@ -1328,6 +1328,22 @@ async function restoreTokens() {
   } catch (_) {}
 }
 
+// La fenetre de connexion ecrit les jetons dans le localStorage : on reagit sans dependre de window.opener
+window.addEventListener('storage', async ev => {
+  if (ev.key === 'ls_token_shopify' || ev.key === 'ls_tokens_etsy') {
+    await restoreTokens(); await checkPlatforms(); showTokensForEnv();
+    if (ev.key === 'ls_tokens_etsy') await loadShipping();
+  }
+});
+function pollConnect() {
+  let n = 0;
+  const t = setInterval(async () => {
+    n++; showTokensForEnv();
+    if (n % 2 === 0) await checkPlatforms();
+    if (n > 60) clearInterval(t);
+  }, 2000);
+}
+
 window.addEventListener('message', async ev => {
   if (ev.origin !== location.origin) return;
   const m = ev.data || {};
@@ -1360,6 +1376,7 @@ async function connectEtsy() {
     const d = await r.json();
     if (!d.auth_url) throw new Error(d.error || 'adresse de connexion absente');
     w.location.href = d.auth_url;
+    pollConnect();
   } catch (e) { w.close(); alert('Etsy : ' + e.message); }
 }
 
@@ -1371,6 +1388,7 @@ async function connectShopify() {
     const d = await r.json();
     if (!d.auth_url) throw new Error(d.error || 'adresse de connexion absente');
     w.location.href = d.auth_url;
+    pollConnect();
   } catch (e) { w.close(); alert('Shopify : ' + e.message); }
 }
 </script>
