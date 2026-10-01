@@ -548,6 +548,35 @@ def _ls_env_before():
     _env_bootstrap()
 
 
+@ls_bp.after_app_request
+def _ls_callback_inject(resp):
+    """Les fenetres OAuth perdent souvent window.opener (politique COOP de Shopify/Etsy).
+    La page de retour est sur notre domaine : elle ecrit donc elle-meme les jetons dans le
+    localStorage du navigateur, et la page Listing Studio les voit via l'evenement 'storage'."""
+    try:
+        if request.path not in ('/shopify/callback', '/etsy/callback') or resp.status_code != 200:
+            return resp
+        if 'html' not in (resp.mimetype or ''):
+            return resp
+        m = _app_mod()
+        if request.path == '/shopify/callback':
+            tok = m.shopify_token_store.get('current')
+            if not tok:
+                return resp
+            js = "localStorage.setItem('ls_token_shopify'," + json.dumps(tok) + ");"
+        else:
+            cur = m.etsy_token_store.get('current')
+            if not cur:
+                return resp
+            js = "localStorage.setItem('ls_tokens_etsy'," + json.dumps(json.dumps(cur)) + ");"
+        js = js.replace('</', '<\\/')
+        body = resp.get_data(as_text=True)
+        resp.set_data(body + '<script>try{' + js + '}catch(e){}</script>')
+    except Exception:
+        pass
+    return resp
+
+
 @ls_bp.route('/ls/env_status', methods=['GET'])
 def ls_env_status():
     _env_bootstrap()
