@@ -1184,5 +1184,163 @@ def shopify_cleanup_bad_redirects():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LISTING STUDIO — nouvelles routes à ajouter à app.py
+# (coller avant la ligne `if __name__ == '__main__':`)
+# ══════════════════════════════════════════════════════════════════════════════
+
+import uuid, os
+
+LS_UPLOAD_DIR = '/tmp/ls_uploads'
+os.makedirs(LS_UPLOAD_DIR, exist_ok=True)
+
+# ── Servir la page Listing Studio ────────────────────────────────────────────
+@app.route('/listing-studio')
+def listing_studio():
+    return app.send_static_file('listing-studio.html')
+
+# ── Upload d'images temporaires (pour URLs eBay) ─────────────────────────────
+@app.route('/ls/upload', methods=['POST'])
+def ls_upload():
+    """Reçoit des images base64, les enregistre en /tmp/, retourne des URLs publiques."""
+    data   = request.json or {}
+    images = data.get('images', [])  # [{data: "<base64>", media_type: "image/jpeg"}]
+    results = []
+    for img in images[:12]:
+        file_id  = str(uuid.uuid4())[:12] + '.jpg'
+        path     = os.path.join(LS_UPLOAD_DIR, file_id)
+        img_data = img.get('data', '')
+        # Nettoyer le préfixe data URL si présent
+        if ',' in img_data:
+            img_data = img_data.split(',')[1]
+        import base64 as _b64
+        with open(path, 'wb') as f:
+            f.write(_b64.b64decode(img_data))
+        results.append({'id': file_id, 'url': f'/ls/img/{file_id}'})
+    return jsonify({'files': results})
+
+@app.route('/ls/img/<file_id>')
+def ls_serve_image(file_id):
+    from flask import send_from_directory
+    # Sécurité : seulement des noms simples sans slashes
+    if '/' in file_id or '..' in file_id:
+        return '', 404
+    return send_from_directory(LS_UPLOAD_DIR, file_id, mimetype='image/jpeg')
+
+# ── eBay — Créer un listing (AddItem) ────────────────────────────────────────
+@app.route('/ebay/create_listing', methods=['POST'])
+def ebay_create_listing():
+    """
+    Crée un listing eBay actif via AddItem.
+    Body JSON:
+      title         : str (max 80 chars)
+      description   : str (HTML)
+      price         : float (EUR)
+      category_id   : str (default '11450' = Antiques > Other)
+      condition_id  : str (3000 = Used, 1000 = New)
+      image_urls    : list[str] (optional, max 12 URLs accessibles depuis eBay)
+      sku           : str (optional)
+    """
+    import sys
+    token = os.environ.get('EBAY_USER_TOKEN', '').strip()
+    if not token:
+        return jsonify({'error': 'EBAY_USER_TOKEN manquant sur le serveur'}), 500
+
+    data         = request.json or {}
+    title        = str(data.get('title', ''))[:80]
+    description  = str(data.get('description', ''))
+    price        = float(data.get('price', 10))
+    category_id  = str(data.get('category_id', '11450'))   # Antiques > Other
+    condition_id = str(data.get('condition_id', '3000'))    # 3000 = Used
+    image_urls   = data.get('image_urls', [])[:12]
+    sku          = str(data.get('sku', ''))
+
+    # Construire le XML AddItem
+    pics_xml = ''
+    if image_urls:
+        pics_xml = '<PictureDetails>\n'
+        for url in image_urls:
+            pics_xml += f'  <PictureURL>{url}</PictureURL>\n'
+        pics_xml += '</PictureDetails>\n'
+
+    sku_xml = f'<SKU>{sku}</SKU>\n' if sku else ''
+
+    xml = f"""<?xml version="1.0" encoding="utf-8"?>
+<AddItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials>
+    <eBayAuthToken>{token}</eBayAuthToken>
+  </RequesterCredentials>
+  <Item>
+    <Title>{title}</Title>
+    <Description><![CDATA[{description}]]></Description>
+    <PrimaryCategory><CategoryID>{category_id}</CategoryID></PrimaryCategory>
+    <StartPrice currencyID="EUR">{price:.2f}</StartPrice>
+    <ConditionID>{condition_id}</ConditionID>
+    <Country>FR</Country>
+    <Currency>EUR</Currency>
+    <ListingDuration>GTC</ListingDuration>
+    <ListingType>FixedPriceItem</ListingType>
+    <Location>France</Location>
+    <DispatchTimeMax>3</DispatchTimeMax>
+    <PaymentMethods>PayPal</PaymentMethods>
+    <PayPalEmailAddress>bornto_buy@yahoo.fr</PayPalEmailAddress>
+    {sku_xml}
+    {pics_xml}
+    <ShippingDetails>
+      <ShippingType>Flat</ShippingType>
+      <ShippingServiceOptions>
+        <ShippingServicePriority>1</ShippingServicePriority>
+        <ShippingService>FR_ColisSuivi</ShippingService>
+        <ShippingServiceCost currencyID="EUR">15.00</ShippingServiceCost>
+        <ShippingServiceAdditionalCost currencyID="EUR">5.00</ShippingServiceAdditionalCost>
+      </ShippingServiceOptions>
+    </ShippingDetails>
+    <ReturnPolicy>
+      <ReturnsAcceptedOption>ReturnsAccepted</ReturnsAcceptedOption>
+      <RefundOption>MoneyBack</RefundOption>
+      <ReturnsWithinOption>Days_30</ReturnsWithinOption>
+      <ShippingCostPaidByOption>Buyer</ShippingCostPaidByOption>
+    </ReturnPolicy>
+  </Item>
+</AddItemRequest>"""
+
+    try:
+        resp = requests.post(
+            'https://api.ebay.com/ws/api.dll',
+            headers={
+                'X-EBAY-API-SITEID': '71',              # 71 = FR
+                'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+                'X-EBAY-API-CALL-NAME': 'AddItem',
+                'X-EBAY-API-APP-NAME': 'BORNTOB',
+                'Content-Type': 'text/xml',
+            },
+            data=xml.encode('utf-8'),
+            timeout=30
+        )
+
+        raw = resp.text
+        print('[ebay/create_listing] HTTP', resp.status_code, file=sys.stderr)
+        print('[ebay/create_listing] RAW:', raw[:500], file=sys.stderr)
+
+        ack      = (raw.split('<Ack>')[1].split('</Ack>')[0]) if '<Ack>' in raw else 'unknown'
+        item_id  = (raw.split('<ItemID>')[1].split('</ItemID>')[0]) if '<ItemID>' in raw else None
+        errors   = []
+        for part in raw.split('<LongMessage>')[1:]:
+            errors.append(part.split('</LongMessage>')[0])
+
+        if ack in ('Success', 'Warning') and item_id:
+            result = {'success': True, 'item_id': item_id, 'ack': ack}
+            if errors:
+                result['warnings'] = errors
+            return jsonify(result)
+        else:
+            return jsonify({'error': errors[0] if errors else 'eBay error', 'ack': ack, 'raw': raw[:300]}), 502
+
+    except Exception as e:
+        import traceback
+        print('[ebay/create_listing] ERROR:', traceback.format_exc(), file=sys.stderr)
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
