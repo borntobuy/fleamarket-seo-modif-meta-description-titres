@@ -167,7 +167,13 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
       <option value="ebay">eBay</option><option value="etsy">Etsy</option><option value="shopify">Shopify</option><option value="all">Toutes</option>
     </select>
     <button class="btn btn-primary" style="padding:6px 14px;font-size:13px" onclick="exportSelected()">Exporter</button>
+    <span style="color:#ced4da">|</span>
+    <b>Désactiver sur :</b>
+    <select id="stockDeact" style="padding:6px 8px;border:1px solid #ced4da;border-radius:6px;font-size:13px">
+      <option value="all">Toutes les plateformes</option><option value="ebay">eBay</option><option value="etsy">Etsy</option><option value="shopify">Shopify</option>
+    </select>
     <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;color:#c92a2a;border-color:#ffc9c9" onclick="deactivateSelected()">Désactiver</button>
+    <span style="color:#ced4da">|</span>
     <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;color:#e67700;border-color:#ffd8a8" onclick="updateSelectedPrices()">Mettre à jour le prix ($)</button>
     <span id="selCount" class="info-text">0 sélectionné(s)</span>
   </div>
@@ -1483,7 +1489,7 @@ async function stockAction(action, rows, plats, label) {
 async function deactivateSelected() {
   const rows = checkedRows();
   if (!rows.length) return alert('Coche au moins un article.');
-  const sel = document.getElementById('stockPlat').value;
+  const sel = document.getElementById('stockDeact').value;
   const plats = sel === 'all' ? ['ebay', 'etsy', 'shopify'] : [sel];
   const names = plats.map(p => PLAT_BADGE[p].n).join(', ');
   if (!confirm(`Désactiver ${rows.length} article(s) sur : ${names} ?\n(eBay terminé · Etsy inactif · Shopify brouillon)`)) return;
