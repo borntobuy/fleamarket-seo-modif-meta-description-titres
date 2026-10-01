@@ -188,11 +188,24 @@ let articles = [];  // [{id, title, category, photoIds:[idx,...], keywords:'', g
 
 const BASE = '';  // same-origin
 
+// Identifiants deja enregistres dans l'outil SEO (meme domaine, meme navigateur)
+function seoCreds() {
+  try { return JSON.parse(localStorage.getItem('fmf_v2_creds') || '{}'); } catch (_) { return {}; }
+}
+function lsFetch(url, opts = {}) {
+  const c = seoCreds();
+  const h = Object.assign({}, opts.headers || {});
+  if (c['s-ebay-token']) h['X-LS-EBAY-TOKEN'] = c['s-ebay-token'];
+  if (c['s-ebay-app']) h['X-LS-EBAY-APP'] = c['s-ebay-app'];
+  if (c['s-ebay-cert']) h['X-LS-EBAY-CERT'] = c['s-ebay-cert'];
+  return fetch(url, Object.assign({}, opts, { headers: h }));
+}
+
 // ══════════════════════════════════════════════════════
 // Init
 // ══════════════════════════════════════════════════════
 window.onload = () => {
-  const saved = localStorage.getItem('ls_api_key');
+  const saved = localStorage.getItem('ls_api_key') || seoCreds()['s-anthropic'];
   if (saved) document.getElementById('apiKey').value = saved;
   checkPlatforms().then(loadShipping);
 };
@@ -216,7 +229,7 @@ async function loadShipping() {
   const info = document.getElementById('shipInfo');
   const notes = [];
   try {
-    const d = await fetch(BASE + '/ls/ebay_profiles').then(r => r.json());
+    const d = await lsFetch(BASE + '/ls/ebay_profiles').then(r => r.json());
     if (d.error) throw new Error(d.error);
     ebayProfiles = d;
     notes.push(`eBay : ${d.shipping.length} profil(s) d'expédition`);
@@ -724,7 +737,7 @@ async function classifyAndFill(idx) {
   let ebayC = [], etsyC = [];
   art.ebayErr = ''; art.etsyErr = '';
   try {
-    const d = await fetch(BASE + '/ls/ebay_categories?q=' + encodeURIComponent(base)).then(r => r.json());
+    const d = await lsFetch(BASE + '/ls/ebay_categories?q=' + encodeURIComponent(base)).then(r => r.json());
     if (d.error) throw new Error(d.error);
     ebayC = d.categories || [];
   } catch (e) { art.ebayErr = e.message; }
@@ -765,7 +778,7 @@ async function loadEbayAspects(idx, refill) {
   if (!art.ebayCat) { box.innerHTML = `<span class="pub-err">${esc(art.ebayErr || 'Aucune catégorie eBay trouvée')}</span>`; return; }
   box.innerHTML = '<span class="info-text">Chargement des caractéristiques eBay…</span>';
   try {
-    const d = await fetch(BASE + '/ls/ebay_aspects?category_id=' + art.ebayCat).then(r => r.json());
+    const d = await lsFetch(BASE + '/ls/ebay_aspects?category_id=' + art.ebayCat).then(r => r.json());
     if (d.error) throw new Error(d.error);
     art.ebayAsp = d;
     renderConditionSelect(idx);
@@ -1101,7 +1114,7 @@ async function publishEbay(idx) {
     if (missing.length && !confirm('Caractéristiques obligatoires vides : ' + missing.join(', ') + '\nPublier quand même ?')) throw new Error('Annulé');
     status.innerHTML = '<span class="info-text">envoi des photos…</span>';
     const imageUrls = await uploadPhotos(art);
-    const r = await fetch(BASE + '/ls/ebay_create', {
+    const r = await lsFetch(BASE + '/ls/ebay_create', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title, description: descHtml(idx), price, sku: art.sku,
@@ -1220,11 +1233,13 @@ async function publishShopify(idx) {
 // OAuth helpers
 // ══════════════════════════════════════════════════════
 async function connectEtsy() {
-  const apiKey = prompt('Etsy API Key (Keystring):');
+  const apiKey = (seoCreds()['s-etsy-key'] || '') || prompt('Etsy API Key (Keystring) :');
   if (!apiKey) return;
+  const secret = prompt('Etsy Shared Secret (visible à côté de la Keystring sur etsy.com/developers/your-apps) :');
+  if (!secret) return;
   const r = await fetch(BASE + '/etsy/auth_url', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey })
+    body: JSON.stringify({ api_key: apiKey, secret })
   });
   const d = await r.json();
   if (d.auth_url) {
