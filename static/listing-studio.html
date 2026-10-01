@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Listing Studio — Fleamarketfrance</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-height:100vh}
+/* ── Header ── */
+.hdr{background:#1a1a2e;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px}
+.hdr-title{font-weight:700;font-size:18px}
+.hdr-sub{font-size:12px;opacity:.6}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.key-input{padding:6px 10px;border:1px solid rgba(255,255,255,.3);border-radius:6px;background:rgba(255,255,255,.1);color:#fff;font-size:12px;width:280px}
+.key-input::placeholder{color:rgba(255,255,255,.4)}
+.plat-dot{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 10px;border-radius:20px;font-weight:600}
+.plat-dot.ok{background:#d3f9d8;color:#2b8a3e}
+.plat-dot.ko{background:#ffe3e3;color:#c92a2a;cursor:pointer}
+
+/* ── Drop zone ── */
+.drop-wrap{padding:24px}
+.drop-zone{border:2px dashed #ced4da;border-radius:12px;background:#fff;text-align:center;padding:48px 24px;cursor:pointer;transition:.2s}
+.drop-zone:hover,.drop-zone.drag{border-color:#4263eb;background:#f0f4ff}
+.drop-icon{font-size:48px;margin-bottom:12px}
+.drop-text{font-size:15px;color:#495057}
+.drop-sub{font-size:13px;color:#868e96;margin-top:6px}
+#fileInput{display:none}
+.drop-thumbnails{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;justify-content:center}
+.drop-thumb{width:72px;height:72px;object-fit:cover;border-radius:6px;border:2px solid #dee2e6}
+
+/* ── Actions bar ── */
+.actions-bar{padding:0 24px 16px;display:flex;gap:10px;align-items:center}
+.btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:.15s}
+.btn-primary{background:#4263eb;color:#fff}
+.btn-primary:hover{background:#3b5bdb}
+.btn-primary:disabled{background:#adb5bd;cursor:not-allowed}
+.btn-outline{background:#fff;color:#495057;border:1px solid #ced4da}
+.btn-outline:hover{background:#f8f9fa}
+.info-text{font-size:13px;color:#868e96}
+
+/* ── Progress ── */
+.progress-bar-wrap{height:4px;background:#dee2e6;border-radius:2px;margin:0 24px 12px;overflow:hidden;display:none}
+.progress-bar{height:100%;background:#4263eb;border-radius:2px;transition:width .3s}
+
+/* ── Articles table ── */
+.articles-wrap{padding:0 24px 40px}
+.articles-table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.articles-table thead tr{background:#f8f9fa;border-bottom:2px solid #dee2e6}
+.articles-table th{padding:11px 14px;text-align:left;font-size:12px;font-weight:600;color:#495057;text-transform:uppercase;letter-spacing:.04em}
+.articles-table td{padding:12px 14px;vertical-align:top;border-bottom:1px solid #f0f0f0;font-size:13px}
+.articles-table tr:last-child td{border-bottom:none}
+.articles-table tr:hover td{background:#fafbff}
+
+.photo-strip{display:flex;gap:4px;flex-wrap:wrap;max-width:160px}
+.photo-strip img{width:48px;height:48px;object-fit:cover;border-radius:5px;border:1px solid #dee2e6;cursor:pointer}
+.photo-count{font-size:11px;color:#868e96;margin-top:3px}
+
+.auto-title{font-weight:500;color:#212529;margin-bottom:4px;font-size:13px}
+.auto-cat{font-size:11px;color:#868e96}
+
+.kw-input{width:100%;padding:7px 10px;border:1px solid #ced4da;border-radius:6px;font-size:12px;resize:vertical;min-height:60px;font-family:inherit}
+
+/* ── Generated content ── */
+.gen-panel{margin-top:8px;border:1px solid #dee2e6;border-radius:8px;overflow:hidden}
+.gen-tabs{display:flex;border-bottom:1px solid #dee2e6;background:#f8f9fa}
+.gen-tab{padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:none;border-bottom:3px solid transparent;color:#868e96}
+.gen-tab.active{color:#4263eb;border-bottom-color:#4263eb;background:#fff}
+.gen-body{padding:12px;display:none}
+.gen-body.active{display:block}
+.gen-field{margin-bottom:10px}
+.gen-label{font-size:11px;font-weight:600;color:#868e96;margin-bottom:4px;text-transform:uppercase}
+.gen-value{font-size:12px;color:#212529;background:#f8f9fa;border:1px solid #e9ecef;border-radius:5px;padding:8px;white-space:pre-wrap;word-break:break-word}
+.gen-tags{display:flex;flex-wrap:wrap;gap:4px}
+.gen-tag{background:#e9ecef;color:#495057;font-size:11px;padding:2px 8px;border-radius:20px}
+.pub-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn-pub{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
+.btn-pub.ebay{background:#f59f00;color:#fff}
+.btn-pub.etsy{background:#f76707;color:#fff}
+.btn-pub.shopify{background:#2b8a3e;color:#fff}
+.btn-pub:disabled{opacity:.5;cursor:not-allowed}
+.pub-status{font-size:12px;color:#2b8a3e;font-weight:600}
+.pub-err{font-size:12px;color:#c92a2a}
+
+/* ── Status badge ── */
+.status-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.status-badge.pending{background:#f1f3f5;color:#868e96}
+.status-badge.generating{background:#fff3bf;color:#e67700}
+.status-badge.ready{background:#d3f9d8;color:#2b8a3e}
+.status-badge.error{background:#ffe3e3;color:#c92a2a}
+
+/* ── Actions column ── */
+.act-cell{display:flex;flex-direction:column;gap:6px}
+.btn-gen{padding:7px 12px;font-size:12px}
+.btn-expand{padding:5px 10px;font-size:11px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:5px;cursor:pointer;color:#495057}
+
+/* ── Spinner ── */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+
+/* ── Modal lightbox ── */
+.lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;align-items:center;justify-content:center}
+.lb.open{display:flex}
+.lb img{max-width:90vw;max-height:90vh;border-radius:8px}
+.lb-close{position:absolute;top:16px;right:20px;color:#fff;font-size:28px;cursor:pointer;font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="hdr">
+  <div>
+    <div class="hdr-title">🎨 Listing Studio</div>
+    <div class="hdr-sub">Fleamarketfrance — Importer · Analyser · Publier</div>
+  </div>
+  <div class="hdr-right">
+    <input id="apiKey" class="key-input" type="password" placeholder="Clé Anthropic sk-ant-..." oninput="saveKey()">
+    <span id="etsyDot" class="plat-dot ko" onclick="connectEtsy()">Etsy ✕</span>
+    <span id="shopifyDot" class="plat-dot ko" onclick="connectShopify()">Shopify ✕</span>
+  </div>
+</div>
+
+<!-- Drop zone -->
+<div class="drop-wrap">
+  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+       ondrop="handleDrop(event)" ondragover="e=>e.preventDefault()"
+       ondragenter="this.classList.add('drag')" ondragleave="this.classList.remove('drag')">
+    <div class="drop-icon">📷</div>
+    <div class="drop-text">Glisser les photos ici ou cliquer pour sélectionner</div>
+    <div class="drop-sub">Toutes les photos en vrac — l'IA les triera par article</div>
+    <div class="drop-thumbnails" id="dropThumbs"></div>
+  </div>
+  <input type="file" id="fileInput" multiple accept="image/*" onchange="handleFiles(this.files)">
+</div>
+
+<!-- Actions bar -->
+<div class="actions-bar">
+  <button class="btn btn-primary" id="btnGroup" onclick="groupArticles()" disabled>
+    Analyser &amp; Grouper par article
+  </button>
+  <button class="btn btn-outline" id="btnGenAll" onclick="generateAll()" style="display:none">
+    Générer tous les listings
+  </button>
+  <span class="info-text" id="photoCount">Aucune photo chargée</span>
+</div>
+
+<div class="progress-bar-wrap" id="progressWrap">
+  <div class="progress-bar" id="progressBar" style="width:0%"></div>
+</div>
+
+<!-- Articles table -->
+<div class="articles-wrap">
+  <table class="articles-table" id="articlesTable" style="display:none">
+    <thead>
+      <tr>
+        <th style="width:36px">#</th>
+        <th style="width:180px">Photos</th>
+        <th style="width:200px">Article (auto)</th>
+        <th>Mots-clés / Infos</th>
+        <th style="width:120px">Statut</th>
+        <th style="width:120px">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="articlesTbody"></tbody>
+  </table>
+</div>
+
+<!-- Lightbox -->
+<div class="lb" id="lb" onclick="this.classList.remove('open')">
+  <span class="lb-close">&times;</span>
+  <img id="lbImg" src="">
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// State
+// ══════════════════════════════════════════════════════
+let photos   = [];  // [{file, dataUrl, name}]
+let articles = [];  // [{id, title, category, photoIds:[idx,...], keywords:'', generated:{ebay,etsy,shopify}, published:{}}]
+
+const BASE = '';  // same-origin
+
+// ══════════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════════
+window.onload = () => {
+  const saved = localStorage.getItem('ls_api_key');
+  if (saved) document.getElementById('apiKey').value = saved;
+  checkPlatforms();
+};
+
+function saveKey() {
+  localStorage.setItem('ls_api_key', document.getElementById('apiKey').value);
+}
+
+function getKey() {
+  return document.getElementById('apiKey').value.trim();
+}
+
+async function checkPlatforms() {
+  try {
+    const [er, sr] = await Promise.all([
+      fetch(BASE + '/etsy/status').then(r => r.json()).catch(() => ({connected:false})),
+      fetch(BASE + '/shopify/status').then(r => r.json()).catch(() => ({connected:false}))
+    ]);
+    const ed = document.getElementById('etsyDot');
+    const sd = document.getElementById('shopifyDot');
+    if (er.connected) { ed.textContent = 'Etsy ✓'; ed.className = 'plat-dot ok'; }
+    if (sr.connected) { sd.textContent = 'Shopify ✓'; sd.className = 'plat-dot ok'; }
+  } catch(e) {}
+}
+
+// ══════════════════════════════════════════════════════
+// Photo loading
+// ══════════════════════════════════════════════════════
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+}
+
+function handleFiles(files) {
+  const arr = Array.from(files).filter(f => f.type.startsWith('image/'));
+  if (!arr.length) return;
+  let loaded = 0;
+  arr.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      photos.push({ file, dataUrl: ev.target.result, name: file.name });
+      loaded++;
+      if (loaded === arr.length) updatePhotoUI();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function updatePhotoUI() {
+  const thumbs = document.getElementById('dropThumbs');
+  thumbs.innerHTML = '';
+  photos.slice(0, 20).forEach(p => {
+    const img = document.createElement('img');
+    img.src = p.dataUrl;
+    img.className = 'drop-thumb';
+    thumbs.appendChild(img);
+  });
+  if (photos.length > 20) {
+    const more = document.createElement('span');
+    more.textContent = `+${photos.length - 20}`;
+    more.style.cssText = 'font-size:13px;color:#495057;align-self:center;padding:0 8px';
+    thumbs.appendChild(more);
+  }
+  document.getElementById('photoCount').textContent = `${photos.length} photo${photos.length > 1 ? 's' : ''} chargée${photos.length > 1 ? 's' : ''}`;
+  document.getElementById('btnGroup').disabled = photos.length === 0;
+}
+
+// ══════════════════════════════════════════════════════
+// Resize image for Claude (keep < 1.5MB)
+// ══════════════════════════════════════════════════════
+function resizeDataUrl(dataUrl, maxW = 800) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = img.width > maxW ? maxW / img.width : 1;
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      res(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.src = dataUrl;
+  });
+}
+
+function dataUrlToBase64(dataUrl) {
+  return dataUrl.split(',')[1];
+}
+
+function dataUrlMediaType(dataUrl) {
+  return dataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
+}
+
+// ══════════════════════════════════════════════════════
+// Claude API call
+// ══════════════════════════════════════════════════════
+async function claudeCall(messages, maxTokens = 2048) {
+  const key = getKey();
+  if (!key) throw new Error('Clé Anthropic manquante');
+  const r = await fetch(BASE + '/anthropic', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      api_key: key,
+      payload: {
+        model: 'claude-opus-4-5',
+        max_tokens: maxTokens,
+        messages
+      }
+    })
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));
+  return d.content[0].text;
+}
+
+// ══════════════════════════════════════════════════════
+// Step 1 — Group articles via Vision
+// ══════════════════════════════════════════════════════
+async function groupArticles() {
+  if (!getKey()) { alert('Entrez votre clé Anthropic en haut'); return; }
+  const btn = document.getElementById('btnGroup');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analyse en cours…';
+  setProgress(0, true);
+
+  try {
+    // Resize all photos to thumbnails for grouping
+    const thumbs = await Promise.all(photos.map(p => resizeDataUrl(p.dataUrl, 400)));
+    setProgress(20);
+
+    // Build message with all thumbnails
+    const imageBlocks = thumbs.map((t, i) => [
+      { type: 'text', text: `Photo ${i}:` },
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(t) } }
+    ]).flat();
+
+    const prompt = `Tu es un expert en brocante et antiquités françaises.
+Voici ${photos.length} photos de produits à vendre. Groupe-les par article (même objet physique).
+Chaque article peut avoir 1 à 8 photos (différents angles).
+
+Pour chaque groupe retourne:
+- id (numéro)
+- title: titre court en anglais, style eBay/Etsy (ex: "Vintage French Porcelain Vase")
+- category: catégorie principale en anglais (ex: "Ceramics & Pottery")
+- photo_indices: liste des indices des photos qui appartiennent à cet article
+
+Retourne UNIQUEMENT du JSON valide, rien d'autre:
+{"groups":[{"id":1,"title":"...","category":"...","photo_indices":[0,2,3]},...]}`;
+
+    const text = await claudeCall([{
+      role: 'user',
+      content: [...imageBlocks, { type: 'text', text: prompt }]
+    }], 1024);
+
+    setProgress(80);
+
+    // Parse JSON
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Réponse inattendue de Claude: ' + text.slice(0,200));
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    articles = parsed.groups.map(g => ({
+      id: g.id,
+      title: g.title,
+      category: g.category,
+      photoIds: g.photo_indices.filter(i => i < photos.length),
+      keywords: '',
+      generated: null,
+      published: {}
+    }));
+
+    setProgress(100);
+    renderArticles();
+
+    btn.innerHTML = `${articles.length} articles détectés ✓`;
+    document.getElementById('btnGenAll').style.display = '';
+    document.getElementById('articlesTable').style.display = '';
+
+  } catch(e) {
+    btn.innerHTML = '❌ Erreur — Réessayer';
+    btn.disabled = false;
+    alert('Erreur: ' + e.message);
+  }
+
+  setTimeout(() => setProgress(0, false), 500);
+}
+
+function setProgress(pct, show) {
+  const wrap = document.getElementById('progressWrap');
+  const bar  = document.getElementById('progressBar');
+  if (show !== undefined) wrap.style.display = show ? '' : 'none';
+  bar.style.width = pct + '%';
+}
+
+// ══════════════════════════════════════════════════════
+// Render articles table
+// ══════════════════════════════════════════════════════
+function renderArticles() {
+  const tbody = document.getElementById('articlesTbody');
+  tbody.innerHTML = '';
+  articles.forEach((art, idx) => {
+    const tr = document.createElement('tr');
+    tr.id = `row-${idx}`;
+    tr.innerHTML = `
+      <td style="font-weight:700;color:#868e96">${art.id}</td>
+      <td>
+        <div class="photo-strip" id="strip-${idx}"></div>
+        <div class="photo-count">${art.photoIds.length} photo${art.photoIds.length>1?'s':''}</div>
+      </td>
+      <td>
+        <div class="auto-title">${esc(art.title)}</div>
+        <div class="auto-cat">${esc(art.category)}</div>
+      </td>
+      <td>
+        <textarea class="kw-input" id="kw-${idx}"
+          placeholder="Dimensions (cm), marque, matière, état, couleur, époque…"
+          oninput="articles[${idx}].keywords=this.value">${esc(art.keywords)}</textarea>
+      </td>
+      <td><span class="status-badge pending" id="status-${idx}">En attente</span></td>
+      <td>
+        <div class="act-cell">
+          <button class="btn btn-primary btn-gen" onclick="generateOne(${idx})">Générer</button>
+          <button class="btn-expand" id="expand-${idx}" onclick="togglePanel(${idx})" style="display:none">Voir ▼</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+
+    // photo strip
+    const strip = document.getElementById(`strip-${idx}`);
+    art.photoIds.slice(0, 4).forEach(pi => {
+      const img = document.createElement('img');
+      img.src = photos[pi].dataUrl;
+      img.onclick = () => openLightbox(photos[pi].dataUrl);
+      strip.appendChild(img);
+    });
+
+    // generated panel row (hidden by default)
+    const panelRow = document.createElement('tr');
+    panelRow.id = `panel-${idx}`;
+    panelRow.style.display = 'none';
+    panelRow.innerHTML = `<td colspan="6" style="padding:0 14px 16px">
+      <div class="gen-panel" id="gen-panel-${idx}"></div>
+    </td>`;
+    tbody.appendChild(panelRow);
+  });
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function togglePanel(idx) {
+  const row = document.getElementById(`panel-${idx}`);
+  const btn = document.getElementById(`expand-${idx}`);
+  const open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : '';
+  btn.textContent = open ? 'Voir ▼' : 'Masquer ▲';
+}
+
+function openLightbox(src) {
+  document.getElementById('lbImg').src = src;
+  document.getElementById('lb').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════
+// Step 2 — Generate listing content
+// ══════════════════════════════════════════════════════
+async function generateOne(idx) {
+  const art = articles[idx];
+  const btn = document.querySelector(`#row-${idx} .btn-gen`);
+  setStatus(idx, 'generating', 'Génération…');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    // Resize photos for generation (higher quality)
+    const resized = await Promise.all(art.photoIds.slice(0, 6).map(pi =>
+      resizeDataUrl(photos[pi].dataUrl, 1024)
+    ));
+
+    const imageBlocks = resized.map((t, i) => [
+      { type: 'text', text: `Photo ${i+1}/${resized.length}:` },
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(t) } }
+    ]).flat();
+
+    const kwText = art.keywords.trim() || '(aucune info supplémentaire)';
+    const prompt = `Tu es un expert en brocante et antiquités françaises, vendant principalement aux acheteurs américains.
+
+Article: "${art.title}" — Catégorie: "${art.category}"
+Informations du vendeur: ${kwText}
+
+Génère des listings optimisés pour eBay, Etsy et Shopify. Retourne UNIQUEMENT du JSON valide:
+
+{
+  "ebay": {
+    "title": "max 80 caractères, optimisé SEO pour acheteurs US, mots-clés vintage/antique/french",
+    "description": "description HTML complète (300-500 mots), mentionner état, dimensions si connues, expédition depuis France",
+    "condition": "Used",
+    "price_suggestion": 0,
+    "item_specifics": {"Material":"...", "Country/Region of Manufacture":"France", "Style":"..."}
+  },
+  "etsy": {
+    "title": "max 140 caractères, naturel et riche en mots-clés",
+    "description": "description longue (400-600 mots), histoire/contexte, dimensions, état, expédition",
+    "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13"],
+    "price_suggestion": 0
+  },
+  "shopify": {
+    "title": "titre produit concis",
+    "body_html": "description HTML (300-500 mots)",
+    "seo_title": "max 70 caractères",
+    "seo_description": "max 160 caractères",
+    "alt_texts": ["description alt photo 1", "description alt photo 2"]
+  }
+}`;
+
+    const text = await claudeCall([{
+      role: 'user',
+      content: [...imageBlocks, { type: 'text', text: prompt }]
+    }], 3000);
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Réponse JSON invalide');
+    art.generated = JSON.parse(jsonMatch[0]);
+
+    setStatus(idx, 'ready', 'Prêt');
+    renderGenerated(idx);
+
+    const expandBtn = document.getElementById(`expand-${idx}`);
+    expandBtn.style.display = '';
+    togglePanel(idx); // open automatically
+
+  } catch(e) {
+    setStatus(idx, 'error', 'Erreur');
+    alert(`Article #${art.id}: ${e.message}`);
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Regénérer';
+}
+
+async function generateAll() {
+  for (let i = 0; i < articles.length; i++) {
+    if (!articles[i].generated) {
+      await generateOne(i);
+      await new Promise(r => setTimeout(r, 500)); // small delay between calls
+    }
+  }
+}
+
+function setStatus(idx, cls, text) {
+  const el = document.getElementById(`status-${idx}`);
+  el.className = `status-badge ${cls}`;
+  el.textContent = text;
+}
+
+// ══════════════════════════════════════════════════════
+// Render generated content
+// ══════════════════════════════════════════════════════
+function renderGenerated(idx) {
+  const art = articles[idx];
+  const g   = art.generated;
+  const panel = document.getElementById(`gen-panel-${idx}`);
+
+  panel.innerHTML = `
+    <div class="gen-tabs">
+      <button class="gen-tab active" onclick="switchTab(${idx},'ebay',this)">eBay</button>
+      <button class="gen-tab" onclick="switchTab(${idx},'etsy',this)">Etsy</button>
+      <button class="gen-tab" onclick="switchTab(${idx},'shopify',this)">Shopify</button>
+    </div>
+
+    <!-- eBay -->
+    <div class="gen-body active" id="tab-${idx}-ebay">
+      <div class="gen-field"><div class="gen-label">Titre eBay</div>
+        <div class="gen-value" contenteditable="true" id="ebay-title-${idx}">${esc(g.ebay.title)}</div></div>
+      <div class="gen-field"><div class="gen-label">Description</div>
+        <div class="gen-value" contenteditable="true" id="ebay-desc-${idx}" style="max-height:120px;overflow:auto">${g.ebay.description}</div></div>
+      <div class="gen-field"><div class="gen-label">Prix suggéré</div>
+        <div class="gen-value" contenteditable="true" id="ebay-price-${idx}">${g.ebay.price_suggestion || ''}</div></div>
+      <div class="pub-row">
+        <button class="btn-pub ebay" onclick="publishEbay(${idx})">Créer listing eBay</button>
+        <span id="pub-ebay-${idx}"></span>
+      </div>
+    </div>
+
+    <!-- Etsy -->
+    <div class="gen-body" id="tab-${idx}-etsy">
+      <div class="gen-field"><div class="gen-label">Titre Etsy</div>
+        <div class="gen-value" contenteditable="true" id="etsy-title-${idx}">${esc(g.etsy.title)}</div></div>
+      <div class="gen-field"><div class="gen-label">Description</div>
+        <div class="gen-value" contenteditable="true" id="etsy-desc-${idx}" style="max-height:120px;overflow:auto">${esc(g.etsy.description)}</div></div>
+      <div class="gen-field"><div class="gen-label">Tags (${(g.etsy.tags||[]).length}/13)</div>
+        <div class="gen-tags">${(g.etsy.tags||[]).map(t=>`<span class="gen-tag">${esc(t)}</span>`).join('')}</div></div>
+      <div class="gen-field"><div class="gen-label">Prix suggéré</div>
+        <div class="gen-value" contenteditable="true" id="etsy-price-${idx}">${g.etsy.price_suggestion || ''}</div></div>
+      <div class="pub-row">
+        <button class="btn-pub etsy" onclick="publishEtsy(${idx})">Créer listing Etsy</button>
+        <span id="pub-etsy-${idx}"></span>
+      </div>
+    </div>
+
+    <!-- Shopify -->
+    <div class="gen-body" id="tab-${idx}-shopify">
+      <div class="gen-field"><div class="gen-label">Titre produit</div>
+        <div class="gen-value" contenteditable="true" id="shopify-title-${idx}">${esc(g.shopify.title)}</div></div>
+      <div class="gen-field"><div class="gen-label">Description HTML</div>
+        <div class="gen-value" contenteditable="true" id="shopify-body-${idx}" style="max-height:120px;overflow:auto">${g.shopify.body_html}</div></div>
+      <div class="gen-field"><div class="gen-label">SEO Title</div>
+        <div class="gen-value" contenteditable="true" id="shopify-seo-title-${idx}">${esc(g.shopify.seo_title)}</div></div>
+      <div class="gen-field"><div class="gen-label">SEO Description</div>
+        <div class="gen-value" contenteditable="true" id="shopify-seo-desc-${idx}">${esc(g.shopify.seo_description)}</div></div>
+      <div class="pub-row">
+        <button class="btn-pub shopify" onclick="publishShopify(${idx})">Créer produit Shopify</button>
+        <span id="pub-shopify-${idx}"></span>
+      </div>
+    </div>`;
+}
+
+function switchTab(idx, plat, btn) {
+  ['ebay','etsy','shopify'].forEach(p => {
+    document.getElementById(`tab-${idx}-${p}`).className = 'gen-body' + (p===plat?' active':'');
+  });
+  btn.parentNode.querySelectorAll('.gen-tab').forEach(b => b.className = 'gen-tab');
+  btn.className = 'gen-tab active';
+}
+
+function getEditable(id) {
+  const el = document.getElementById(id);
+  return el ? el.innerText.trim() : '';
+}
+
+// ══════════════════════════════════════════════════════
+// Publish — eBay
+// ══════════════════════════════════════════════════════
+async function publishEbay(idx) {
+  const art = articles[idx];
+  const title = getEditable(`ebay-title-${idx}`);
+  const desc  = document.getElementById(`ebay-desc-${idx}`).innerHTML;
+  const price = parseFloat(getEditable(`ebay-price-${idx}`)) || 10;
+
+  const btn = document.querySelector(`#tab-${idx}-ebay .btn-pub`);
+  btn.disabled = true; btn.textContent = '…';
+  const status = document.getElementById(`pub-ebay-${idx}`);
+
+  try {
+    const r = await fetch(BASE + '/ebay/create_listing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description: desc, price, category_id: '11450', condition_id: '3000' })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(JSON.stringify(d.error));
+    art.published.ebay = d.item_id;
+    status.innerHTML = `<span class="pub-status">✓ ${d.item_id}</span>`;
+    btn.textContent = 'Republier';
+  } catch(e) {
+    status.innerHTML = `<span class="pub-err">${e.message.slice(0,80)}</span>`;
+    btn.textContent = 'Réessayer';
+  }
+  btn.disabled = false;
+}
+
+// ══════════════════════════════════════════════════════
+// Publish — Etsy
+// ══════════════════════════════════════════════════════
+async function publishEtsy(idx) {
+  const art   = articles[idx];
+  const title = getEditable(`etsy-title-${idx}`);
+  const desc  = getEditable(`etsy-desc-${idx}`);
+  const price = parseFloat(getEditable(`etsy-price-${idx}`)) || 10;
+  const tags  = (art.generated.etsy.tags || []).slice(0, 13).map(t => t.slice(0, 20));
+
+  const btn = document.querySelector(`#tab-${idx}-etsy .btn-pub`);
+  btn.disabled = true; btn.textContent = '…';
+  const status = document.getElementById(`pub-etsy-${idx}`);
+
+  // Need shop_id — fetch from /etsy/api
+  try {
+    const meR = await fetch(BASE + '/etsy/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'GET', path: '/application/openapi-ping' })
+    });
+    // Get shop id from shops endpoint
+    const shopR = await fetch(BASE + '/etsy/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'GET', path: '/application/users/me/shops' })
+    });
+    const shopD = await shopR.json();
+    if (shopD.error) throw new Error(JSON.stringify(shopD.error));
+    const shopId = shopD.shop_id || (shopD.results && shopD.results[0] && shopD.results[0].shop_id);
+    if (!shopId) throw new Error('Shop Etsy introuvable');
+
+    const r = await fetch(BASE + '/etsy/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        method: 'POST',
+        path: `/application/shops/${shopId}/listings`,
+        body: {
+          quantity: 1, title: title.slice(0, 140), description: desc,
+          price: { amount: Math.round(price * 100), divisor: 100, currency_code: 'EUR' },
+          who_made: 'someone_else', when_made: 'before_2000',
+          taxonomy_id: 68887559,
+          tags, state: 'draft'
+        }
+      })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(JSON.stringify(d.error));
+    art.published.etsy = d.listing_id;
+    status.innerHTML = `<span class="pub-status">✓ draft #${d.listing_id}</span>`;
+    btn.textContent = 'Republier';
+  } catch(e) {
+    status.innerHTML = `<span class="pub-err">${e.message.slice(0,80)}</span>`;
+    btn.textContent = 'Réessayer';
+  }
+  btn.disabled = false;
+}
+
+// ══════════════════════════════════════════════════════
+// Publish — Shopify
+// ══════════════════════════════════════════════════════
+async function publishShopify(idx) {
+  const art       = articles[idx];
+  const title     = getEditable(`shopify-title-${idx}`);
+  const bodyHtml  = document.getElementById(`shopify-body-${idx}`).innerHTML;
+  const seoTitle  = getEditable(`shopify-seo-title-${idx}`);
+  const seoDesc   = getEditable(`shopify-seo-desc-${idx}`);
+  const altTexts  = art.generated.shopify.alt_texts || [];
+
+  const btn = document.querySelector(`#tab-${idx}-shopify .btn-pub`);
+  btn.disabled = true; btn.textContent = '…';
+  const status = document.getElementById(`pub-shopify-${idx}`);
+
+  try {
+    // Build images array with base64 attachments
+    const images = await Promise.all(art.photoIds.slice(0, 10).map(async (pi, ii) => {
+      const resized = await resizeDataUrl(photos[pi].dataUrl, 1200);
+      return {
+        attachment: dataUrlToBase64(resized),
+        alt: altTexts[ii] || title
+      };
+    }));
+
+    const r = await fetch(BASE + '/shopify/api', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        method: 'POST',
+        path: '/products.json',
+        body: {
+          product: {
+            title,
+            body_html: bodyHtml + '\n<!-- fmf-shopify -->',
+            vendor: 'Fleamarketfrance',
+            product_type: art.category,
+            status: 'draft',
+            metafields_global_title_tag: seoTitle,
+            metafields_global_description_tag: seoDesc,
+            images
+          }
+        }
+      })
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(JSON.stringify(d.error));
+    const pid = d.product && d.product.id;
+    art.published.shopify = pid;
+    status.innerHTML = `<span class="pub-status">✓ draft #${pid}</span>`;
+    btn.textContent = 'Republier';
+  } catch(e) {
+    status.innerHTML = `<span class="pub-err">${e.message.slice(0,80)}</span>`;
+    btn.textContent = 'Réessayer';
+  }
+  btn.disabled = false;
+}
+
+// ══════════════════════════════════════════════════════
+// OAuth helpers
+// ══════════════════════════════════════════════════════
+async function connectEtsy() {
+  const apiKey = prompt('Etsy API Key (Keystring):');
+  if (!apiKey) return;
+  const r = await fetch(BASE + '/etsy/auth_url', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey })
+  });
+  const d = await r.json();
+  if (d.auth_url) {
+    const w = window.open(d.auth_url, 'etsy_oauth', 'width=600,height=700');
+    window.addEventListener('message', async ev => {
+      if (ev.data && ev.data.etsySuccess) { w.close(); await checkPlatforms(); }
+    }, { once: true });
+  }
+}
+
+async function connectShopify() {
+  const r = await fetch(BASE + '/shopify/auth_url', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  const d = await r.json();
+  if (d.auth_url) {
+    const w = window.open(d.auth_url, 'shopify_oauth', 'width=600,height=700');
+    window.addEventListener('message', async ev => {
+      if (ev.data && ev.data.shopifySuccess) { w.close(); await checkPlatforms(); }
+    }, { once: true });
+  }
+}
+</script>
+</body>
+</html>
