@@ -161,9 +161,19 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
     </select>
     <span id="stockInfo" class="info-text"></span>
   </div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:#f8f9fa;border-radius:8px;font-size:13px">
+    <b>Exporter vers :</b>
+    <select id="stockPlat" style="padding:6px 8px;border:1px solid #ced4da;border-radius:6px;font-size:13px">
+      <option value="ebay">eBay</option><option value="etsy">Etsy</option><option value="shopify">Shopify</option><option value="all">Toutes</option>
+    </select>
+    <button class="btn btn-primary" style="padding:6px 14px;font-size:13px" onclick="exportSelected()">Exporter</button>
+    <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;color:#c92a2a;border-color:#ffc9c9" onclick="deactivateSelected()">Désactiver</button>
+    <button class="btn btn-outline" style="padding:6px 14px;font-size:13px;color:#e67700;border-color:#ffd8a8" onclick="updateSelectedPrices()">Mettre à jour le prix ($)</button>
+    <span id="selCount" class="info-text">0 sélectionné(s)</span>
+  </div>
   <div class="info-text" style="margin-bottom:8px">Contrôle automatique toutes les heures (GitHub Actions) : un article qui disparaît d'une plateforme (vendu ou terminé) est désactivé sur les autres (eBay terminé · Etsy inactif · Shopify brouillon). Le premier passage ne fait que l'état des lieux.</div>
   <div id="stockSyncMsg" style="margin-bottom:8px;font-size:13px"></div>
-  <table class="articles-table" style="width:100%"><thead><tr><th style="width:150px">SKU</th><th>Article</th><th style="width:80px">Prix</th><th style="width:150px">Plateformes</th><th style="width:130px">Statut</th></tr></thead><tbody id="stockBody"><tr><td colspan="5" class="info-text">Clique sur « Actualiser ».</td></tr></tbody></table>
+  <table class="articles-table" style="width:100%"><thead><tr><th style="width:34px"><input type="checkbox" onchange="toggleAllStock(this)" title="Tout sélectionner"></th><th style="width:64px"></th><th style="width:140px">SKU</th><th>Article</th><th style="width:120px">Prix ($)</th><th style="width:140px">Plateformes</th><th style="width:130px">Statut</th></tr></thead><tbody id="stockBody"><tr><td colspan="7" class="info-text">Clique sur « Actualiser ».</td></tr></tbody></table>
 </div>
 
 <div id="createWrap">
@@ -520,9 +530,13 @@ function setProgress(pct, show) {
 // Render articles table
 // ══════════════════════════════════════════════════════
 function renderArticles() {
+  document.getElementById('articlesTbody').innerHTML = '';
+  articles.forEach((art, idx) => renderArticleRow(art, idx));
+}
+
+function renderArticleRow(art, idx) {
   const tbody = document.getElementById('articlesTbody');
-  tbody.innerHTML = '';
-  articles.forEach((art, idx) => {
+  {
     const tr = document.createElement('tr');
     tr.id = `row-${idx}`;
     tr.innerHTML = `
@@ -567,7 +581,7 @@ function renderArticles() {
       <div class="gen-panel" id="gen-panel-${idx}"></div>
     </td>`;
     tbody.appendChild(panelRow);
-  });
+  }
 }
 
 function esc(s) {
@@ -1215,7 +1229,7 @@ async function publishEbay(idx) {
     const payId = (ebayProfiles.payment[0] || {}).id, retId = (ebayProfiles.return[0] || {}).id;
     if (!payId || !retId) throw new Error('Profils paiement/retours eBay introuvables');
     const { specifics, missing } = gatherEbaySpecifics(idx);
-    if (missing.length && !confirm('Caractéristiques obligatoires vides : ' + missing.join(', ') + '\nPublier quand même ?')) throw new Error('Annulé');
+    if (missing.length && !window.__batch && !confirm('Caractéristiques obligatoires vides : ' + missing.join(', ') + '\nPublier quand même ?')) throw new Error('Annulé');
     status.innerHTML = '<span class="info-text">envoi des photos…</span>';
     const imageUrls = await uploadPhotos(art);
     const r = await lsFetch(BASE + '/ls/ebay_create', {
@@ -1253,7 +1267,7 @@ async function publishEtsy(idx) {
     const ship = document.getElementById(`etsy-ship-${idx}`).value;
     if (!ship) throw new Error("Choisis un profil d'expédition Etsy");
     const { props, missing } = gatherEtsyProps(idx);
-    if (missing.length && !confirm('Attributs Etsy obligatoires vides : ' + missing.join(', ') + '\nPublier quand même ?')) throw new Error('Annulé');
+    if (missing.length && !window.__batch && !confirm('Attributs Etsy obligatoires vides : ' + missing.join(', ') + '\nPublier quand même ?')) throw new Error('Annulé');
 
     const body = {
       quantity: 1, title: title.slice(0, 140), description: htmlToPlain(descHtml(idx)),
@@ -1364,9 +1378,9 @@ async function saveSettings() {
 // ══════════════════════════════════════════════════════
 let stockRows = [];
 const PLAT_BADGE = {
-  ebay:    { l: 'eB', c: '#e53238', n: 'eBay' },
-  etsy:    { l: 'Et', c: '#f1641e', n: 'Etsy' },
-  shopify: { l: 'Sh', c: '#5a9a2b', n: 'Shopify' }
+  ebay:    { l: 'eB', n: 'eBay',    d: 'ebay.com' },
+  etsy:    { l: 'Et', n: 'Etsy',    d: 'etsy.com' },
+  shopify: { l: 'Sh', n: 'Shopify', d: 'shopify.com' }
 };
 function showMainTab(t) {
   document.getElementById('createWrap').style.display = t === 'create' ? '' : 'none';
@@ -1387,8 +1401,9 @@ async function loadStockLive() {
     const rows = (live.items || []).map(r => Object.assign({ status: 'active' }, r));
     const have = new Set(rows.map(r => r.sku || r.title));
     (saved.items || []).filter(i => i.status === 'sold' && !have.has(i.sku || i.title)).forEach(i => {
-      rows.push({ sku: i.sku || '', title: i.title || '', price: i.price || '', platforms: {}, status: 'sold', sold_on: i.sold_on || [], sold_at: i.sold_at });
+      rows.push({ sku: i.sku || '', title: i.title || '', price: i.price || '', platforms: {}, refs: {}, status: 'sold', sold_on: i.sold_on || [], sold_at: i.sold_at });
     });
+    rows.forEach((r, i) => { r._i = i; r.sel = false; r.newPrice = null; });
     stockRows = rows;
     const c = live.counts || {};
     const errs = Object.entries(live.errors || {}).map(([k, v]) => PLAT_BADGE[k].n + ' : ' + v).join(' · ');
@@ -1398,11 +1413,19 @@ async function loadStockLive() {
     renderStock();
   } catch (e) { info.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 200))}</span>`; }
 }
-function renderStock() {
+function platIcon(p, on) {
+  const b = PLAT_BADGE[p];
+  const url = typeof on === 'string' ? on : '';
+  const st = 'display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;margin-right:4px;background:#fff;text-decoration:none;font-size:10px;font-weight:700;color:#868e96;overflow:hidden;' +
+    (on ? 'border:2px solid #40c057' : 'border:2px solid #e9ecef;opacity:.45;filter:grayscale(1)');
+  const img = `<img src="https://www.google.com/s2/favicons?domain=${b.d}&sz=64" width="18" height="18" alt="${b.l}" onerror="this.outerHTML='${b.l}'">`;
+  const title = `${b.n} : ${on ? 'en ligne' : 'absent'}`;
+  return url ? `<a href="${esc(url)}" target="_blank" style="${st}" title="${title}">${img}</a>` : `<span style="${st}" title="${title}">${img}</span>`;
+}
+function stockVisible() {
   const q = (document.getElementById('stockFilter').value || '').toLowerCase().trim();
   const mode = document.getElementById('stockShow').value;
-  const body = document.getElementById('stockBody');
-  const rows = stockRows.filter(r => {
+  return stockRows.filter(r => {
     if (q && !((r.title || '').toLowerCase().includes(q) || (r.sku || '').toLowerCase().includes(q))) return false;
     const n = Object.keys(r.platforms || {}).length;
     if (mode === 'active') return r.status === 'active';
@@ -1410,35 +1433,150 @@ function renderStock() {
     if (mode === 'sold') return r.status === 'sold';
     return true;
   });
-  if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="info-text">Aucun article.</td></tr>'; return; }
-  body.innerHTML = rows.map(r => {
-    const badges = Object.keys(PLAT_BADGE).map(p => {
-      const on = r.platforms && r.platforms[p];
-      const st = `display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:11px;font-weight:700;margin-right:4px;text-decoration:none;` +
-        (on ? `background:${PLAT_BADGE[p].c};color:#fff` : 'background:#f1f3f5;color:#ced4da');
-      const tag = on && typeof on === 'string' ? `<a href="${esc(on)}" target="_blank" style="${st}" title="${PLAT_BADGE[p].n} : en ligne">${PLAT_BADGE[p].l}</a>`
-        : `<span style="${st}" title="${PLAT_BADGE[p].n} : ${on ? 'en ligne' : 'absent'}">${PLAT_BADGE[p].l}</span>`;
-      return tag;
-    }).join('');
-    const n = Object.keys(r.platforms || {}).length;
-    const status = r.status === 'sold' ? `<span class="status-badge error">Vendu / désactivé</span>` :
-      (n === 3 ? '<span class="status-badge ready">Partout</span>' : `<span class="status-badge generating">${n}/3 plateformes</span>`);
-    return `<tr><td style="font-family:monospace;font-size:12px">${esc(r.sku || '—')}</td><td>${esc(r.title)}</td><td>${esc(r.price || '')}</td><td>${badges}</td><td>${status}</td></tr>`;
-  }).join('');
 }
+function renderStock() {
+  const body = document.getElementById('stockBody');
+  const rows = stockVisible();
+  if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="info-text">Aucun article.</td></tr>'; updateSelCount(); return; }
+  body.innerHTML = rows.map(r => {
+    const n = Object.keys(r.platforms || {}).length;
+    const sold = r.status === 'sold';
+    const status = sold ? `<span class="status-badge error">Vendu / désactivé</span>` :
+      (n === 3 ? '<span class="status-badge ready">Partout</span>' : `<span class="status-badge generating">${n}/3 plateformes</span>`);
+    const priceVal = r.newPrice !== null ? r.newPrice : (r.price || '');
+    const priceCell = sold ? esc(r.price ? '$' + r.price : '') :
+      `<span style="color:#868e96">$</span><input type="number" min="0" step="0.01" value="${esc(priceVal)}" oninput="onStockPrice(${r._i},this)" style="width:78px;padding:4px 6px;border:1px solid ${r.newPrice !== null ? '#f59f00' : '#ced4da'};border-radius:6px;font-size:13px;${r.newPrice !== null ? 'background:#fff9db' : ''}">`;
+    const thumb = r.img ? `<img src="${esc(r.img)}" loading="lazy" style="width:48px;height:48px;object-fit:cover;border-radius:6px;display:block" onerror="this.style.visibility='hidden'">` : '<div style="width:48px;height:48px;border-radius:6px;background:#f1f3f5"></div>';
+    return `<tr><td><input type="checkbox" ${r.sel ? 'checked' : ''} ${sold ? 'disabled' : ''} onchange="stockRows[${r._i}].sel=this.checked;updateSelCount()"></td>` +
+      `<td>${thumb}</td><td style="font-family:monospace;font-size:12px">${esc(r.sku || '—')}</td><td>${esc(r.title)}</td>` +
+      `<td style="white-space:nowrap">${priceCell}</td><td style="white-space:nowrap">${Object.keys(PLAT_BADGE).map(p => platIcon(p, r.platforms && r.platforms[p])).join('')}</td><td>${status}</td></tr>`;
+  }).join('');
+  updateSelCount();
+}
+function onStockPrice(i, el) {
+  const r = stockRows[i];
+  const v = el.value;
+  r.newPrice = (v === '' || Number(v) === Number(r.price)) ? null : v;
+  if (r.newPrice !== null) { r.sel = true; const cb = el.closest('tr').querySelector('input[type=checkbox]'); if (cb) cb.checked = true; el.style.borderColor = '#f59f00'; el.style.background = '#fff9db'; }
+  else { el.style.borderColor = '#ced4da'; el.style.background = ''; }
+  updateSelCount();
+}
+function checkedRows() { return stockRows.filter(r => r.sel && r.status === 'active'); }
+function updateSelCount() {
+  const n = checkedRows().length, p = checkedRows().filter(r => r.newPrice !== null).length;
+  const el = document.getElementById('selCount');
+  if (el) el.textContent = n + ' sélectionné(s)' + (p ? ' · ' + p + ' prix modifié(s)' : '');
+}
+function toggleAllStock(cb) { stockVisible().forEach(r => { if (r.status === 'active') r.sel = cb.checked; }); renderStock(); }
+function stockMsg(html) { document.getElementById('stockSyncMsg').innerHTML = html; }
+
+async function stockAction(action, rows, plats, label) {
+  const items = rows.map(r => ({ title: r.title, refs: r.refs, price: r.newPrice !== null ? r.newPrice : r.price }));
+  stockMsg(label + ' en cours…');
+  const d = await lsFetch(BASE + '/ls/stock_action', { method: 'POST', headers: JSON_H, body: JSON.stringify({ action, platforms: plats, items }) }).then(r => r.json());
+  if (d.error) throw new Error(d.error);
+  const ok = d.results.filter(x => x.ok).length, ko = d.results.filter(x => x.error);
+  stockMsg(`<b>${esc(label)}</b> : ${ok} réussi(s), ${ko.length} erreur(s)` +
+    (ko.length ? '<ul style="margin:4px 0 0 18px">' + ko.map(x => `<li>${esc(x.title)} (${esc(x.platform)}) : ${esc(x.error)}</li>`).join('') + '</ul>' : ''));
+  return d;
+}
+async function deactivateSelected() {
+  const rows = checkedRows();
+  if (!rows.length) return alert('Coche au moins un article.');
+  const sel = document.getElementById('stockPlat').value;
+  const plats = sel === 'all' ? ['ebay', 'etsy', 'shopify'] : [sel];
+  const names = plats.map(p => PLAT_BADGE[p].n).join(', ');
+  if (!confirm(`Désactiver ${rows.length} article(s) sur : ${names} ?\n(eBay terminé · Etsy inactif · Shopify brouillon)`)) return;
+  try { await stockAction('deactivate', rows, plats, 'Désactivation'); await loadStockLive(); }
+  catch (e) { stockMsg(`<span class="pub-err">${esc(e.message)}</span>`); }
+}
+async function updateSelectedPrices() {
+  const rows = checkedRows().filter(r => r.newPrice !== null);
+  if (!rows.length) return alert('Modifie le prix d\'au moins un article coché.');
+  if (!confirm(`Mettre à jour le prix de ${rows.length} article(s) sur toutes les plateformes où ils sont en ligne ?`)) return;
+  try {
+    const d = await stockAction('price', rows, ['ebay', 'etsy', 'shopify'], 'Mise à jour des prix');
+    await loadStockLive();
+  } catch (e) { stockMsg(`<span class="pub-err">${esc(e.message)}</span>`); }
+}
+
+// ── Export vers une autre plateforme : l'article est recréé via le pipeline de l'onglet Création ──
+function urlToDataUrl(u) {
+  return fetch(BASE + '/ls/imgproxy?url=' + encodeURIComponent(u)).then(r => { if (!r.ok) throw new Error('image'); return r.blob(); })
+    .then(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); }));
+}
+async function exportOne(r, missing, log) {
+  const src = await lsFetch(BASE + '/ls/stock_source', { method: 'POST', headers: JSON_H, body: JSON.stringify({ refs: r.refs }) }).then(x => x.json());
+  const s = src.ebay || src.shopify || src.etsy;
+  if (!s || !s.title) throw new Error('annonce source illisible');
+  const urls = [...new Set([].concat(...[src.ebay, src.shopify, src.etsy].filter(Boolean).map(x => x.images || [])))].slice(0, 10);
+  const photoIds = [];
+  for (const u of urls) { try { photos.push({ file: null, dataUrl: await urlToDataUrl(u), name: 'stock' }); photoIds.push(photos.length - 1); } catch (_) {} }
+  const plain = htmlToPlain(s.description || '');
+  const meta = await claudeJson(`Item listed on a marketplace. Title: ${s.title}\nDescription: ${plain.slice(0, 1500)}\nExisting tags: ${(src.shopify && src.shopify.tags || src.etsy && src.etsy.tags || []).join(', ')}\n\nReturn ONLY JSON with keys: keyword (best SEO keyword, 1-6 words), etsyTags (exactly 13 tags, each 20 characters or fewer, letters numbers spaces only), altTexts (${photoIds.length} items, max 250 chars, what is visible plus material and origin), seoTitle (max 70 chars), seoDesc (max 160 chars), productType (2-3 words), whenMade (one of ${ETSY_WHEN_MADE.join(', ')}), materials (up to 5 lowercase), etsyCategoryGuess (Etsy category path in Etsy wording). No double quote characters inside values.`, 1500);
+  const desc = String(s.description || '').replace(/<!--\s*fmf-[a-z]+\s*-->/g, '').trim();
+  const art = { id: articles.length + 1, title: s.title, category: '', photoIds, keywords: '', published: {}, sku: r.sku || s.sku || '', suffix: '-', fromStock: true };
+  if (!art.sku) { art.suffix = ''; await reserveRef(art); art.suffix = '-'; }
+  const tags = (meta.etsyTags || []).map(t => String(t).replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 20)).filter(Boolean).slice(0, 13);
+  art.generated = {
+    keyword: meta.keyword || s.title.split(' ').slice(0, 4).join(' '), desc, title: s.title, ebayTitle: s.title, etsyTitle: s.title,
+    handle: slugify(s.title), price: Math.round(Number(s.price || r.price) || 0), tags, altTexts: meta.altTexts || [],
+    seoTitle: String(meta.seoTitle || '').slice(0, 70), seoDesc: String(meta.seoDesc || '').slice(0, 160),
+    etsyCategoryGuess: meta.etsyCategoryGuess || '', productType: meta.productType || '',
+    whenMade: ETSY_WHEN_MADE.includes(meta.whenMade) ? meta.whenMade : 'before_2000',
+    materials: (meta.materials || []).slice(0, 5).map(x => String(x).toLowerCase().slice(0, 45))
+  };
+  art.ebayCat = ''; art.etsyCat = ''; art.ebayVals = {}; art.etsyVals = {};
+  const idx = articles.push(art) - 1;
+  document.getElementById('articlesTable').style.display = '';
+  renderArticleRow(art, idx);
+  renderGenerated(idx);
+  document.getElementById(`expand-${idx}`).style.display = '';
+  setStatus(idx, 'generating', 'Catégories…');
+  await classifyAndFill(idx);
+  setStatus(idx, 'ready', 'Prêt');
+  const out = [];
+  for (const t of missing) {
+    if (t === 'ebay') { out.push('eBay : préparé dans l\'onglet Création (clique « Créer listing eBay »)'); continue; }
+    if (t === 'etsy') { await publishEtsy(idx); out.push('Etsy : ' + document.getElementById(`pub-etsy-${idx}`).innerText.trim()); }
+    if (t === 'shopify') { await publishShopify(idx); out.push('Shopify : ' + document.getElementById(`pub-shopify-${idx}`).innerText.trim()); }
+  }
+  return out;
+}
+async function exportSelected() {
+  const rows = checkedRows();
+  if (!rows.length) return alert('Coche au moins un article.');
+  if (!getKey()) return alert('Saisis ta clé Anthropic en haut de la page (utilisée pour choisir catégories et attributs).');
+  const sel = document.getElementById('stockPlat').value;
+  const targets = sel === 'all' ? ['ebay', 'etsy', 'shopify'] : [sel];
+  const todo = rows.map(r => ({ r, missing: targets.filter(t => !(r.platforms || {})[t]) })).filter(x => x.missing.length);
+  if (!todo.length) return alert('Tous les articles cochés sont déjà sur ' + (sel === 'all' ? 'les 3 plateformes' : PLAT_BADGE[sel].n) + '.');
+  if (!confirm(`Copier ${todo.length} article(s) vers ${targets.map(t => PLAT_BADGE[t].n).join(', ')} ?\nEtsy et Shopify : brouillon. eBay : préparé dans l'onglet Création (tu valides toi-même).`)) return;
+  window.__batch = true;
+  const lines = [];
+  try {
+    for (let i = 0; i < todo.length; i++) {
+      const { r, missing } = todo[i];
+      stockMsg(`Export ${i + 1}/${todo.length} : ${esc(r.title.slice(0, 60))}…` + (lines.length ? '<ul style="margin:4px 0 0 18px">' + lines.join('') + '</ul>' : ''));
+      try { const o = await exportOne(r, missing); lines.push(`<li>${esc(r.title.slice(0, 60))} → ${esc(o.join(' · '))}</li>`); }
+      catch (e) { lines.push(`<li class="pub-err">${esc(r.title.slice(0, 60))} : ${esc(String(e.message).slice(0, 150))}</li>`); }
+    }
+  } finally { window.__batch = false; }
+  stockMsg(`<b>Export terminé</b> (détails dans l'onglet Création)<ul style="margin:4px 0 0 18px">${lines.join('')}</ul>`);
+}
+
 async function runStockSync() {
   if (!confirm('Lancer la synchronisation maintenant ?\nUn article disparu d\'une plateforme sera désactivé sur les autres.')) return;
-  const box = document.getElementById('stockSyncMsg');
-  box.textContent = 'Synchronisation en cours…';
+  stockMsg('Synchronisation en cours…');
   try {
-    const d = await lsFetch(BASE + '/ls/stock_sync' + (window.__stockKey ? '?key=' + encodeURIComponent(window.__stockKey) : ''), { method: 'POST' }).then(r => r.json());
+    const d = await lsFetch(BASE + '/ls/stock_sync', { method: 'POST' }).then(r => r.json());
     if (d.error) throw new Error(d.error);
     let h = d.first_run ? '<b>Premier passage</b> : état des lieux enregistré, aucune action.' : `<b>${d.actions.length}</b> action(s).`;
     if (d.actions.length) h += '<ul style="margin:4px 0 0 18px">' + d.actions.map(a => `<li>${esc(a.title)} (disparu de ${esc((a.gone_on || []).join(', '))}) → ${esc(a.did || a.error)}</li>`).join('') + '</ul>';
     if (d.blocked && d.blocked.length) h += `<div class="pub-err">⚠ ${d.blocked.length} disparitions d'un coup : rien n'a été désactivé par sécurité (panne d'API possible). Vérifie puis relance.</div>`;
-    box.innerHTML = h;
+    stockMsg(h);
     await loadStockLive();
-  } catch (e) { box.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 200))}</span>`; }
+  } catch (e) { stockMsg(`<span class="pub-err">${esc(String(e.message).slice(0, 200))}</span>`); }
 }
 
 // ── Jetons Etsy / Shopify gardes dans le navigateur (survivent aux redemarrages de Render) ──
