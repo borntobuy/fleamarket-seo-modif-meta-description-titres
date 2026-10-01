@@ -488,6 +488,78 @@ def ls_restore():
         return jsonify({'error': str(e)}), 500
 
 
+# --------------------------------------------------------------------------
+# Connexions via variables d'environnement Render (plus aucune reconnexion) :
+#   SHOPIFY_ACCESS_TOKEN                       -> Shopify
+#   ETSY_API_KEY, ETSY_SHARED_SECRET, ETSY_REFRESH_TOKEN -> Etsy
+#   EBAY_APP_ID, EBAY_CERT_ID, EBAY_USER_TOKEN -> eBay (deja gere par _creds)
+# --------------------------------------------------------------------------
+_env_lock = threading.Lock()
+_env_state = {'etsy_try': 0.0}
+
+
+def _env_bootstrap():
+    try:
+        m = _app_mod()
+    except Exception:
+        return
+    sh = os.environ.get('SHOPIFY_ACCESS_TOKEN', '').strip()
+    if sh and m.shopify_token_store.get('current') != sh:
+        m.shopify_token_store['current'] = sh
+    key = os.environ.get('ETSY_API_KEY', '').strip()
+    rt = os.environ.get('ETSY_REFRESH_TOKEN', '').strip()
+    if not (key and rt):
+        return
+    cur = m.etsy_token_store.get('current')
+    if cur and cur.get('api_key') == key and float(cur.get('expires_at', 0)) > time.time() + 120:
+        return
+    if time.time() - _env_state['etsy_try'] < 30:
+        return
+    with _env_lock:
+        _env_state['etsy_try'] = time.time()
+        secret = os.environ.get('ETSY_SHARED_SECRET', '').strip()
+        # reprend le dernier refresh_token renouvele s'il existe (meme cle)
+        use_rt = rt
+        if cur and cur.get('api_key') == key and cur.get('refresh_token'):
+            use_rt = cur['refresh_token']
+        for cand in ([use_rt, rt] if use_rt != rt else [rt]):
+            try:
+                r = requests.post('https://api.etsy.com/v3/public/oauth/token',
+                                  data={'grant_type': 'refresh_token', 'client_id': key, 'refresh_token': cand},
+                                  headers={'Content-Type': 'application/x-www-form-urlencoded'}, timeout=15)
+                j = r.json()
+            except Exception:
+                continue
+            if 'access_token' in j:
+                data = {'access_token': j['access_token'],
+                        'refresh_token': j.get('refresh_token', cand),
+                        'expires_at': time.time() + int(j.get('expires_in', 3600)) - 60,
+                        'api_key': key, 'secret': secret}
+                m.etsy_token_store['current'] = data
+                try:
+                    m._save_token('etsy', data)
+                except Exception:
+                    pass
+                return
+
+
+@ls_bp.before_app_request
+def _ls_env_before():
+    _env_bootstrap()
+
+
+@ls_bp.route('/ls/env_status', methods=['GET'])
+def ls_env_status():
+    _env_bootstrap()
+    e = os.environ.get
+    return jsonify({
+        'ebay': bool(e('EBAY_APP_ID') and e('EBAY_CERT_ID') and e('EBAY_USER_TOKEN')),
+        'etsy': bool(e('ETSY_API_KEY') and e('ETSY_SHARED_SECRET') and e('ETSY_REFRESH_TOKEN')),
+        'shopify': bool(e('SHOPIFY_ACCESS_TOKEN')),
+        'github': bool(e('GITHUB_TOKEN')),
+    })
+
+
 @ls_bp.route('/ls/etsy_refresh', methods=['POST'])
 def ls_etsy_refresh():
     d = request.json or {}
