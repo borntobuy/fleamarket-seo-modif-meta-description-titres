@@ -10,6 +10,8 @@ import time
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
+from ls_api import ls_bp
+app.register_blueprint(ls_bp)
 
 # ── Persistance tokens (fichiers /tmp) ─────────────────────────────────────
 def _token_path(name):
