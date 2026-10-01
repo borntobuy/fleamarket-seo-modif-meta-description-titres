@@ -520,6 +520,7 @@ function renderArticles() {
         <div class="act-cell">
           <button class="btn btn-primary btn-gen" onclick="generateOne(${idx})">Générer</button>
           <button class="btn-expand" id="expand-${idx}" onclick="togglePanel(${idx})" style="display:none">Voir ▼</button>
+          <button class="btn btn-outline" title="Supprimer cet article" onclick="deleteArticle(${idx})" style="padding:6px 9px;font-size:14px;color:#c92a2a;border-color:#ffc9c9">🗑</button>
         </div>
       </td>`;
     tbody.appendChild(tr);
@@ -572,6 +573,10 @@ function htmlToPlain(html) {
     .replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function slugify(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80).replace(/-+$/, '');
 }
 
 function wordCount(html) { return htmlToPlain(html).split(/\s+/).filter(Boolean).length; }
@@ -639,8 +644,8 @@ HTML format, exactly, with single quotes for every attribute:
 ${WRAP_OPEN}<h2 style='font-family:Arial,sans-serif;font-size:24px;text-align:center;'>KEYWORD</h2><p>P1</p><p>P2</p><p>P3</p><p>P4</p><p>DETAILS BLOCK</p><p>95% of my items are tariff-free to the US.</p></div>
 
 === OTHER FIELDS ===
-- newTitle (eBay): MAXIMUM ${maxEbay} characters, keyword first, object name and material exactly as the seller gave them, keep Vintage / Antique / French when true, no quote marks. Do NOT add any number or date at the end, it is added automatically.
-- etsyTitle: MAXIMUM ${maxEtsy} characters, same rules, a little richer in buyer search terms.
+- newTitle (the SAME title is used on eBay, Etsy and Shopify): MAXIMUM ${maxEbay} characters, keyword first, object name and material exactly as the seller gave them, keep Vintage / Antique / French when true, rich in buyer search terms, no quote marks. Do NOT add any number or date at the end, it is added automatically.
+- handle: Shopify URL handle, lowercase words separated by hyphens, 3 to 7 words built from the keyword, letters and hyphens only, no number.
 - etsyTags: exactly 13 tags, each 20 characters or fewer, letters, numbers and spaces only, mixing specific and broad terms US buyers use.
 - altTexts: one per photo (${art.photoIds.slice(0, 6).length}), max 250 characters, what is visible plus material and origin.
 - seoTitle max 70 characters, seoDesc max 160 characters (Shopify page, no reference number).
@@ -651,7 +656,7 @@ ${WRAP_OPEN}<h2 style='font-family:Arial,sans-serif;font-size:24px;text-align:ce
 - materials: up to 5 simple lowercase materials.
 
 === OUTPUT FORMAT ===
-First a JSON object on its own, with these keys only: keyword, newTitle, etsyTitle, etsyTags, altTexts, seoTitle, seoDesc, price, etsyCategoryGuess, productType, whenMade, materials. No double quote characters inside any value.
+First a JSON object on its own, with these keys only: keyword, newTitle, handle, etsyTags, altTexts, seoTitle, seoDesc, price, etsyCategoryGuess, productType, whenMade, materials. No double quote characters inside any value.
 Then the description inside <description> and </description> tags. No markdown, no backticks, nothing else.`;
 }
 
@@ -676,7 +681,7 @@ async function generateOne(idx) {
 
     const kwText = art.keywords.trim() || '(none)';
     const maxEbay = 80 - art.suffix.length - 1;
-    const maxEtsy = 140 - art.suffix.length - 1;
+    const maxEtsy = maxEbay;
 
     const text = await claudeCall([{
       role: 'user',
@@ -699,8 +704,8 @@ async function generateOne(idx) {
     art.generated = {
       keyword: g.keyword || '',
       desc,
-      ebayTitle: withSuffix(g.newTitle, art.suffix, 80),
-      etsyTitle: withSuffix(g.etsyTitle || g.newTitle, art.suffix, 140),
+      title: withSuffix(g.newTitle, art.suffix, 80),
+      handle: slugify((g.handle || g.keyword || g.newTitle) + ' ' + art.suffix),
       price,
       tags,
       altTexts: g.altTexts || [],
@@ -711,6 +716,7 @@ async function generateOne(idx) {
       whenMade,
       materials: (g.materials || []).slice(0, 5).map(x => String(x).toLowerCase().slice(0, 45))
     };
+    art.generated.ebayTitle = art.generated.etsyTitle = art.generated.title; // alias (titre unique)
     art.ebayCat = ''; art.etsyCat = ''; art.ebayVals = {}; art.etsyVals = {};
 
     renderGenerated(idx);
@@ -729,9 +735,23 @@ async function generateOne(idx) {
   btn.innerHTML = 'Regénérer';
 }
 
+function deleteArticle(idx) {
+  const art = articles[idx];
+  if (!art || art.deleted) return;
+  const published = Object.keys(art.published || {}).filter(k => art.published[k]);
+  const msg = 'Supprimer l\'article #' + art.id + ' (' + art.title + ') de la liste ?' +
+    (published.length ? '\nAttention : déjà publié sur ' + published.join(', ') + ' (il restera en ligne, supprime-le là-bas).' : '');
+  if (!confirm(msg)) return;
+  art.deleted = true;
+  document.getElementById(`row-${idx}`).style.display = 'none';
+  document.getElementById(`panel-${idx}`).style.display = 'none';
+  const n = articles.filter(a => !a.deleted).length;
+  document.getElementById('photoCount').textContent = n + ' article' + (n > 1 ? 's' : '') + ' restant' + (n > 1 ? 's' : '');
+}
+
 async function generateAll() {
   for (let i = 0; i < articles.length; i++) {
-    if (!articles[i].generated) {
+    if (!articles[i].generated && !articles[i].deleted) {
       await generateOne(i);
       await new Promise(r => setTimeout(r, 500));
     }
@@ -982,8 +1002,16 @@ function refreshShippingSelects(idx) {
       || etsyInfo.shipping.find(p => hasCost(p, 39));
     const saved = (articles[idx].shipEtsy) || (def39 ? def39.shipping_profile_id : localStorage.getItem('ls_ship_etsy'));
     et.innerHTML = optionsHtml(etsyInfo.shipping, 'shipping_profile_id', p => {
-      const costs = (p.shipping_profile_destinations || []).slice(0, 2).map(d => d.primary_cost ? (d.primary_cost.amount / d.primary_cost.divisor).toFixed(2) + ' ' + d.primary_cost.currency_code : '').filter(Boolean).join(' / ');
-      return p.title + (costs ? ' — ' + costs : '');
+      const money = c => c ? (c.amount / c.divisor).toFixed(2) : null;
+      const dests = (p.shipping_profile_destinations || []).slice().sort((a, b) => (b.destination_country_iso === 'US') - (a.destination_country_iso === 'US'));
+      const costs = dests.slice(0, 3).map(d => {
+        const a = money(d.primary_cost), b = money(d.secondary_cost);
+        if (a === null) return '';
+        const where = d.destination_country_iso || (d.destination_region ? d.destination_region : 'monde');
+        return where + ' ' + a + (b !== null ? '/' + b : '') + ' ' + ((d.primary_cost || {}).currency_code || '');
+      }).filter(Boolean).join(' · ');
+      const proc = p.processing_days_display_label || (p.min_processing_days ? p.min_processing_days + '-' + p.max_processing_days + ' j' : '');
+      return (p.title || 'Profil ' + p.shipping_profile_id) + (costs ? ' — ' + costs : ' — (aucun tarif lisible)') + (proc ? ' · ' + proc : '');
     }, saved);
     articles[idx].shipEtsy = et.value;
   }
@@ -991,7 +1019,7 @@ function refreshShippingSelects(idx) {
   if (rd) {
     rd.style.display = etsyInfo.readiness.length ? '' : 'none';
     const saved = localStorage.getItem('ls_ready_etsy');
-    rd.innerHTML = optionsHtml(etsyInfo.readiness, 'readiness_state_id', p => `${p.readiness_state || 'Préparation'} ${p.min_processing_time || ''}-${p.max_processing_time || ''} ${p.processing_time_unit || ''}`, saved);
+    rd.innerHTML = optionsHtml(etsyInfo.readiness, 'readiness_state_id', p => `${({ ready_to_ship: 'Prêt à expédier', made_to_order: 'Sur commande' })[p.readiness_state] || p.readiness_state || 'Préparation'} — ${p.min_processing_time || '?'}-${p.max_processing_time || '?'} ${String(p.processing_time_unit || '').replace('_', ' ')}`, saved);
   }
 }
 
@@ -1036,6 +1064,9 @@ function renderGenerated(idx) {
   panel.innerHTML = `
     <div style="font-size:12px;color:#495057;margin-bottom:8px">SKU <b>${esc(art.sku)}</b> · Réf. titre <b>${esc(art.suffix)}</b> · Mot-clé SEO : <b>${esc(g.keyword)}</b> · <span id="cls-${idx}" style="color:#4263eb"></span></div>
 
+    <div class="gen-field"><div class="gen-label">Titre (identique sur eBay, Etsy et Shopify) — <span id="tl-${idx}">${g.title.length}/80</span></div>
+      <div class="gen-value" contenteditable="true" id="title-${idx}" oninput="document.getElementById('tl-${idx}').textContent=this.innerText.trim().length+'/80'">${esc(g.title)}</div></div>
+
     <div class="gen-field"><div class="gen-label">Description (identique sur eBay, Etsy et Shopify) — <span id="wc-${idx}"></span></div>
       <div class="gen-value" contenteditable="true" id="desc-${idx}" oninput="updateWordCount(${idx})" style="max-height:260px;overflow:auto">${g.desc}</div></div>
 
@@ -1047,8 +1078,6 @@ function renderGenerated(idx) {
 
     <!-- eBay -->
     <div class="gen-body active" id="tab-${idx}-ebay">
-      <div class="gen-field"><div class="gen-label">Titre eBay (${g.ebayTitle.length}/80)</div>
-        <div class="gen-value" contenteditable="true" id="ebay-title-${idx}">${esc(g.ebayTitle)}</div></div>
       <div class="gen-field"><div class="gen-label">Catégorie eBay</div>
         <select id="ebay-cat-${idx}" onchange="onEbayCat(${idx})" style="${inp}"></select></div>
       <div class="gen-field"><div class="gen-label">État</div>
@@ -1068,8 +1097,6 @@ function renderGenerated(idx) {
 
     <!-- Etsy -->
     <div class="gen-body" id="tab-${idx}-etsy">
-      <div class="gen-field"><div class="gen-label">Titre Etsy (${g.etsyTitle.length}/140)</div>
-        <div class="gen-value" contenteditable="true" id="etsy-title-${idx}">${esc(g.etsyTitle)}</div></div>
       <div class="gen-field"><div class="gen-label">Catégorie Etsy</div>
         <select id="etsy-cat-${idx}" onchange="onEtsyCat(${idx})" style="${inp}"></select></div>
       <div class="gen-field"><div class="gen-label">Attributs Etsy (* = obligatoire)</div>
@@ -1089,8 +1116,8 @@ function renderGenerated(idx) {
 
     <!-- Shopify -->
     <div class="gen-body" id="tab-${idx}-shopify">
-      <div class="gen-field"><div class="gen-label">Titre produit</div>
-        <div class="gen-value" contenteditable="true" id="shopify-title-${idx}">${esc(g.etsyTitle)}</div></div>
+      <div class="gen-field"><div class="gen-label">URL handle (/products/…)</div>
+        <div class="gen-value" contenteditable="true" id="shopify-handle-${idx}">${esc(g.handle)}</div></div>
       <div class="gen-field"><div class="gen-label">Type de produit : <b id="shopify-type-${idx}">${esc(g.productType)}</b></div></div>
       <div class="gen-field"><div class="gen-label">SEO Title</div>
         <div class="gen-value" contenteditable="true" id="shopify-seo-title-${idx}">${esc(g.seoTitle)}</div></div>
@@ -1146,7 +1173,7 @@ async function uploadPhotos(art) {
 
 async function publishEbay(idx) {
   const art = articles[idx];
-  const title = getEditable(`ebay-title-${idx}`);
+  const title = getEditable(`title-${idx}`);
   const price = parseFloat(getEditable(`ebay-price-${idx}`)) || 0;
   const btn = document.querySelector(`#tab-${idx}-ebay .btn-pub`);
   const status = document.getElementById(`pub-ebay-${idx}`);
@@ -1165,7 +1192,7 @@ async function publishEbay(idx) {
     const r = await lsFetch(BASE + '/ls/ebay_create', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title, description: descHtml(idx), price, sku: art.sku,
+        title, description: descHtml(idx) + '\n<!-- fmf-optimised -->', price, sku: art.sku,
         category_id: art.ebayCat, condition_id: document.getElementById(`ebay-cond-${idx}`).value,
         item_specifics: specifics, image_urls: imageUrls,
         shipping_profile_id: shipId, payment_profile_id: payId, return_profile_id: retId
@@ -1185,7 +1212,7 @@ async function publishEbay(idx) {
 
 async function publishEtsy(idx) {
   const art = articles[idx], g = art.generated;
-  const title = getEditable(`etsy-title-${idx}`);
+  const title = getEditable(`title-${idx}`);
   const price = parseFloat(getEditable(`etsy-price-${idx}`)) || 0;
   const btn = document.querySelector(`#tab-${idx}-etsy .btn-pub`);
   const status = document.getElementById(`pub-etsy-${idx}`);
@@ -1233,7 +1260,8 @@ async function publishEtsy(idx) {
 
 async function publishShopify(idx) {
   const art = articles[idx], g = art.generated;
-  const title = getEditable(`shopify-title-${idx}`);
+  const title = getEditable(`title-${idx}`);
+  const handle = slugify(getEditable(`shopify-handle-${idx}`)) || g.handle;
   const seoTitle = getEditable(`shopify-seo-title-${idx}`);
   const seoDesc = getEditable(`shopify-seo-desc-${idx}`);
   const sPrice = parseFloat(getEditable(`shopify-price-${idx}`)) || 0;
@@ -1252,6 +1280,7 @@ async function publishShopify(idx) {
         method: 'POST', path: '/products.json',
         body: { product: {
           title,
+          handle,
           body_html: descHtml(idx) + '\n<!-- fmf-shopify -->',
           vendor: 'Fleamarketfrance',
           product_type: g.productType || art.category,
