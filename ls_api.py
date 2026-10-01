@@ -608,3 +608,331 @@ def ls_etsy_refresh():
                         'api_key': d['api_key'], 'secret': d.get('secret', '')})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# --------------------------------------------------------------------------
+# STOCK : liste unifiee + synchronisation des ventes (controle toutes les heures)
+#   GET  /ls/stock_sync?dry=1   -> vue en direct (n'ecrit rien, n'agit pas)
+#   GET|POST /ls/stock_sync     -> synchronisation reelle (cron GitHub Actions)
+#   GET  /ls/stock              -> derniere liste enregistree + dernier controle
+# Regle : un article actif qui disparait d'une plateforme (vendu / termine) est
+# desactive sur les autres. Premier passage = simple etat des lieux, sans action.
+# --------------------------------------------------------------------------
+PLATS = ('ebay', 'etsy', 'shopify')
+MAX_AUTO = 10            # au-dela, on n'agit pas (protection contre une panne d'API)
+_sync_lock = threading.Lock()
+
+
+def _norm_title(t):
+    t = re.sub(r'\s+', ' ', str(t or '').lower()).strip()
+    t = re.sub(r'\s*\b\d{6,8}$', '', t)  # retire la reference jjmmaa+n
+    return t[:40]
+
+
+def _ebay_active():
+    out = []
+    page = 1
+    while True:
+        root = _ebay_call('GetMyeBaySelling',
+                          '<ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage>'
+                          '<PageNumber>%d</PageNumber></Pagination></ActiveList>' % page)
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            raise StoreError('eBay : ' + errs[0][1][:150])
+        for it in root.findall('.//%sActiveList/%sItemArray/%sItem' % (EBAY_NS, EBAY_NS, EBAY_NS)):
+            out.append({
+                'id': _t(it, EBAY_NS + 'ItemID'),
+                'title': _t(it, EBAY_NS + 'Title'),
+                'sku': _t(it, EBAY_NS + 'SKU').strip(),
+                'price': _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'CurrentPrice'),
+                'url': _t(it, EBAY_NS + 'ListingDetails/' + EBAY_NS + 'ViewItemURL'),
+            })
+        total = int(_t(root, './/%sActiveList/%sPaginationResult/%sTotalNumberOfPages' % (EBAY_NS, EBAY_NS, EBAY_NS)) or 1)
+        if page >= total or page >= 30:
+            break
+        page += 1
+    return out
+
+
+def _etsy_ctx():
+    m = _app_mod()
+    _env_bootstrap()
+    cur = m.etsy_token_store.get('current')
+    if not cur:
+        raise StoreError('Etsy non connecte')
+    if float(cur.get('expires_at', 0)) < time.time() + 60 and cur.get('refresh_token'):
+        r = requests.post('https://api.etsy.com/v3/public/oauth/token',
+                          data={'grant_type': 'refresh_token', 'client_id': cur['api_key'],
+                                'refresh_token': cur['refresh_token']},
+                          headers={'Content-Type': 'application/x-www-form-urlencoded'}, timeout=15)
+        j = r.json()
+        if 'access_token' not in j:
+            raise StoreError('Etsy : jeton expire, reconnecte Etsy (%s)' % str(j)[:100])
+        cur = dict(cur, access_token=j['access_token'], refresh_token=j.get('refresh_token', cur['refresh_token']),
+                   expires_at=time.time() + int(j.get('expires_in', 3600)) - 60)
+        m.etsy_token_store['current'] = cur
+        try:
+            m._save_token('etsy', cur)
+        except Exception:
+            pass
+    key = cur['api_key'] + (':' + cur['secret'] if cur.get('secret') else '')
+    return {'Authorization': 'Bearer ' + cur['access_token'], 'x-api-key': key}
+
+
+def _etsy_get(path, params=None):
+    r = requests.get('https://openapi.etsy.com/v3' + path, headers=_etsy_ctx(), params=params, timeout=30)
+    if r.status_code != 200:
+        raise StoreError('Etsy %s : %s' % (r.status_code, r.text[:150]))
+    return r.json()
+
+
+def _etsy_active():
+    me = _etsy_get('/application/users/me')
+    shop = me.get('shop_id')
+    if not shop:
+        raise StoreError('Boutique Etsy introuvable')
+    out, offset = [], 0
+    while True:
+        j = _etsy_get('/application/shops/%s/listings' % shop, {'state': 'active', 'limit': 100, 'offset': offset})
+        res = j.get('results', [])
+        for it in res:
+            pr = it.get('price') or {}
+            price = ''
+            if pr.get('amount') is not None:
+                price = '%.2f' % (pr['amount'] / (pr.get('divisor') or 100))
+            skus = it.get('skus') or []
+            out.append({'id': str(it.get('listing_id')), 'title': it.get('title', ''),
+                        'sku': (skus[0] if skus else '').strip(), 'price': price, 'url': it.get('url', ''),
+                        'shop': shop})
+        offset += 100
+        if not res or offset >= int(j.get('count', 0)) or offset > 5000:
+            break
+    return out
+
+
+def _shopify_ctx():
+    m = _app_mod()
+    _env_bootstrap()
+    tok = m.shopify_token_store.get('current')
+    if not tok:
+        raise StoreError('Shopify non connecte')
+    return m.SHOPIFY_SHOP, {'X-Shopify-Access-Token': tok, 'Content-Type': 'application/json'}
+
+
+def _shopify_active():
+    shop, h = _shopify_ctx()
+    out = []
+    url = 'https://%s/admin/api/2024-01/products.json' % shop
+    params = {'status': 'active', 'limit': 250, 'fields': 'id,title,handle,variants'}
+    for _ in range(40):
+        r = requests.get(url, headers=h, params=params, timeout=40)
+        if r.status_code != 200:
+            raise StoreError('Shopify %s : %s' % (r.status_code, r.text[:150]))
+        for p in r.json().get('products', []):
+            vs = p.get('variants') or []
+            sku = next((v.get('sku') for v in vs if v.get('sku')), '') or ''
+            out.append({'id': str(p['id']), 'title': p.get('title', ''), 'sku': sku.strip(),
+                        'price': (vs[0].get('price') if vs else '') or '',
+                        'url': 'https://%s/products/%s' % (shop, p.get('handle', ''))})
+        nxt = (r.links or {}).get('next', {}).get('url')
+        if not nxt:
+            break
+        url, params = nxt, None
+    return out
+
+
+def _deactivate(plat, ref):
+    """Desactive un article sur une plateforme. Retourne un texte de resultat."""
+    if plat == 'etsy':
+        h = _etsy_ctx()
+        h['Content-Type'] = 'application/json'
+        r = requests.patch('https://openapi.etsy.com/v3/application/shops/%s/listings/%s' % (ref['shop'], ref['id']),
+                           headers=h, json={'state': 'inactive'}, timeout=30)
+        if r.status_code not in (200, 201):
+            raise StoreError('Etsy %s : %s' % (r.status_code, r.text[:120]))
+        return 'Etsy -> inactif'
+    if plat == 'shopify':
+        shop, h = _shopify_ctx()
+        r = requests.put('https://%s/admin/api/2024-01/products/%s.json' % (shop, ref['id']), headers=h,
+                         json={'product': {'id': int(ref['id']), 'status': 'draft'}}, timeout=30)
+        if r.status_code != 200:
+            raise StoreError('Shopify %s : %s' % (r.status_code, r.text[:120]))
+        return 'Shopify -> brouillon'
+    if plat == 'ebay':
+        root = _ebay_call('EndFixedPriceItem',
+                          '<ItemID>%s</ItemID><EndingReason>NotAvailable</EndingReason>' % xml_escape(ref['id']))
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            raise StoreError('eBay : ' + errs[0][1][:120])
+        return 'eBay -> termine'
+    raise StoreError('plateforme inconnue')
+
+
+def _merge(current):
+    """current = {plat: [items]} -> liste d'articles fusionnes par SKU (sinon titre)."""
+    merged = []
+    by_sku, by_t = {}, {}
+    for plat in PLATS:
+        for it in current.get(plat, []):
+            tk = _norm_title(it['title'])
+            ent = (by_sku.get(it['sku']) if it['sku'] else None) or by_t.get(tk)
+            if ent is None or plat in ent['p']:
+                ent = {'sku': it['sku'], 'tkey': tk, 'title': it['title'], 'price': it['price'], 'p': {}}
+                merged.append(ent)
+            ent['p'][plat] = {k: it[k] for k in ('id', 'url', 'shop') if k in it}
+            if it['sku'] and not ent['sku']:
+                ent['sku'] = it['sku']
+            if it['sku']:
+                by_sku[it['sku']] = ent
+            by_t[tk] = ent
+            if plat == 'ebay':
+                ent['title'] = it['title']
+                ent['price'] = it['price'] or ent['price']
+    return merged
+
+
+def _fetch_all():
+    current, errors = {}, {}
+    for plat, fn in (('ebay', _ebay_active), ('etsy', _etsy_active), ('shopify', _shopify_active)):
+        try:
+            current[plat] = fn()
+        except Exception as e:  # une plateforme en panne ne bloque pas les autres
+            errors[plat] = str(e)[:200]
+    return current, errors
+
+
+def _view(merged, status_by_key=None):
+    rows = []
+    for e in merged:
+        rows.append({'sku': e['sku'], 'title': e['title'], 'price': e['price'],
+                     'platforms': {p: e['p'][p].get('url', '') or True for p in e['p']}})
+    return rows
+
+
+@ls_bp.route('/ls/stock')
+def ls_stock():
+    try:
+        data, _ = _load()
+        st = data.get('stock') or {}
+        items = list((st.get('items') or {}).values())
+        return jsonify({'items': items, 'last': st.get('last'), 'errors': st.get('errors', {}),
+                        'log': (st.get('log') or [])[-30:]})
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@ls_bp.route('/ls/stock_sync', methods=['GET', 'POST'])
+def ls_stock_sync():
+    key = os.environ.get('STOCK_CRON_KEY', '').strip()
+    dry = request.args.get('dry') == '1'
+    if key and not dry and request.args.get('key') != key:
+        return jsonify({'error': 'cle invalide'}), 403
+    if not _sync_lock.acquire(blocking=False):
+        return jsonify({'error': 'synchronisation deja en cours'}), 409
+    try:
+        current, errors = _fetch_all()
+        merged = _merge(current)
+        if dry:
+            return jsonify({'dry': True, 'items': _view(merged), 'errors': errors,
+                            'counts': {p: len(current.get(p, [])) for p in PLATS}})
+
+        data, sha = _load()
+        st = data.get('stock') or {}
+        items = st.get('items') or {}
+        now = _today_key()[1]
+        ok_plats = [p for p in PLATS if p in current]
+        # garde-fou : une plateforme qui renvoie 0 alors qu'on en connaissait beaucoup = panne probable
+        for p in list(ok_plats):
+            known = sum(1 for i in items.values() if i.get('status') == 'active' and (i['p'].get(p) or {}).get('active'))
+            if known >= 5 and not current[p]:
+                errors[p] = 'liste vide alors que %d articles etaient connus : ignore' % known
+                ok_plats.remove(p)
+
+        idx_sku = {i['sku']: k for k, i in items.items() if i.get('sku')}
+        idx_t = {i['tkey']: k for k, i in items.items() if i.get('tkey')}
+        seen_keys = set()
+        for e in merged:
+            k = idx_sku.get(e['sku']) if e['sku'] else None
+            k = k or idx_t.get(e['tkey'])
+            if not k:
+                k = e['sku'] or ('t:' + e['tkey'])
+                items[k] = {'key': k, 'sku': e['sku'], 'tkey': e['tkey'], 'first': now, 'p': {}, 'status': 'active'}
+            it = items[k]
+            seen_keys.add(k)
+            it.update({'title': e['title'], 'price': e['price']})
+            if e['sku'] and not it.get('sku'):
+                it['sku'] = e['sku']
+            for p, ref in e['p'].items():
+                if it['status'] == 'sold' and not (it['p'].get(p) or {}).get('active'):
+                    it['status'] = 'active'  # remis en vente
+                it['p'][p] = dict(ref, active=True)
+
+        first_run = not st.get('last')
+        actions, blocked, newly_sold = [], [], []
+        for k, it in items.items():
+            if it.get('status') != 'active':
+                continue
+            gone = [p for p in ok_plats if (it['p'].get(p) or {}).get('active') and
+                    p not in next((m['p'] for m in merged if (m['sku'] and m['sku'] == it.get('sku')) or m['tkey'] == it.get('tkey')), {})]
+            if not gone:
+                continue
+            for p in gone:
+                it['p'][p]['active'] = False
+            newly_sold.append((k, gone))
+
+        if len(newly_sold) > MAX_AUTO and not first_run:
+            blocked = [{'key': k, 'title': items[k].get('title'), 'gone_on': g} for k, g in newly_sold]
+            for k, g in newly_sold:  # on annule le marquage pour reessayer a la prochaine fois
+                for p in g:
+                    items[k]['p'][p]['active'] = True
+            newly_sold = []
+        for k, gone in newly_sold:
+            items[k]['pending'] = sorted(set(items[k].get('pending') or []) | set(gone))
+        for k, it in items.items():
+            gone = it.get('pending')
+            if not gone or it.get('status') != 'active':
+                continue
+            failed = False
+            for q in PLATS:
+                ref = it['p'].get(q) or {}
+                if q in ok_plats and ref.get('active') and q not in gone:
+                    try:
+                        res = _deactivate(q, ref)
+                        ref['active'] = False
+                        actions.append({'title': it.get('title'), 'sku': it.get('sku'), 'gone_on': gone, 'did': res})
+                    except Exception as ex:
+                        failed = True
+                        actions.append({'title': it.get('title'), 'sku': it.get('sku'), 'gone_on': gone,
+                                        'error': '%s : %s' % (q, str(ex)[:120])})
+                elif ref.get('active') and q not in gone:
+                    failed = True  # plateforme injoignable ce coup-ci : on reessaie plus tard
+            if not failed:
+                it.pop('pending', None)
+                it['status'] = 'sold'
+                it['sold_on'] = gone
+                it['sold_at'] = now
+
+        st['items'] = items
+        st['last'] = now
+        st['errors'] = errors
+        log = st.get('log') or []
+        for a in actions:
+            log.append(dict(a, at=now))
+        st['log'] = log[-200:]
+        data['stock'] = st
+        saved = False
+        for _ in range(5):
+            if _save(data, sha, 'ls: stock sync %s' % now):
+                saved = True
+                break
+            fresh, sha = _load()
+            fresh['stock'] = st
+            data = fresh
+        return jsonify({'ok': saved, 'first_run': first_run, 'checked': {p: len(current.get(p, [])) for p in PLATS},
+                        'actions': actions, 'blocked': blocked, 'errors': errors})
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': 'stock: %s' % e}), 500
+    finally:
+        _sync_lock.release()
