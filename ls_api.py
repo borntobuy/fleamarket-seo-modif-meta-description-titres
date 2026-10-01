@@ -187,7 +187,7 @@ def _creds():
 def _ebay_call(call_name, inner_xml):
     c = _creds()
     if not c['token']:
-        raise StoreError("Token eBay manquant (renseigne-le dans l'outil SEO, onglet réglages, ou EBAY_USER_TOKEN sur Render)")
+        raise StoreError("Token eBay manquant : clique sur le bouton Réglages en haut de la page et saisis-le une seule fois.")
     xml = ('<?xml version="1.0" encoding="utf-8"?>'
            '<%sRequest xmlns="urn:ebay:apis:eBLBaseComponents">'
            '<RequesterCredentials><eBayAuthToken>%s</eBayAuthToken></RequesterCredentials>'
@@ -217,7 +217,7 @@ _oauth_cache = {}
 def _app_token():
     c = _creds()
     if not (c['app'] and c['cert']):
-        raise StoreError("App ID / Cert ID eBay manquants : ils sont repris de l'outil SEO (réglages). Ouvre l'outil SEO, enregistre-les, puis recharge cette page.")
+        raise StoreError("Identifiants eBay manquants : clique sur le bouton Réglages en haut de la page, saisis App ID, Cert ID et token eBay une seule fois, puis Enregistrer.")
     cached = _oauth_cache.get(c['app'])
     if cached and cached[1] > time.time() + 60:
         return cached[0]
@@ -448,5 +448,62 @@ def ls_ebay_create():
         return jsonify({'error': hard[0] if hard else 'Erreur eBay', 'all': hard[:5]}), 502
     except StoreError as e:
         return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# --------------------------------------------------------------------------
+# Connexions Etsy / Shopify qui survivent aux redemarrages de Render :
+# le navigateur garde les jetons et les redonne au serveur.
+# --------------------------------------------------------------------------
+def _app_mod():
+    m = sys.modules.get('app') or sys.modules.get('__main__')
+    if not m or not hasattr(m, 'etsy_token_store') or not hasattr(m, '_save_token'):
+        raise StoreError('module principal introuvable')
+    return m
+
+
+@ls_bp.route('/ls/restore', methods=['POST'])
+def ls_restore():
+    d = request.json or {}
+    out = {}
+    try:
+        m = _app_mod()
+        e = d.get('etsy')
+        if e and e.get('access_token') and e.get('api_key'):
+            cur = m.etsy_token_store.get('current')
+            if d.get('force') or not cur or float(e.get('expires_at', 0)) > float(cur.get('expires_at', 0)):
+                m.etsy_token_store['current'] = e
+                m._save_token('etsy', e)
+                out['etsy'] = 'restored'
+            else:
+                out['etsy'] = 'kept'
+        sh = d.get('shopify')
+        if sh and isinstance(sh, str) and not m.shopify_token_store.get('current'):
+            m.shopify_token_store['current'] = sh
+            m._save_token('shopify', sh)
+            out['shopify'] = 'restored'
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@ls_bp.route('/ls/etsy_refresh', methods=['POST'])
+def ls_etsy_refresh():
+    d = request.json or {}
+    if not d.get('api_key') or not d.get('refresh_token'):
+        return jsonify({'error': 'api_key ou refresh_token manquant'}), 400
+    try:
+        r = requests.post('https://api.etsy.com/v3/public/oauth/token',
+                          data={'grant_type': 'refresh_token', 'client_id': d['api_key'],
+                                'refresh_token': d['refresh_token']},
+                          headers={'Content-Type': 'application/x-www-form-urlencoded'}, timeout=15)
+        j = r.json()
+        if 'access_token' not in j:
+            return jsonify({'error': 'Refresh Etsy refusé : %s' % str(j)[:150]}), 400
+        return jsonify({'access_token': j['access_token'],
+                        'refresh_token': j.get('refresh_token', d['refresh_token']),
+                        'expires_at': time.time() + int(j.get('expires_in', 3600)) - 60,
+                        'api_key': d['api_key'], 'secret': d.get('secret', '')})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
