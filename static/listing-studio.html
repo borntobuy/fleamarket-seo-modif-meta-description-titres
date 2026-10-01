@@ -1118,6 +1118,8 @@ function renderGenerated(idx) {
     <div class="gen-body" id="tab-${idx}-shopify">
       <div class="gen-field"><div class="gen-label">URL handle (/products/…)</div>
         <div class="gen-value" contenteditable="true" id="shopify-handle-${idx}">${esc(g.handle)}</div></div>
+      <div class="gen-field"><div class="gen-label">Alt des images (une par photo, envoye a Shopify)</div>
+        ${art.photoIds.slice(0, 10).map((pi, ii) => `<div style='display:flex;gap:8px;align-items:flex-start;margin-bottom:6px'><img src='${photos[pi].dataUrl}' style='width:46px;height:46px;object-fit:cover;border-radius:4px;flex:none'><div class='gen-value' contenteditable='true' oninput="articles[${idx}].generated.altTexts[${ii}]=this.innerText.trim()" id='shopify-alt-${idx}-${ii}' style='flex:1'>${esc(g.altTexts[ii] || g.title)}</div></div>`).join('')}</div>
       <div class="gen-field"><div class="gen-label">Type de produit : <b id="shopify-type-${idx}">${esc(g.productType)}</b></div></div>
       <div class="gen-field"><div class="gen-label">SEO Title</div>
         <div class="gen-value" contenteditable="true" id="shopify-seo-title-${idx}">${esc(g.seoTitle)}</div></div>
