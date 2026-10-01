@@ -12,7 +12,7 @@ Stockage durable : fichier JSON dans le depot GitHub, sur la branche `ls-data`
 (branche separee pour ne PAS declencher de redeploiement Render a chaque ecriture).
 Variables d'environnement Render requises :
   GITHUB_TOKEN     token GitHub (contents: read/write sur le depot)
-  EBAY_USER_TOKEN  token utilisateur eBay (deja utilise)
+  EBAY_USER_TOKEN  (optionnel) token eBay ; sinon repris de l'outil SEO via le navigateur
 Optionnelles : GITHUB_REPO, LS_DATA_BRANCH, LS_DATA_PATH
 """
 import base64
@@ -22,6 +22,7 @@ import random
 import re
 import sys
 import threading
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from xml.sax.saxutils import escape as xml_escape
@@ -174,21 +175,87 @@ EBAY_URL = 'https://api.ebay.com/ws/api.dll'
 EBAY_NS = '{urn:ebay:apis:eBLBaseComponents}'
 
 
+def _creds():
+    h = request.headers
+    return {
+        'token': (h.get('X-LS-EBAY-TOKEN') or os.environ.get('EBAY_USER_TOKEN', '')).strip(),
+        'app': (h.get('X-LS-EBAY-APP') or os.environ.get('EBAY_APP_ID', '')).strip(),
+        'cert': (h.get('X-LS-EBAY-CERT') or os.environ.get('EBAY_CERT_ID', '')).strip(),
+    }
+
+
 def _ebay_call(call_name, inner_xml):
-    token = os.environ.get('EBAY_USER_TOKEN', '').strip()
-    if not token:
-        raise StoreError('EBAY_USER_TOKEN manquant sur Render')
+    c = _creds()
+    if not c['token']:
+        raise StoreError("Token eBay manquant (renseigne-le dans l'outil SEO, onglet réglages, ou EBAY_USER_TOKEN sur Render)")
     xml = ('<?xml version="1.0" encoding="utf-8"?>'
            '<%sRequest xmlns="urn:ebay:apis:eBLBaseComponents">'
            '<RequesterCredentials><eBayAuthToken>%s</eBayAuthToken></RequesterCredentials>'
-           '%s</%sRequest>') % (call_name, token, inner_xml, call_name)
-    resp = requests.post(EBAY_URL, headers={
+           '%s</%sRequest>') % (call_name, c['token'], inner_xml, call_name)
+    headers = {
         'X-EBAY-API-SITEID': '0',
         'X-EBAY-API-COMPATIBILITY-LEVEL': '1193',
         'X-EBAY-API-CALL-NAME': call_name,
         'Content-Type': 'text/xml',
-    }, data=xml.encode('utf-8'), timeout=40)
+    }
+    if c['app']:
+        headers['X-EBAY-API-APP-NAME'] = c['app']
+        headers['X-EBAY-API-DEV-NAME'] = ''
+    if c['cert']:
+        headers['X-EBAY-API-CERT-NAME'] = c['cert']
+    resp = requests.post(EBAY_URL, headers=headers, data=xml.encode('utf-8'), timeout=40)
+    body = (resp.text or '').strip()
+    if not body.startswith('<'):
+        raise StoreError('eBay %s : réponse vide ou illisible (HTTP %s) %s' % (call_name, resp.status_code, body[:120]))
     return ET.fromstring(resp.content)
+
+
+# ---- API REST eBay (Taxonomy) : categories et caracteristiques --------------
+_oauth_cache = {}
+
+
+def _app_token():
+    c = _creds()
+    if not (c['app'] and c['cert']):
+        raise StoreError("App ID / Cert ID eBay manquants : ils sont repris de l'outil SEO (réglages). Ouvre l'outil SEO, enregistre-les, puis recharge cette page.")
+    cached = _oauth_cache.get(c['app'])
+    if cached and cached[1] > time.time() + 60:
+        return cached[0]
+    basic = base64.b64encode(('%s:%s' % (c['app'], c['cert'])).encode()).decode()
+    r = requests.post('https://api.ebay.com/identity/v1/oauth2/token',
+                      headers={'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + basic},
+                      data={'grant_type': 'client_credentials', 'scope': 'https://api.ebay.com/oauth/api_scope'},
+                      timeout=20)
+    if r.status_code != 200:
+        raise StoreError('OAuth eBay refusé (%s) : %s' % (r.status_code, r.text[:150]))
+    j = r.json()
+    _oauth_cache[c['app']] = (j['access_token'], time.time() + int(j.get('expires_in', 7200)))
+    return j['access_token']
+
+
+def _rest_get(url, params=None):
+    r = requests.get(url, headers={'Authorization': 'Bearer ' + _app_token(), 'Accept': 'application/json',
+                                   'Accept-Language': 'en-US', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'},
+                     params=params, timeout=25)
+    if r.status_code != 200:
+        raise StoreError('eBay REST %s : %s' % (r.status_code, r.text[:200]))
+    return r.json()
+
+
+TAXO = 'https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/'
+
+
+def _taxo_suggest(q):
+    j = _rest_get(TAXO + 'get_category_suggestions', {'q': q})
+    out = []
+    for cs in j.get('categorySuggestions', []):
+        cat = cs.get('category') or {}
+        anc = sorted(cs.get('categoryTreeNodeAncestors') or [], key=lambda a: a.get('categoryTreeNodeLevel', 0))
+        names = [a.get('categoryName', '') for a in anc] + [cat.get('categoryName', '')]
+        if cat.get('categoryId'):
+            out.append({'id': str(cat['categoryId']), 'name': cat.get('categoryName', ''),
+                        'path': ' > '.join(n for n in names if n), 'percent': ''})
+    return out
 
 
 def _t(node, path):
@@ -237,30 +304,14 @@ def ls_ebay_profiles():
 
 @ls_bp.route('/ls/ebay_categories')
 def ls_ebay_categories():
-    """Categories feuilles suggerees par eBay (site US) pour un titre."""
+    """Categories feuilles suggerees par eBay (Taxonomy API, site US) pour un titre."""
     q = (request.args.get('q') or '').strip()[:350]
     if not q:
         return jsonify({'categories': []})
     try:
-        root = _ebay_call('GetSuggestedCategories', '<Query>%s</Query>' % xml_escape(q))
-        out = []
-        for sc in root.iter(EBAY_NS + 'SuggestedCategory'):
-            cat = sc.find(EBAY_NS + 'Category')
-            if cat is None:
-                continue
-            cid = _t(cat, EBAY_NS + 'CategoryID')
-            name = _t(cat, EBAY_NS + 'CategoryName')
-            parents = [p.text for p in cat.findall(EBAY_NS + 'CategoryParentName') if p.text]
-            if cid:
-                out.append({'id': cid, 'name': name, 'path': ' > '.join(parents + [name]),
-                            'percent': _t(sc, EBAY_NS + 'PercentItemFound')})
-        if not out:
-            errs = _errors(root)
-            if errs:
-                return jsonify({'error': errs[0][1]}), 502
-        return jsonify({'categories': out[:8]})
+        return jsonify({'categories': _taxo_suggest(q)[:8]})
     except StoreError as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 502
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -277,60 +328,46 @@ def ls_ebay_aspects():
     if cid in _aspect_cache:
         return jsonify(_aspect_cache[cid])
     try:
-        root = _ebay_call(
-            'GetCategorySpecifics',
-            '<CategorySpecific><CategoryID>%s</CategoryID></CategorySpecific>'
-            '<MaxValuesPerName>40</MaxValuesPerName><MaxNames>60</MaxNames>' % cid)
+        j = _rest_get(TAXO + 'get_item_aspects_for_category', {'category_id': cid})
         aspects = []
-        for nr in root.iter(EBAY_NS + 'NameRecommendation'):
-            name = _t(nr, EBAY_NS + 'Name')
-            vr = nr.find(EBAY_NS + 'ValidationRules')
-            usage = _t(vr, EBAY_NS + 'UsageConstraint') if vr is not None else ''
-            mode = _t(vr, EBAY_NS + 'SelectionMode') if vr is not None else ''
-            maxv = _t(vr, EBAY_NS + 'MaxValues') if vr is not None else ''
-            values = [v.text for v in nr.findall(EBAY_NS + 'ValueRecommendation/' + EBAY_NS + 'Value') if v.text]
-            if name:
-                aspects.append({'name': name, 'usage': usage or 'Optional', 'mode': mode or 'FreeText',
-                                'max': int(maxv) if maxv.isdigit() else 1, 'values': values})
+        for a in j.get('aspects', []):
+            con = a.get('aspectConstraint') or {}
+            usage = 'Required' if con.get('aspectRequired') else ('Recommended' if con.get('aspectUsage') == 'RECOMMENDED' else 'Optional')
+            multi = con.get('itemToAspectCardinality') == 'MULTI'
+            aspects.append({
+                'name': a.get('localizedAspectName', ''),
+                'usage': usage,
+                'mode': 'SelectionOnly' if con.get('aspectMode') == 'SELECTION_ONLY' else 'FreeText',
+                'max': 30 if multi else 1,
+                'values': [v.get('localizedValue') for v in (a.get('aspectValues') or []) if v.get('localizedValue')][:40],
+            })
         order = {'Required': 0, 'Recommended': 1, 'Optional': 2}
+        aspects = [a for a in aspects if a['name']]
         aspects.sort(key=lambda a: order.get(a['usage'], 2))
 
         conditions = []
         try:
-            r2 = _ebay_call('GetCategoryFeatures',
-                            '<CategoryID>%s</CategoryID><FeatureID>ConditionValues</FeatureID>'
-                            '<FeatureID>ConditionEnabled</FeatureID><DetailLevel>ReturnAll</DetailLevel>' % cid)
-            cat = r2.find('.//' + EBAY_NS + 'Category')
-            if cat is not None:
-                for c in cat.iter(EBAY_NS + 'Condition'):
-                    conditions.append({'id': _t(c, EBAY_NS + 'ID'), 'name': _t(c, EBAY_NS + 'DisplayName')})
-            if not conditions:
-                sd = r2.find('.//' + EBAY_NS + 'SiteDefaults')
-                # etat par defaut du site, non specifique : on ne le liste pas, eBay validera
+            m = _rest_get('https://api.ebay.com/sell/metadata/v1/marketplace/EBAY_US/get_item_condition_policies',
+                          {'filter': 'categoryIds:{%s}' % cid})
+            for pol in m.get('itemConditionPolicies', []):
+                for c in pol.get('itemConditions', []):
+                    conditions.append({'id': str(c.get('conditionId')), 'name': c.get('conditionDescription', '')})
         except Exception as e:
-            print('[ls/ebay_aspects] conditions:', e, file=sys.stderr)
+            print('[ls/ebay_aspects] conditions indisponibles:', e, file=sys.stderr)
 
         res = {'category_id': cid, 'aspects': aspects, 'conditions': conditions}
         if aspects:
             _aspect_cache[cid] = res
-        elif not aspects:
-            errs = _errors(root)
-            if errs:
-                res['warning'] = errs[0][1]
         return jsonify(res)
     except StoreError as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 502
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 def _suggest_category(title):
-    root = _ebay_call('GetSuggestedCategories', '<Query>%s</Query>' % xml_escape(title[:350]))
-    for c in root.iter(EBAY_NS + 'SuggestedCategory'):
-        cid = _t(c, EBAY_NS + 'Category/' + EBAY_NS + 'CategoryID')
-        if cid:
-            return cid
-    return None
+    sug = _taxo_suggest(title[:350])
+    return sug[0]['id'] if sug else None
 
 
 def _cdata(s):
