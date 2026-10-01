@@ -144,6 +144,29 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
   </div>
 </div>
 
+<!-- Onglets -->
+<div style="padding:10px 24px 0;display:flex;gap:6px;border-bottom:1px solid #dee2e6;background:#fff">
+  <button id="tabBtn-create" class="btn btn-primary" style="padding:6px 16px;font-size:13px;border-radius:8px 8px 0 0" onclick="showMainTab('create')">Création</button>
+  <button id="tabBtn-stock" class="btn btn-outline" style="padding:6px 16px;font-size:13px;border-radius:8px 8px 0 0" onclick="showMainTab('stock')">Stock</button>
+</div>
+
+<!-- Stock -->
+<div id="stockWrap" style="display:none;padding:14px 24px 40px">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:13px">
+    <button class="btn btn-primary" style="padding:7px 14px;font-size:13px" onclick="loadStockLive()">↻ Actualiser (en direct)</button>
+    <button class="btn btn-outline" style="padding:7px 14px;font-size:13px" onclick="runStockSync()">⚡ Synchroniser maintenant</button>
+    <input id="stockFilter" placeholder="Filtrer (titre ou SKU)…" oninput="renderStock()" style="padding:6px 10px;border:1px solid #ced4da;border-radius:6px;font-size:13px;min-width:200px">
+    <select id="stockShow" onchange="renderStock()" style="padding:6px 8px;border:1px solid #ced4da;border-radius:6px;font-size:13px">
+      <option value="all">Tous</option><option value="active">En ligne</option><option value="partial">Pas sur toutes les plateformes</option><option value="sold">Vendus / désactivés</option>
+    </select>
+    <span id="stockInfo" class="info-text"></span>
+  </div>
+  <div class="info-text" style="margin-bottom:8px">Contrôle automatique toutes les heures (GitHub Actions) : un article qui disparaît d'une plateforme (vendu ou terminé) est désactivé sur les autres (eBay terminé · Etsy inactif · Shopify brouillon). Le premier passage ne fait que l'état des lieux.</div>
+  <div id="stockSyncMsg" style="margin-bottom:8px;font-size:13px"></div>
+  <table class="articles-table" style="width:100%"><thead><tr><th style="width:150px">SKU</th><th>Article</th><th style="width:80px">Prix</th><th style="width:150px">Plateformes</th><th style="width:130px">Statut</th></tr></thead><tbody id="stockBody"><tr><td colspan="5" class="info-text">Clique sur « Actualiser ».</td></tr></tbody></table>
+</div>
+
+<div id="createWrap">
 <!-- Expedition -->
 <div style="padding:12px 24px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px">
   <b>Profils d'expédition :</b>
@@ -196,6 +219,8 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
     <tbody id="articlesTbody"></tbody>
   </table>
 </div>
+
+</div><!-- /createWrap -->
 
 <!-- Lightbox -->
 <div class="lb" id="lb" onclick="this.classList.remove('open')">
@@ -1118,13 +1143,15 @@ function renderGenerated(idx) {
     <div class="gen-body" id="tab-${idx}-shopify">
       <div class="gen-field"><div class="gen-label">URL handle (/products/…)</div>
         <div class="gen-value" contenteditable="true" id="shopify-handle-${idx}">${esc(g.handle)}</div></div>
-      <div class="gen-field"><div class="gen-label">Alt des images (une par photo, envoye a Shopify)</div>
-        ${art.photoIds.slice(0, 10).map((pi, ii) => `<div style='display:flex;gap:8px;align-items:flex-start;margin-bottom:6px'><img src='${photos[pi].dataUrl}' style='width:46px;height:46px;object-fit:cover;border-radius:4px;flex:none'><div class='gen-value' contenteditable='true' oninput="articles[${idx}].generated.altTexts[${ii}]=this.innerText.trim()" id='shopify-alt-${idx}-${ii}' style='flex:1'>${esc(g.altTexts[ii] || g.title)}</div></div>`).join('')}</div>
       <div class="gen-field"><div class="gen-label">Type de produit : <b id="shopify-type-${idx}">${esc(g.productType)}</b></div></div>
       <div class="gen-field"><div class="gen-label">SEO Title</div>
         <div class="gen-value" contenteditable="true" id="shopify-seo-title-${idx}">${esc(g.seoTitle)}</div></div>
       <div class="gen-field"><div class="gen-label">SEO Description</div>
         <div class="gen-value" contenteditable="true" id="shopify-seo-desc-${idx}">${esc(g.seoDesc)}</div></div>
+      <div class="gen-field"><div class="gen-label">Alt des images (une par photo, envoyé à Shopify)</div>
+        ${art.photoIds.slice(0, 10).map((pi, ii) => `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px">
+          <img src="${photos[pi].dataUrl}" style="width:46px;height:46px;object-fit:cover;border-radius:4px;flex:none">
+          <div class="gen-value" contenteditable="true" oninput="articles[${idx}].generated.altTexts[${ii}]=this.innerText.trim()" id="shopify-alt-${idx}-${ii}" style="flex:1">${esc(g.altTexts[ii] || g.title)}</div></div>`).join('')}</div>
       <div class="gen-field"><div class="gen-label">Prix ($ USD)</div>
         <div class="gen-value" contenteditable="true" id="shopify-price-${idx}">${g.price || ''}</div></div>
       <div class="info-text">Les frais de port Shopify se règlent dans les paramètres de livraison de la boutique, pas par article.</div>
@@ -1274,7 +1301,7 @@ async function publishShopify(idx) {
     if (!sPrice) throw new Error('Prix manquant');
     const images = await Promise.all(art.photoIds.slice(0, 10).map(async (pi, ii) => ({
       attachment: dataUrlToBase64(await resizeDataUrl(photos[pi].dataUrl, 1200)),
-      alt: g.altTexts[ii] || title
+      alt: getEditable(`shopify-alt-${idx}-${ii}`) || g.altTexts[ii] || title
     })));
     const r = await fetch(BASE + '/shopify/api', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1330,6 +1357,88 @@ async function saveSettings() {
   document.getElementById('setMsg').textContent = 'Enregistré ✓';
   setTimeout(() => { document.getElementById('setMsg').textContent = ''; }, 2500);
   await loadShipping();
+}
+
+// ══════════════════════════════════════════════════════
+// Onglet Stock
+// ══════════════════════════════════════════════════════
+let stockRows = [];
+const PLAT_BADGE = {
+  ebay:    { l: 'eB', c: '#e53238', n: 'eBay' },
+  etsy:    { l: 'Et', c: '#f1641e', n: 'Etsy' },
+  shopify: { l: 'Sh', c: '#5a9a2b', n: 'Shopify' }
+};
+function showMainTab(t) {
+  document.getElementById('createWrap').style.display = t === 'create' ? '' : 'none';
+  document.getElementById('stockWrap').style.display = t === 'stock' ? '' : 'none';
+  document.getElementById('tabBtn-create').className = 'btn ' + (t === 'create' ? 'btn-primary' : 'btn-outline');
+  document.getElementById('tabBtn-stock').className = 'btn ' + (t === 'stock' ? 'btn-primary' : 'btn-outline');
+  if (t === 'stock' && !stockRows.length) loadStockLive();
+}
+async function loadStockLive() {
+  const info = document.getElementById('stockInfo');
+  info.textContent = 'chargement des 3 plateformes…';
+  try {
+    const [live, saved] = await Promise.all([
+      lsFetch(BASE + '/ls/stock_sync?dry=1').then(r => r.json()),
+      lsFetch(BASE + '/ls/stock').then(r => r.json()).catch(() => ({}))
+    ]);
+    if (live.error) throw new Error(live.error);
+    const rows = (live.items || []).map(r => Object.assign({ status: 'active' }, r));
+    const have = new Set(rows.map(r => r.sku || r.title));
+    (saved.items || []).filter(i => i.status === 'sold' && !have.has(i.sku || i.title)).forEach(i => {
+      rows.push({ sku: i.sku || '', title: i.title || '', price: i.price || '', platforms: {}, status: 'sold', sold_on: i.sold_on || [], sold_at: i.sold_at });
+    });
+    stockRows = rows;
+    const c = live.counts || {};
+    const errs = Object.entries(live.errors || {}).map(([k, v]) => PLAT_BADGE[k].n + ' : ' + v).join(' · ');
+    info.innerHTML = `eBay ${c.ebay ?? '—'} · Etsy ${c.etsy ?? '—'} · Shopify ${c.shopify ?? '—'}` +
+      (saved.last ? ` · dernier contrôle auto : ${esc(String(saved.last).replace('T', ' ').slice(0, 16))}` : ' · aucun contrôle auto encore') +
+      (errs ? `<br><span class="pub-err">${esc(errs)}</span>` : '');
+    renderStock();
+  } catch (e) { info.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 200))}</span>`; }
+}
+function renderStock() {
+  const q = (document.getElementById('stockFilter').value || '').toLowerCase().trim();
+  const mode = document.getElementById('stockShow').value;
+  const body = document.getElementById('stockBody');
+  const rows = stockRows.filter(r => {
+    if (q && !((r.title || '').toLowerCase().includes(q) || (r.sku || '').toLowerCase().includes(q))) return false;
+    const n = Object.keys(r.platforms || {}).length;
+    if (mode === 'active') return r.status === 'active';
+    if (mode === 'partial') return r.status === 'active' && n < 3;
+    if (mode === 'sold') return r.status === 'sold';
+    return true;
+  });
+  if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="info-text">Aucun article.</td></tr>'; return; }
+  body.innerHTML = rows.map(r => {
+    const badges = Object.keys(PLAT_BADGE).map(p => {
+      const on = r.platforms && r.platforms[p];
+      const st = `display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:11px;font-weight:700;margin-right:4px;text-decoration:none;` +
+        (on ? `background:${PLAT_BADGE[p].c};color:#fff` : 'background:#f1f3f5;color:#ced4da');
+      const tag = on && typeof on === 'string' ? `<a href="${esc(on)}" target="_blank" style="${st}" title="${PLAT_BADGE[p].n} : en ligne">${PLAT_BADGE[p].l}</a>`
+        : `<span style="${st}" title="${PLAT_BADGE[p].n} : ${on ? 'en ligne' : 'absent'}">${PLAT_BADGE[p].l}</span>`;
+      return tag;
+    }).join('');
+    const n = Object.keys(r.platforms || {}).length;
+    const status = r.status === 'sold' ? `<span class="status-badge error">Vendu / désactivé</span>` :
+      (n === 3 ? '<span class="status-badge ready">Partout</span>' : `<span class="status-badge generating">${n}/3 plateformes</span>`);
+    return `<tr><td style="font-family:monospace;font-size:12px">${esc(r.sku || '—')}</td><td>${esc(r.title)}</td><td>${esc(r.price || '')}</td><td>${badges}</td><td>${status}</td></tr>`;
+  }).join('');
+}
+async function runStockSync() {
+  if (!confirm('Lancer la synchronisation maintenant ?\nUn article disparu d\'une plateforme sera désactivé sur les autres.')) return;
+  const box = document.getElementById('stockSyncMsg');
+  box.textContent = 'Synchronisation en cours…';
+  try {
+    const d = await lsFetch(BASE + '/ls/stock_sync' + (window.__stockKey ? '?key=' + encodeURIComponent(window.__stockKey) : ''), { method: 'POST' }).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    let h = d.first_run ? '<b>Premier passage</b> : état des lieux enregistré, aucune action.' : `<b>${d.actions.length}</b> action(s).`;
+    if (d.actions.length) h += '<ul style="margin:4px 0 0 18px">' + d.actions.map(a => `<li>${esc(a.title)} (disparu de ${esc((a.gone_on || []).join(', '))}) → ${esc(a.did || a.error)}</li>`).join('') + '</ul>';
+    if (d.blocked && d.blocked.length) h += `<div class="pub-err">⚠ ${d.blocked.length} disparitions d'un coup : rien n'a été désactivé par sécurité (panne d'API possible). Vérifie puis relance.</div>`;
+    box.innerHTML = h;
+    await loadStockLive();
+  } catch (e) { box.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 200))}</span>`; }
 }
 
 // ── Jetons Etsy / Shopify gardes dans le navigateur (survivent aux redemarrages de Render) ──
