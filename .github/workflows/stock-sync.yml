@@ -1,0 +1,24 @@
+name: Stock sync (toutes les heures)
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Reveiller le service puis lancer la synchronisation
+        run: |
+          URL="https://fleamarket-seo-modif-meta-description.onrender.com"
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL/ls/env_status" || echo 000)
+            echo "reveil tentative $i : HTTP $code"
+            [ "$code" = "200" ] && break
+            sleep 20
+          done
+          curl -sS --max-time 280 -X POST "$URL/ls/stock_sync" | tee result.json
+          echo
+          if grep -q '"error"' result.json; then exit 1; fi
