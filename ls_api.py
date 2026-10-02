@@ -868,6 +868,8 @@ def ls_stock_sync():
             it = items[k]
             seen_keys.add(k)
             it.update({'title': e['title'], 'price': e['price']})
+            if e.get('img'):
+                it['img'] = e['img']
             if e['sku'] and not it.get('sku'):
                 it['sku'] = e['sku']
             for p, ref in e['p'].items():
