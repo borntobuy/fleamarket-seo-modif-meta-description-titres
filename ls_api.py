@@ -847,6 +847,79 @@ def ls_stock_part():
         return jsonify({'error': str(e)[:200]}), 500
 
 
+def _refresh_one(plat, ref):
+    """Etat courant d'UNE annonce : {'active': achetable?, 'price', 'qty', 'url'} ou {'error'}."""
+    try:
+        if plat == 'ebay':
+            root = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(ref['id']))
+            it = root.find('.//%sItem' % EBAY_NS)
+            if it is None:
+                return {'active': False}
+            st = _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'ListingStatus')
+            vs = it.findall('.//%sVariations/%sVariation' % (EBAY_NS, EBAY_NS))
+            if vs:
+                qty = sum(max(int(_t(v, EBAY_NS + 'Quantity') or 0) - int(_t(v, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'QuantitySold') or 0), 0) for v in vs)
+            else:
+                qty = max(int(_t(it, EBAY_NS + 'Quantity') or 0) - int(_t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'QuantitySold') or 0), 0)
+            return {'active': st == 'Active' and qty > 0, 'qty': qty,
+                    'price': _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'CurrentPrice') or _t(it, EBAY_NS + 'StartPrice'),
+                    'url': _t(it, EBAY_NS + 'ListingDetails/' + EBAY_NS + 'ViewItemURL')}
+        if plat == 'etsy':
+            j = _etsy_get('/application/listings/%s' % ref['id'])
+            pr = j.get('price') or {}
+            qty = j.get('quantity')
+            return {'active': j.get('state') == 'active' and (qty is None or int(qty) > 0), 'qty': qty,
+                    'price': ('%.2f' % (pr['amount'] / (pr.get('divisor') or 100))) if pr.get('amount') is not None else '',
+                    'url': j.get('url', '')}
+        if plat == 'shopify':
+            shop, h = _shopify_ctx()
+            r = requests.get('https://%s/admin/api/2024-01/products/%s.json' % (shop, ref['id']), headers=h, timeout=30)
+            if r.status_code == 404:
+                return {'active': False}
+            if r.status_code != 200:
+                return {'error': 'Shopify %s' % r.status_code}
+            p = r.json().get('product', {})
+            vs = p.get('variants') or []
+            buyable = any((v.get('inventory_management') or '') == '' or v.get('inventory_policy') == 'continue'
+                          or int(v.get('inventory_quantity') or 0) > 0 for v in vs) if vs else True
+            return {'active': p.get('status') == 'active' and bool(p.get('published_at')) and buyable,
+                    'qty': sum(max(int(v.get('inventory_quantity') or 0), 0) for v in vs),
+                    'price': (vs[0].get('price') if vs else '') or '',
+                    'url': 'https://%s/products/%s' % (shop, p.get('handle', ''))}
+    except Exception as e:
+        return {'error': str(e)[:120]}
+    return {'error': 'plateforme inconnue'}
+
+
+@ls_bp.route('/ls/stock_refresh', methods=['POST'])
+def ls_stock_refresh():
+    """Relit seulement les annonces demandees (pas tout le catalogue)."""
+    items = ((request.json or {}).get('items') or [])[:150]
+    from concurrent.futures import ThreadPoolExecutor
+    jobs = []
+    for i, it in enumerate(items):
+        for p, ref in (it.get('refs') or {}).items():
+            if p in PLATS and ref and ref.get('id'):
+                jobs.append((i, p, ref))
+    out = [dict() for _ in items]
+    # les appels eBay lisent les identifiants dans la requete : on les resout avant de passer aux threads
+    creds = _creds()
+    from flask import current_app
+    app = current_app._get_current_object()
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futs = [(i, p, ex.submit(_refresh_one_ctx, app, creds, p, ref)) for i, p, ref in jobs]
+        for i, p, f in futs:
+            out[i][p] = f.result()
+    return jsonify({'items': out})
+
+
+def _refresh_one_ctx(app, creds, plat, ref):
+    """Execute _refresh_one dans un thread : on recree un contexte de requete portant les identifiants eBay."""
+    with app.test_request_context(headers={'X-LS-EBAY-TOKEN': creds['token'], 'X-LS-EBAY-APP': creds['app'],
+                                           'X-LS-EBAY-CERT': creds['cert']}):
+        return _refresh_one(plat, ref)
+
+
 @ls_bp.route('/ls/stock_merge', methods=['POST'])
 def ls_stock_merge():
     cur = (request.json or {}).get('current') or {}
