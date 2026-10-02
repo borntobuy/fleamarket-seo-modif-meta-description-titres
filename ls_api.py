@@ -1101,3 +1101,49 @@ def ls_imgproxy():
                         headers={'Cache-Control': 'public, max-age=3600'})
     except Exception as e:
         return jsonify({'error': str(e)[:100]}), 502
+
+
+# --------------------------------------------------------------------------
+# Etsy : envoi des photos puis mise en ligne (brouillon -> actif)
+# --------------------------------------------------------------------------
+@ls_bp.route('/ls/etsy_finish', methods=['POST'])
+def ls_etsy_finish():
+    """{shop_id, listing_id, images:[{data(base64 jpeg), alt}], activate:true}"""
+    d = request.json or {}
+    shop, lid = d.get('shop_id'), d.get('listing_id')
+    images = (d.get('images') or [])[:10]
+    if not shop or not lid:
+        return jsonify({'error': 'shop_id / listing_id manquant'}), 400
+    out = {'uploaded': 0, 'errors': []}
+    try:
+        h = _etsy_ctx()
+        for i, im in enumerate(images):
+            try:
+                raw = base64.b64decode(im.get('data', ''))
+                r = requests.post('https://openapi.etsy.com/v3/application/shops/%s/listings/%s/images' % (shop, lid),
+                                  headers=h, files={'image': ('photo%d.jpg' % (i + 1), raw, 'image/jpeg')},
+                                  data={'rank': i + 1, 'alt_text': str(im.get('alt') or '')[:500], 'overwrite': 'false'}, timeout=60)
+                if r.status_code in (200, 201):
+                    out['uploaded'] += 1
+                else:
+                    out['errors'].append('photo %d : %s %s' % (i + 1, r.status_code, r.text[:100]))
+            except Exception as e:
+                out['errors'].append('photo %d : %s' % (i + 1, str(e)[:80]))
+        out['activated'] = False
+        if d.get('activate', True):
+            if out['uploaded'] == 0:
+                out['errors'].append("aucune photo envoyee : annonce laissee en brouillon (Etsy exige au moins une photo)")
+            else:
+                h2 = dict(h)
+                h2['Content-Type'] = 'application/json'
+                r = requests.patch('https://openapi.etsy.com/v3/application/shops/%s/listings/%s' % (shop, lid),
+                                   headers=h2, json={'state': 'active'}, timeout=40)
+                if r.status_code in (200, 201):
+                    out['activated'] = True
+                else:
+                    out['errors'].append('mise en ligne : %s %s' % (r.status_code, r.text[:160]))
+        return jsonify(out)
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
