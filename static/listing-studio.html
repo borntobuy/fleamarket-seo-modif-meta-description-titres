@@ -1532,6 +1532,54 @@ function updateSelCount() {
 function toggleAllStock(cb) { stockVisible().forEach(r => { if (r.status === 'active') r.sel = cb.checked; }); renderStock(); }
 function stockMsg(html) { document.getElementById('stockSyncMsg').innerHTML = html; }
 
+// ── Bandeau d'etat en haut de page : « en cours » → « effectuee(s) » ──
+let __bannerT = null;
+(function () {  // une confirmation refusee ou une alerte (rien de coche) = pas d'operation
+  const c = window.confirm.bind(window), al = window.alert.bind(window);
+  window.confirm = m => { const r = c(m); if (!r) window.__declined = true; return r; };
+  window.alert = m => { window.__declined = true; return al(m); };
+})();
+function banner(kind, text) {
+  let b = document.getElementById('opBanner');
+  if (!b) {
+    b = document.createElement('div'); b.id = 'opBanner';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;text-align:center;padding:10px 16px;font:600 14px Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2);display:none';
+    document.body.appendChild(b);
+  }
+  clearTimeout(__bannerT);
+  const st = { run: ['#fff3bf', '#7c5e00', '⏳ '], ok: ['#d3f9d8', '#1b6b2b', '✓ '], err: ['#ffe3e3', '#a61e1e', '⚠ '] }[kind];
+  b.style.background = st[0]; b.style.color = st[1]; b.style.display = 'block';
+  b.innerHTML = st[2] + text + (kind === 'err' ? ' <span style="cursor:pointer;margin-left:12px;text-decoration:underline" onclick="this.parentNode.style.display=\'none\'">fermer</span>' : '');
+  if (kind === 'ok') __bannerT = setTimeout(() => { b.style.display = 'none'; }, 7000);
+}
+function wrapOp(name, label, doneLabel, check) {
+  const f = window[name]; if (typeof f !== 'function') return;
+  window[name] = async function (...a) {
+    if (window.__batch && name.startsWith('publish')) return f.apply(this, a);
+    banner('run', label + ' en cours…');
+    window.__declined = false;
+    try {
+      const r = await f.apply(this, a);
+      if (window.__declined) { const b = document.getElementById('opBanner'); if (b) b.style.display = 'none'; return r; }
+      const bad = check ? check(a) : '';
+      if (bad) banner('err', label + ' terminée avec des erreurs : ' + bad);
+      else banner('ok', doneLabel);
+      return r;
+    } catch (e) { banner('err', label + ' : ' + String(e.message || e).slice(0, 160)); throw e; }
+  };
+}
+const __stockBad = () => { const el = document.getElementById('stockSyncMsg'); const t = el ? el.innerText : ''; if (el && el.querySelector('.pub-err')) return 'voir le détail sous la barre d\'outils'; const m = t.match(/([1-9]\d*) erreur/); return m ? m[1] + ' erreur(s), voir le détail' : ''; };
+const __pubBad = plat => a => { const el = document.getElementById(`pub-${plat}-${a[0]}`); return el && (el.querySelector('.pub-err') || /erreur|échec|failed|error/i.test(el.innerText)) ? 'voir le détail sur la ligne de l\'article' : ''; };
+window.addEventListener('load', () => {
+  wrapOp('deactivateSelected', 'Désactivation', 'Désactivation effectuée', __stockBad);
+  wrapOp('updateSelectedPrices', 'Mise à jour des prix', 'Prix mis à jour', __stockBad);
+  wrapOp('exportSelected', 'Export', 'Export effectué', __stockBad);
+  wrapOp('runStockSync', 'Synchronisation', 'Synchronisation effectuée', __stockBad);
+  wrapOp('publishEtsy', 'Publication Etsy', 'Publication Etsy effectuée', __pubBad('etsy'));
+  wrapOp('publishShopify', 'Publication Shopify', 'Publication Shopify effectuée', __pubBad('shopify'));
+  wrapOp('publishEbay', 'Création eBay', 'Annonce eBay créée', __pubBad('ebay'));
+});
+
 async function stockAction(action, rows, plats, label) {
   const items = rows.map(r => ({ title: r.title, refs: r.refs, price: r.newPrice !== null ? r.newPrice : r.price }));
   stockMsg(label + ' en cours…');
@@ -1578,7 +1626,7 @@ async function exportOne(r, missing, log) {
   const meta = await claudeJson(`Item listed on a marketplace. Title: ${s.title}\nDescription: ${plain.slice(0, 1500)}\nExisting tags: ${(src.shopify && src.shopify.tags || src.etsy && src.etsy.tags || []).join(', ')}\n\nReturn ONLY JSON with keys: keyword (best SEO keyword, 1-6 words), etsyTags (exactly 13 tags, each 20 characters or fewer, letters numbers spaces only), altTexts (${photoIds.length} items, max 250 chars, what is visible plus material and origin), seoTitle (max 70 chars), seoDesc (max 160 chars), productType (2-3 words), whenMade (one of ${ETSY_WHEN_MADE.join(', ')}), materials (up to 5 lowercase), etsyCategoryGuess (Etsy category path in Etsy wording). No double quote characters inside values.`, 1500);
   const desc = String(s.description || '').replace(/<!--\s*fmf-[a-z]+\s*-->/g, '').trim();
   let sku0 = r.sku || s.sku || '';
-  let renewed = false;
+  let renewed = false, skuNote = '';
   if (sku0) {
     // SKU deja utilise par un article vendu/desactive (relisting) : on en attribue un nouveau
     const u = await lsFetch(BASE + '/ls/sku_used', { method: 'POST', headers: JSON_H, body: JSON.stringify({ sku: sku0 }) }).then(x => x.json());
@@ -1590,7 +1638,7 @@ async function exportOne(r, missing, log) {
   if (renewed && r.refs && r.refs.ebay) {
     const d = await lsFetch(BASE + '/ls/ebay_set_sku', { method: 'POST', headers: JSON_H, body: JSON.stringify({ item_id: r.refs.ebay.id, sku: art.sku }) }).then(x => x.json());
     if (d.error) throw new Error('nouveau SKU non appliqué sur eBay : ' + d.error);
-    log && log.push && log.push('nouveau SKU ' + art.sku);
+    skuNote = d.skipped ? `nouveau SKU ${art.sku} (eBay inchangé : annonce à variantes)` : `nouveau SKU ${art.sku} appliqué sur eBay`;
   }
   const tags = (meta.etsyTags || []).map(t => String(t).replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 20)).filter(Boolean).slice(0, 13);
   art.generated = {
@@ -1610,7 +1658,7 @@ async function exportOne(r, missing, log) {
   setStatus(idx, 'generating', 'Catégories…');
   await classifyAndFill(idx);
   setStatus(idx, 'ready', 'Prêt');
-  const out = [];
+  const out = skuNote ? [skuNote] : [];
   for (const t of missing) {
     if (t === 'ebay') { out.push('eBay : préparé dans l\'onglet Création (clique « Créer listing eBay »)'); continue; }
     if (t === 'etsy') { await publishEtsy(idx); out.push('Etsy : ' + document.getElementById(`pub-etsy-${idx}`).innerText.trim()); }
