@@ -1420,13 +1420,44 @@ function showMainTab(t) {
 }
 async function loadStockLive() {
   const info = document.getElementById('stockInfo');
-  info.textContent = 'chargement des 3 plateformes…';
+  info.textContent = 'chargement… 0 %';
   try {
-    const [live, saved] = await Promise.all([
-      lsFetch(BASE + '/ls/stock_sync?dry=1').then(r => r.json()),
+    // chargement page par page, 3 plateformes en parallele, avec pourcentage d'avancement
+    const prog = { ebay: [0, 0], etsy: [0, 0], shopify: [0, 0] };  // [pages faites, pages totales]
+    const showPct = () => {
+      let d = 0, t = 0;
+      Object.values(prog).forEach(v => { d += v[0]; t += v[1]; });
+      const known = Object.values(prog).filter(v => v[1] > 0).length;
+      const pct = t ? Math.min(99, Math.round(100 * d / t * known / 3)) : 0;
+      info.innerHTML = `chargement… <b>${pct} %</b> <span style="display:inline-block;width:140px;height:8px;background:#e9ecef;border-radius:4px;vertical-align:middle"><span style="display:block;height:8px;width:${pct}%;background:#40c057;border-radius:4px"></span></span>`;
+    };
+    const current = { ebay: [], etsy: [], shopify: [] }, errors = {};
+    const loadPlat = async (p) => {
+      try {
+        let next = null, first = true, page = 1;
+        for (let n = 0; n < 60; n++) {
+          const q = p === 'ebay' ? `&page=${page}` : (p === 'etsy' ? `&offset=${next || 0}` : (next ? `&cursor=${encodeURIComponent(next)}` : ''));
+          const d = await lsFetch(BASE + `/ls/stock_part?plat=${p}${q}`).then(r => r.json());
+          if (d.error) throw new Error(d.error);
+          current[p].push(...(d.items || []));
+          if (d.pages) prog[p][1] = d.pages;
+          prog[p][0]++; showPct();
+          if (p === 'ebay') { if (page >= (d.pages || 1)) break; page++; }
+          else { if (!d.next) break; next = d.next; }
+        }
+        prog[p][1] = prog[p][0];
+      } catch (e) { errors[p] = String(e.message).slice(0, 200); delete current[p]; prog[p][1] = prog[p][0] = 1; }
+      showPct();
+    };
+    const [, saved] = await Promise.all([
+      Promise.all(['ebay', 'etsy', 'shopify'].map(loadPlat)),
       lsFetch(BASE + '/ls/stock').then(r => r.json()).catch(() => ({}))
     ]);
+    info.innerHTML = 'rapprochement des articles… <b>99 %</b>';
+    const live = await lsFetch(BASE + '/ls/stock_merge', { method: 'POST', headers: JSON_H, body: JSON.stringify({ current }) }).then(r => r.json());
     if (live.error) throw new Error(live.error);
+    live.counts = {}; Object.keys(current).forEach(p => { live.counts[p] = current[p].length; });
+    live.errors = errors;
     const rows = (live.items || []).map(r => Object.assign({ status: 'active' }, r));
     const have = new Set(rows.map(r => r.sku || r.title));
     (saved.items || []).filter(i => i.status === 'sold' && !have.has(i.sku || i.title)).forEach(i => {
