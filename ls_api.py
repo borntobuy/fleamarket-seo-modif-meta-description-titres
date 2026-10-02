@@ -631,26 +631,41 @@ def _norm_title(t):
     return t[:40]
 
 
-def _ebay_active():
+def _ebay_page(page):
+    """Une page d'annonces eBay actives et achetables -> (items, nb_pages)."""
     out = []
-    page = 1
+    root = _ebay_call('GetMyeBaySelling',
+                      '<ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage>'
+                      '<PageNumber>%d</PageNumber></Pagination></ActiveList>' % page)
+    errs = [e for e in _errors(root) if e[0] == 'Error']
+    if errs:
+        raise StoreError('eBay : ' + errs[0][1][:150])
+    for it in root.findall('.//%sActiveList/%sItemArray/%sItem' % (EBAY_NS, EBAY_NS, EBAY_NS)):
+        qa = _t(it, EBAY_NS + 'QuantityAvailable')
+        if qa == '':
+            q, s = _t(it, EBAY_NS + 'Quantity'), _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'QuantitySold')
+            qa = str(max(int(q or 1) - int(s or 0), 0)) if q else ''
+        qty = int(qa) if qa != '' else None
+        if qty is not None and qty <= 0:
+            continue  # plus achetable
+        out.append({
+            'id': _t(it, EBAY_NS + 'ItemID'),
+            'title': _t(it, EBAY_NS + 'Title'),
+            'sku': _t(it, EBAY_NS + 'SKU').strip(),
+            'price': _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'CurrentPrice'),
+            'url': _t(it, EBAY_NS + 'ListingDetails/' + EBAY_NS + 'ViewItemURL'),
+            'img': _t(it, EBAY_NS + 'PictureDetails/' + EBAY_NS + 'GalleryURL'),
+            'qty': qty,
+        })
+    total = int(_t(root, './/%sActiveList/%sPaginationResult/%sTotalNumberOfPages' % (EBAY_NS, EBAY_NS, EBAY_NS)) or 1)
+    return out, total
+
+
+def _ebay_active():
+    out, page = [], 1
     while True:
-        root = _ebay_call('GetMyeBaySelling',
-                          '<ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage>'
-                          '<PageNumber>%d</PageNumber></Pagination></ActiveList>' % page)
-        errs = [e for e in _errors(root) if e[0] == 'Error']
-        if errs:
-            raise StoreError('eBay : ' + errs[0][1][:150])
-        for it in root.findall('.//%sActiveList/%sItemArray/%sItem' % (EBAY_NS, EBAY_NS, EBAY_NS)):
-            out.append({
-                'id': _t(it, EBAY_NS + 'ItemID'),
-                'title': _t(it, EBAY_NS + 'Title'),
-                'sku': _t(it, EBAY_NS + 'SKU').strip(),
-                'price': _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'CurrentPrice'),
-                'url': _t(it, EBAY_NS + 'ListingDetails/' + EBAY_NS + 'ViewItemURL'),
-                'img': _t(it, EBAY_NS + 'PictureDetails/' + EBAY_NS + 'GalleryURL'),
-            })
-        total = int(_t(root, './/%sActiveList/%sPaginationResult/%sTotalNumberOfPages' % (EBAY_NS, EBAY_NS, EBAY_NS)) or 1)
+        items, total = _ebay_page(page)
+        out += items
         if page >= total or page >= 30:
             break
         page += 1
@@ -689,27 +704,46 @@ def _etsy_get(path, params=None):
     return r.json()
 
 
+_etsy_shop_cache = {}
+
+
+def _etsy_shop():
+    if not _etsy_shop_cache.get('id'):
+        shop = _etsy_get('/application/users/me').get('shop_id')
+        if not shop:
+            raise StoreError('Boutique Etsy introuvable')
+        _etsy_shop_cache['id'] = shop
+    return _etsy_shop_cache['id']
+
+
+def _etsy_page(offset):
+    """Une page (100) d'annonces Etsy actives et achetables -> (items, count_total)."""
+    shop = _etsy_shop()
+    j = _etsy_get('/application/shops/%s/listings' % shop, {'state': 'active', 'limit': 100, 'offset': offset, 'includes': 'Images'})
+    out = []
+    for it in j.get('results', []):
+        qty = it.get('quantity')
+        if qty is not None and int(qty) <= 0:
+            continue
+        pr = it.get('price') or {}
+        price = ''
+        if pr.get('amount') is not None:
+            price = '%.2f' % (pr['amount'] / (pr.get('divisor') or 100))
+        skus = it.get('skus') or []
+        out.append({'id': str(it.get('listing_id')), 'title': it.get('title', ''),
+                    'sku': (skus[0] if skus else '').strip(), 'price': price, 'url': it.get('url', ''),
+                    'shop': shop, 'qty': qty,
+                    'img': ((it.get('images') or [{}])[0].get('url_75x75') or '')})
+    return out, int(j.get('count', 0))
+
+
 def _etsy_active():
-    me = _etsy_get('/application/users/me')
-    shop = me.get('shop_id')
-    if not shop:
-        raise StoreError('Boutique Etsy introuvable')
     out, offset = [], 0
     while True:
-        j = _etsy_get('/application/shops/%s/listings' % shop, {'state': 'active', 'limit': 100, 'offset': offset, 'includes': 'Images'})
-        res = j.get('results', [])
-        for it in res:
-            pr = it.get('price') or {}
-            price = ''
-            if pr.get('amount') is not None:
-                price = '%.2f' % (pr['amount'] / (pr.get('divisor') or 100))
-            skus = it.get('skus') or []
-            out.append({'id': str(it.get('listing_id')), 'title': it.get('title', ''),
-                        'sku': (skus[0] if skus else '').strip(), 'price': price, 'url': it.get('url', ''),
-                        'shop': shop,
-                        'img': ((it.get('images') or [{}])[0].get('url_75x75') or '')})
+        items, count = _etsy_page(offset)
+        out += items
         offset += 100
-        if not res or offset >= int(j.get('count', 0)) or offset > 5000:
+        if offset >= count or offset > 5000:
             break
     return out
 
@@ -723,27 +757,92 @@ def _shopify_ctx():
     return m.SHOPIFY_SHOP, {'X-Shopify-Access-Token': tok, 'Content-Type': 'application/json'}
 
 
-def _shopify_active():
+def _shopify_count():
     shop, h = _shopify_ctx()
-    out = []
+    r = requests.get('https://%s/admin/api/2024-01/products/count.json' % shop, headers=h,
+                     params={'status': 'active', 'published_status': 'published'}, timeout=30)
+    return int(r.json().get('count', 0)) if r.status_code == 200 else 0
+
+
+def _shopify_page(cursor=None):
+    """Une page (250) de produits Shopify actifs, publies et achetables -> (items, curseur_suivant)."""
+    shop, h = _shopify_ctx()
     url = 'https://%s/admin/api/2024-01/products.json' % shop
-    params = {'status': 'active', 'limit': 250, 'fields': 'id,title,handle,variants,image'}
+    fields = 'id,title,handle,variants,image'
+    if cursor:
+        params = {'limit': 250, 'page_info': cursor, 'fields': fields}
+    else:
+        params = {'status': 'active', 'published_status': 'published', 'limit': 250, 'fields': fields}
+    r = requests.get(url, headers=h, params=params, timeout=40)
+    if r.status_code != 200:
+        raise StoreError('Shopify %s : %s' % (r.status_code, r.text[:150]))
+    out = []
+    for p in r.json().get('products', []):
+        vs = p.get('variants') or []
+        qty, buyable = 0, False
+        for v in vs:
+            tracked = (v.get('inventory_management') or '') != ''
+            q = int(v.get('inventory_quantity') or 0)
+            if not tracked or v.get('inventory_policy') == 'continue':
+                buyable = True
+            elif q > 0:
+                buyable = True
+            qty += max(q, 0)
+        if vs and not buyable:
+            continue  # brouillon impossible ici (filtre), mais stock a 0 = plus achetable
+        sku = next((v.get('sku') for v in vs if v.get('sku')), '') or ''
+        out.append({'id': str(p['id']), 'title': p.get('title', ''), 'sku': sku.strip(),
+                    'price': (vs[0].get('price') if vs else '') or '',
+                    'url': 'https://%s/products/%s' % (shop, p.get('handle', '')),
+                    'img': ((p.get('image') or {}).get('src') or ''), 'qty': qty})
+    nxt = (r.links or {}).get('next', {}).get('url') or ''
+    token = ''
+    if nxt:
+        from urllib.parse import urlparse, parse_qs
+        token = (parse_qs(urlparse(nxt).query).get('page_info') or [''])[0]
+    return out, token
+
+
+def _shopify_active():
+    out, cur = [], None
     for _ in range(40):
-        r = requests.get(url, headers=h, params=params, timeout=40)
-        if r.status_code != 200:
-            raise StoreError('Shopify %s : %s' % (r.status_code, r.text[:150]))
-        for p in r.json().get('products', []):
-            vs = p.get('variants') or []
-            sku = next((v.get('sku') for v in vs if v.get('sku')), '') or ''
-            out.append({'id': str(p['id']), 'title': p.get('title', ''), 'sku': sku.strip(),
-                        'price': (vs[0].get('price') if vs else '') or '',
-                        'url': 'https://%s/products/%s' % (shop, p.get('handle', '')),
-                        'img': ((p.get('image') or {}).get('src') or '')})
-        nxt = (r.links or {}).get('next', {}).get('url')
-        if not nxt:
+        items, cur = _shopify_page(cur)
+        out += items
+        if not cur:
             break
-        url, params = nxt, None
     return out
+
+
+@ls_bp.route('/ls/stock_part')
+def ls_stock_part():
+    """Une page d'une plateforme (le navigateur boucle et affiche le pourcentage d'avancement)."""
+    plat = request.args.get('plat', '')
+    try:
+        if plat == 'ebay':
+            page = int(request.args.get('page', 1))
+            items, total = _ebay_page(page)
+            return jsonify({'items': items, 'pages': total})
+        if plat == 'etsy':
+            offset = int(request.args.get('offset', 0))
+            items, count = _etsy_page(offset)
+            return jsonify({'items': items, 'pages': max(1, -(-count // 100)), 'next': offset + 100 if offset + 100 < count else None})
+        if plat == 'shopify':
+            cur = request.args.get('cursor') or None
+            items, nxt = _shopify_page(cur)
+            out = {'items': items, 'next': nxt or None}
+            if not cur:
+                out['pages'] = max(1, -(-_shopify_count() // 250))
+            return jsonify(out)
+        return jsonify({'error': 'plateforme inconnue'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+
+
+@ls_bp.route('/ls/stock_merge', methods=['POST'])
+def ls_stock_merge():
+    cur = (request.json or {}).get('current') or {}
+    merged = _merge({p: cur.get(p) or [] for p in PLATS})
+    return jsonify({'items': _view(merged)})
 
 
 def _deactivate(plat, ref):
@@ -829,6 +928,7 @@ def _merge(current):
             if it.get('img') and (plat == 'ebay' or not ent['img']):
                 ent['img'] = it['img']
             ent.setdefault('price_by', {})[plat] = it['price']
+            ent.setdefault('qty_by', {})[plat] = it.get('qty')
             if it['sku'] and not ent['sku']:
                 ent['sku'] = it['sku']
             if it['sku']:
@@ -854,7 +954,7 @@ def _view(merged, status_by_key=None):
     rows = []
     for e in merged:
         rows.append({'sku': e['sku'], 'title': e['title'], 'price': e['price'], 'img': e.get('img', ''),
-                     'price_by': e.get('price_by', {}),
+                     'price_by': e.get('price_by', {}), 'qty_by': e.get('qty_by', {}),
                      'platforms': {p: e['p'][p].get('url', '') or True for p in e['p']},
                      'refs': {p: {k: e['p'][p][k] for k in ('id', 'shop') if k in e['p'][p]} for p in e['p']}})
     return rows
