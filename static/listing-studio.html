@@ -1430,7 +1430,7 @@ async function loadStockLive() {
     const rows = (live.items || []).map(r => Object.assign({ status: 'active' }, r));
     const have = new Set(rows.map(r => r.sku || r.title));
     (saved.items || []).filter(i => i.status === 'sold' && !have.has(i.sku || i.title)).forEach(i => {
-      rows.push({ sku: i.sku || '', title: i.title || '', price: i.price || '', platforms: {}, refs: {}, status: 'sold', sold_on: i.sold_on || [], sold_at: i.sold_at });
+      rows.push({ sku: i.sku || '', title: i.title || '', price: i.price || '', img: i.img || '', platforms: {}, refs: {}, status: 'sold', sold_on: i.sold_on || [], sold_at: i.sold_at });
     });
     rows.forEach((r, i) => { r._i = i; r.sel = false; r.newPrice = null; });
     stockRows = rows;
