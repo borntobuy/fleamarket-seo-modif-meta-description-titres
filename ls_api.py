@@ -1223,6 +1223,11 @@ def ls_ebay_set_sku():
     if not item_id or not sku:
         return jsonify({'error': 'parametres manquants'}), 400
     try:
+        g = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(item_id))
+        gi = g.find('.//%sItem' % EBAY_NS)
+        if gi is not None and gi.find('.//%sVariations/%sVariation' % (EBAY_NS, EBAY_NS)) is not None:
+            # annonce a variantes : le SKU se porte par variante, on ne le touche pas
+            return jsonify({'ok': True, 'skipped': 'variantes'})
         root = _ebay_call('ReviseFixedPriceItem',
                           '<Item><ItemID>%s</ItemID><SKU>%s</SKU></Item>' % (xml_escape(item_id), xml_escape(sku)))
         errs = [e for e in _errors(root) if e[0] == 'Error']
