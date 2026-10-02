@@ -152,10 +152,16 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
 
 <!-- Stock -->
 <div id="stockWrap" style="display:none;padding:14px 24px 40px">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <div style="position:relative;flex:1;max-width:640px">
+      <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#868e96">🔍</span>
+      <input id="stockFilter" type="search" placeholder="Rechercher un article : SKU ou mots du titre…" oninput="renderStock()" autocomplete="off" style="width:100%;padding:10px 12px 10px 36px;border:2px solid #4263eb;border-radius:8px;font-size:14px">
+    </div>
+    <span id="stockCount" class="info-text"></span>
+  </div>
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:13px">
     <button class="btn btn-primary" style="padding:7px 14px;font-size:13px" onclick="loadStockLive()">↻ Actualiser (en direct)</button>
     <button class="btn btn-outline" style="padding:7px 14px;font-size:13px" onclick="runStockSync()">⚡ Synchroniser maintenant</button>
-    <input id="stockFilter" placeholder="Filtrer (titre ou SKU)…" oninput="renderStock()" style="padding:6px 10px;border:1px solid #ced4da;border-radius:6px;font-size:13px;min-width:200px">
     <select id="stockShow" onchange="renderStock()" style="padding:6px 8px;border:1px solid #ced4da;border-radius:6px;font-size:13px">
       <option value="all">Tous</option><option value="active">En ligne</option><option value="partial">Pas sur toutes les plateformes</option><option value="sold">Vendus / désactivés</option>
     </select>
@@ -1393,7 +1399,7 @@ function showMainTab(t) {
   document.getElementById('stockWrap').style.display = t === 'stock' ? '' : 'none';
   document.getElementById('tabBtn-create').className = 'btn ' + (t === 'create' ? 'btn-primary' : 'btn-outline');
   document.getElementById('tabBtn-stock').className = 'btn ' + (t === 'stock' ? 'btn-primary' : 'btn-outline');
-  if (t === 'stock' && !stockRows.length) loadStockLive();
+  if (t === 'stock') { if (!stockRows.length) loadStockLive(); setTimeout(() => document.getElementById('stockFilter').focus(), 50); }
 }
 async function loadStockLive() {
   const info = document.getElementById('stockInfo');
@@ -1429,10 +1435,11 @@ function platIcon(p, on) {
   return url ? `<a href="${esc(url)}" target="_blank" style="${st}" title="${title}">${img}</a>` : `<span style="${st}" title="${title}">${img}</span>`;
 }
 function stockVisible() {
-  const q = (document.getElementById('stockFilter').value || '').toLowerCase().trim();
+  const toks = (document.getElementById('stockFilter').value || '').toLowerCase().split(/\s+/).filter(Boolean);
   const mode = document.getElementById('stockShow').value;
   return stockRows.filter(r => {
-    if (q && !((r.title || '').toLowerCase().includes(q) || (r.sku || '').toLowerCase().includes(q))) return false;
+    const hay = ((r.title || '') + ' ' + (r.sku || '')).toLowerCase();
+    if (toks.length && !toks.every(t => hay.includes(t))) return false;
     const n = Object.keys(r.platforms || {}).length;
     if (mode === 'active') return r.status === 'active';
     if (mode === 'partial') return r.status === 'active' && n < 3;
@@ -1443,6 +1450,7 @@ function stockVisible() {
 function renderStock() {
   const body = document.getElementById('stockBody');
   const rows = stockVisible();
+  const sc = document.getElementById('stockCount'); if (sc) sc.textContent = stockRows.length ? rows.length + ' / ' + stockRows.length + ' article(s)' : '';
   if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="info-text">Aucun article.</td></tr>'; updateSelCount(); return; }
   body.innerHTML = rows.map(r => {
     const n = Object.keys(r.platforms || {}).length;
