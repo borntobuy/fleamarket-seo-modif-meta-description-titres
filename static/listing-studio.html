@@ -1565,7 +1565,9 @@ async function exportSelected() {
   const targets = sel === 'all' ? ['ebay', 'etsy', 'shopify'] : [sel];
   const todo = rows.map(r => ({ r, missing: targets.filter(t => !(r.platforms || {})[t]) })).filter(x => x.missing.length);
   if (!todo.length) return alert('Tous les articles cochés sont déjà sur ' + (sel === 'all' ? 'les 3 plateformes' : PLAT_BADGE[sel].n) + '.');
-  if (!confirm(`Copier ${todo.length} article(s) vers ${targets.map(t => PLAT_BADGE[t].n).join(', ')} ?\nEtsy et Shopify : brouillon. eBay : préparé dans l'onglet Création (tu valides toi-même).`)) return;
+  const used = [...new Set(todo.flatMap(x => x.missing))];
+  const notes = { etsy: 'Etsy : brouillon créé automatiquement (photos à vérifier dans Etsy).', shopify: 'Shopify : brouillon créé automatiquement.', ebay: "eBay : l'annonce est préparée dans l'onglet Création, tu cliques toi-même sur « Créer listing eBay »." };
+  if (!confirm(`Copier ${todo.length} article(s) vers ${used.map(t => PLAT_BADGE[t].n).join(', ')} ?\n\n` + used.map(t => notes[t]).join('\n'))) return;
   window.__batch = true;
   const lines = [];
   try {
