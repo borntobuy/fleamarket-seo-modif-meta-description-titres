@@ -1437,7 +1437,12 @@ async function loadStockLive() {
         let next = null, first = true, page = 1;
         for (let n = 0; n < 60; n++) {
           const q = p === 'ebay' ? `&page=${page}` : (p === 'etsy' ? `&offset=${next || 0}` : (next ? `&cursor=${encodeURIComponent(next)}` : ''));
-          const d = await lsFetch(BASE + `/ls/stock_part?plat=${p}${q}`).then(r => r.json());
+          let d = null;
+          for (let t = 0; t < 8 && !d; t++) {  // serveur en (re)demarrage : page HTML au lieu de JSON -> on reessaie
+            try { d = await lsFetch(BASE + `/ls/stock_part?plat=${p}${q}`).then(r => r.text()).then(x => JSON.parse(x)); }
+            catch (_) { info.innerHTML = 'le serveur démarre ou se met à jour, nouvelle tentative…'; await new Promise(r => setTimeout(r, 5000)); }
+          }
+          if (!d) throw new Error('serveur injoignable, réessaie dans une minute');
           if (d.error) throw new Error(d.error);
           current[p].push(...(d.items || []));
           if (d.pages) prog[p][1] = d.pages;
