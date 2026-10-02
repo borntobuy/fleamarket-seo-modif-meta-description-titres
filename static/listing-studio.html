@@ -1299,11 +1299,16 @@ async function publishEtsy(idx) {
       } catch (_) { notes.push('attribut ' + p.property_id); }
     }
     try {
+      // Etsy exige desormais le « readiness_state_id » (profil de delai) deja present sur l'offre creee
+      const inv = await etsyApi('GET', `/application/listings/${d.listing_id}/inventory`);
+      const o = (((inv.products || [])[0] || {}).offerings || [])[0] || {};
+      const offering = { quantity: o.quantity || 1, is_enabled: true, price: o.price ? o.price.amount / (o.price.divisor || 100) : price };
+      if (o.readiness_state_id) offering.readiness_state_id = o.readiness_state_id;
       await etsyApi('PUT', `/application/listings/${d.listing_id}/inventory`, {
-        products: [{ sku: art.sku, property_values: [], offerings: [{ quantity: 1, is_enabled: true, price }] }],
-        price_on_property: [], quantity_on_property: [], sku_on_property: []
+        products: [{ sku: art.sku, property_values: [], offerings: [offering] }],
+        price_on_property: [], quantity_on_property: [], sku_on_property: [], readiness_state_on_property: []
       });
-    } catch (_) { notes.push('SKU'); }
+    } catch (e) { notes.push('SKU (' + String(e.message || e).slice(0, 80) + ')'); }
     // photos + mise en ligne (actif)
     status.innerHTML = '<span class="info-text">envoi des photos à Etsy…</span>';
     let fin = null;
@@ -1673,6 +1678,7 @@ async function exportOne(r, missing, log) {
       let perr = '';
       try { await (t === 'etsy' ? publishEtsy(idx) : publishShopify(idx)); } catch (e) { perr = e.message || 'erreur'; }
       const el = document.getElementById(`pub-${t}-${idx}`); const txt = el ? el.innerText.trim() : '';
+      if (!perr && /non posé : SKU/.test(txt)) throw new Error(`${nm} : annonce créée mais le SKU n'a pas pu être posé (${txt.slice(0, 160)}). SKU attendu : ${art.sku}`);
       const bad = perr || (el && (el.querySelector('.pub-err') || /erreur|échec|failed|error/i.test(txt)));
       if (bad) {
         if (ebayRollback) { await ebayRollback(); out.push('SKU eBay remis comme avant'); }
