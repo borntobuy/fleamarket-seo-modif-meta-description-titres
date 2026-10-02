@@ -660,7 +660,7 @@ async function claudeJson(prompt, maxTokens = 1500) {
   return JSON.parse(m[0].replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''));
 }
 
-const ETSY_WHEN_MADE = ['made_to_order','2020_2026','2010_2019','2000_2009','before_2000','1990s','1980s','1970s','1960s','1950s','1940s','1930s','1920s','1910s','1900s','1800s','1700s','before_1700'];
+const ETSY_WHEN_MADE = ['made_to_order','2020_2026','2010_2019','2007_2009','2000_2006','before_2007','1990s','1980s','1970s','1960s','1950s','1940s','1930s','1920s','1910s','1900s','1800s','1700s','before_1700'];
 const WRAP_OPEN = "<div style='font-family:Arial,sans-serif;font-size:24px;text-align:center;'>";
 
 // ══════════════════════════════════════════════════════
@@ -749,7 +749,7 @@ async function generateOne(idx) {
     if (!/^<div/i.test(desc)) desc = WRAP_OPEN + desc + '</div>';
 
     const price = Math.round(Number(g.price) || 0);
-    const whenMade = ETSY_WHEN_MADE.includes(g.whenMade) ? g.whenMade : 'before_2000';
+    const whenMade = ETSY_WHEN_MADE.includes(g.whenMade) ? g.whenMade : 'before_2007';
     const tags = (g.etsyTags || []).map(t => String(t).replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 20)).filter(Boolean).slice(0, 13);
 
     art.generated = {
@@ -1653,7 +1653,7 @@ async function exportOne(r, missing, log) {
     handle: slugify(s.title), price: Math.round(Number(s.price || r.price) || 0), tags, altTexts: meta.altTexts || [],
     seoTitle: String(meta.seoTitle || '').slice(0, 70), seoDesc: String(meta.seoDesc || '').slice(0, 160),
     etsyCategoryGuess: meta.etsyCategoryGuess || '', productType: meta.productType || '',
-    whenMade: ETSY_WHEN_MADE.includes(meta.whenMade) ? meta.whenMade : 'before_2000',
+    whenMade: ETSY_WHEN_MADE.includes(meta.whenMade) ? meta.whenMade : 'before_2007',
     materials: (meta.materials || []).slice(0, 5).map(x => String(x).toLowerCase().slice(0, 45))
   };
   art.ebayCat = ''; art.etsyCat = ''; art.ebayVals = {}; art.etsyVals = {};
