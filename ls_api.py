@@ -630,7 +630,29 @@ def ls_etsy_refresh():
 # --------------------------------------------------------------------------
 PLATS = ('ebay', 'etsy', 'shopify')
 STOCK_PATH = os.environ.get('LS_STOCK_PATH', 'ls_stock.json')
-MAX_AUTO = 10            # au-dela, on n'agit pas (protection contre une panne d'API)
+MAX_AUTO = 40            # au-dela, on n'agit pas (protection contre une panne d'API)
+
+
+def _shopify_states(ids):
+    """id produit -> {'sold_out': bool} pour les produits Shopify publies ; absent = brouillon/archive/supprime."""
+    out = {}
+    try:
+        shop, h = _shopify_ctx()
+        ids = [str(i) for i in ids if i]
+        for i in range(0, len(ids), 100):
+            r = requests.get('https://%s/admin/api/2024-01/products.json' % shop, headers=h,
+                             params={'ids': ','.join(ids[i:i + 100]), 'limit': 250, 'fields': 'id,status,published_at,variants'}, timeout=40)
+            if r.status_code != 200:
+                continue
+            for p in r.json().get('products', []):
+                vs = p.get('variants') or []
+                buyable = any((v.get('inventory_management') or '') == '' or v.get('inventory_policy') == 'continue'
+                              or int(v.get('inventory_quantity') or 0) > 0 for v in vs) if vs else True
+                if p.get('status') == 'active' and p.get('published_at') and not buyable:
+                    out[str(p['id'])] = {'sold_out': True}
+    except Exception:
+        pass
+    return out
 _sync_lock = threading.Lock()
 
 
@@ -1102,13 +1124,26 @@ def ls_stock_sync():
 
         first_run = not st.get('last')
         actions, blocked, newly_sold = [], [], []
+        cands = []
         for k, it in items.items():
             if it.get('status') != 'active' or not it.get('sku'):
                 continue  # sans SKU : rapprochement par titre trop risque, jamais d'action auto
             gone = [p for p in ok_plats if (it['p'].get(p) or {}).get('active') and
                     p not in next((m['p'] for m in merged if (m['sku'] and m['sku'] == it.get('sku')) or m['tkey'] == it.get('tkey')), {})]
-            if not gone:
-                continue
+            if gone:
+                cands.append((k, it, gone))
+        # Une annonce Shopify absente de la liste « achetable » n'est PAS forcement vendue : brouillon, archivee,
+        # supprimee... On ne propage que si le produit est publie et reellement epuise.
+        sids = [it['p']['shopify']['id'] for k, it, g in cands if 'shopify' in g and it['p'].get('shopify', {}).get('id')]
+        sstates = _shopify_states(sids) if sids else {}
+        for k, it, gone in cands:
+            if 'shopify' in gone:
+                s = sstates.get(str(it['p']['shopify'].get('id')))
+                if not (s and s.get('sold_out')):  # brouillon / archive / supprime / etat inconnu : retrait manuel
+                    it['p']['shopify']['active'] = False
+                    gone = [p for p in gone if p != 'shopify']
+                    if not gone:
+                        continue
             for p in gone:
                 it['p'][p]['active'] = False
             newly_sold.append((k, gone))
