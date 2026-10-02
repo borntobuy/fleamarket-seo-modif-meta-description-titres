@@ -1235,6 +1235,87 @@ def ls_ebay_set_sku():
         return jsonify({'error': 'eBay : %s' % e}), 500
 
 
+# --------------------------------------------------------------------------
+# RAPPORT : annonces non actives (vendues / brouillons / inactives) + stockage du rapport
+# --------------------------------------------------------------------------
+@ls_bp.route('/ls/report_part')
+def ls_report_part():
+    """Annonces NON actives, page par page : etsy (state=sold_out|inactive|draft|expired),
+    shopify (status=draft|archived), ebay (SoldList 60 jours)."""
+    plat, kind = request.args.get('plat', ''), request.args.get('kind', '')
+    try:
+        if plat == 'etsy':
+            if kind not in ('sold_out', 'inactive', 'draft', 'expired'):
+                return jsonify({'error': 'etat inconnu'}), 400
+            offset = int(request.args.get('offset', 0))
+            shop = _etsy_shop()
+            j = _etsy_get('/application/shops/%s/listings' % shop, {'state': kind, 'limit': 100, 'offset': offset})
+            items = [{'id': str(it.get('listing_id')), 'title': it.get('title', ''),
+                      'sku': ((it.get('skus') or [''])[0] or '').strip(), 'st': kind,
+                      'ts': it.get('state_timestamp') or it.get('last_modified_timestamp')} for it in j.get('results', [])]
+            count = int(j.get('count', 0))
+            return jsonify({'items': items, 'count': count, 'next': offset + 100 if offset + 100 < count else None})
+        if plat == 'shopify':
+            if kind not in ('draft', 'archived'):
+                return jsonify({'error': 'etat inconnu'}), 400
+            shop, h = _shopify_ctx()
+            cur = request.args.get('cursor') or None
+            fields = 'id,title,variants,status,updated_at'
+            params = {'limit': 250, 'page_info': cur, 'fields': fields} if cur else {'status': kind, 'limit': 250, 'fields': fields}
+            r = requests.get('https://%s/admin/api/2024-01/products.json' % shop, headers=h, params=params, timeout=40)
+            if r.status_code != 200:
+                return jsonify({'error': 'Shopify %s' % r.status_code}), 500
+            items = []
+            for p in r.json().get('products', []):
+                vs = p.get('variants') or []
+                items.append({'id': str(p['id']), 'title': p.get('title', ''),
+                              'sku': next((v.get('sku') for v in vs if v.get('sku')), '') or '', 'st': kind,
+                              'ts': p.get('updated_at')})
+            nxt = (r.links or {}).get('next', {}).get('url') or ''
+            token = ''
+            if nxt:
+                from urllib.parse import urlparse, parse_qs
+                token = (parse_qs(urlparse(nxt).query).get('page_info') or [''])[0]
+            return jsonify({'items': items, 'next': token or None})
+        if plat == 'ebay':
+            page = int(request.args.get('page', 1))
+            root = _ebay_call('GetMyeBaySelling',
+                              '<SoldList><Include>true</Include><DurationInDays>60</DurationInDays><Pagination>'
+                              '<EntriesPerPage>200</EntriesPerPage><PageNumber>%d</PageNumber></Pagination></SoldList>' % page)
+            errs = [e for e in _errors(root) if e[0] == 'Error']
+            if errs:
+                return jsonify({'error': 'eBay : ' + errs[0][1][:150]}), 500
+            items = []
+            for tr in root.findall('.//%sSoldList//%sTransaction' % (EBAY_NS, EBAY_NS)):
+                it = tr.find(EBAY_NS + 'Item')
+                if it is None:
+                    continue
+                items.append({'id': _t(it, EBAY_NS + 'ItemID'), 'title': _t(it, EBAY_NS + 'Title'),
+                              'sku': (_t(it, EBAY_NS + 'SKU') or _t(tr, EBAY_NS + 'Variation/' + EBAY_NS + 'SKU')).strip(),
+                              'st': 'sold', 'ts': _t(tr, EBAY_NS + 'CreatedDate')})
+            total = int(_t(root, './/%sSoldList/%sPaginationResult/%sTotalNumberOfPages' % (EBAY_NS, EBAY_NS, EBAY_NS)) or 1)
+            return jsonify({'items': items, 'pages': total})
+        return jsonify({'error': 'plateforme inconnue'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+
+
+@ls_bp.route('/ls/report_save', methods=['POST'])
+def ls_report_save():
+    """Enregistre une partie du rapport dans la branche de donnees (lue ensuite par Claude)."""
+    j = request.json or {}
+    name = re.sub(r'[^a-z0-9_]', '', str(j.get('name') or 'part'))[:30]
+    path = 'ls_report_%s.json' % name
+    try:
+        for _ in range(4):
+            _old, sha = _load(path)
+            if _save(j.get('data'), sha, 'ls: report %s' % name, path):
+                return jsonify({'ok': True, 'path': path})
+        return jsonify({'error': 'conflit'}), 409
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @ls_bp.route('/ls/stock_source', methods=['POST'])
 def ls_stock_source():
     """Lit une annonce existante (eBay > Shopify > Etsy) : titre, description, prix, photos, tags."""
