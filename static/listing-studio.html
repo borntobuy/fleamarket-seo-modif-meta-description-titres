@@ -1160,7 +1160,7 @@ function renderGenerated(idx) {
       <div class="gen-field"><div class="gen-label">Prix (devise de ta boutique Etsy)</div>
         <div class="gen-value" contenteditable="true" id="etsy-price-${idx}">${g.price || ''}</div></div>
       <div class="pub-row">
-        <button class="btn-pub etsy" onclick="publishEtsy(${idx})">Créer listing Etsy (brouillon)</button>
+        <button class="btn-pub etsy" onclick="publishEtsy(${idx})">Publier sur Etsy (en ligne)</button>
         <span id="pub-etsy-${idx}"></span>
       </div>
     </div>
@@ -1304,7 +1304,23 @@ async function publishEtsy(idx) {
         price_on_property: [], quantity_on_property: [], sku_on_property: []
       });
     } catch (_) { notes.push('SKU'); }
-    status.innerHTML = `<span class="pub-status">✓ brouillon #${d.listing_id}${notes.length ? ' (non posé : ' + notes.join(', ') + ')' : ''} — photos à ajouter dans Etsy</span>`;
+    // photos + mise en ligne (actif)
+    status.innerHTML = '<span class="info-text">envoi des photos à Etsy…</span>';
+    let fin = null;
+    try {
+      const imgs = await Promise.all(art.photoIds.slice(0, 10).map(async (pi, ii) => ({
+        data: dataUrlToBase64(await resizeDataUrl(photos[pi].dataUrl, 2000)),
+        alt: (g.altTexts && g.altTexts[ii]) || title
+      })));
+      fin = await fetch(BASE + '/ls/etsy_finish', { method: 'POST', headers: JSON_H,
+        body: JSON.stringify({ shop_id: etsyInfo.shopId, listing_id: d.listing_id, images: imgs, activate: true }) }).then(r => r.json());
+    } catch (e) { fin = { error: e.message }; }
+    if (fin && fin.activated) {
+      status.innerHTML = `<span class="pub-status">✓ en ligne #${d.listing_id} (${fin.uploaded} photo(s))${notes.length ? ' — non posé : ' + esc(notes.join(', ')) : ''}${fin.errors && fin.errors.length ? ' — ' + esc(fin.errors.join(' ; ').slice(0, 150)) : ''}</span>`;
+    } else {
+      const why = (fin && (fin.error || (fin.errors || []).join(' ; '))) || 'inconnue';
+      status.innerHTML = `<span class="pub-err">brouillon #${d.listing_id} créé mais pas mis en ligne : ${esc(String(why).slice(0, 200))}</span>`;
+    }
     btn.textContent = 'Republier';
   } catch(e) {
     status.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 200))}</span>`;
@@ -1566,7 +1582,7 @@ async function exportSelected() {
   const todo = rows.map(r => ({ r, missing: targets.filter(t => !(r.platforms || {})[t]) })).filter(x => x.missing.length);
   if (!todo.length) return alert('Tous les articles cochés sont déjà sur ' + (sel === 'all' ? 'les 3 plateformes' : PLAT_BADGE[sel].n) + '.');
   const used = [...new Set(todo.flatMap(x => x.missing))];
-  const notes = { etsy: 'Etsy : brouillon créé automatiquement (photos à vérifier dans Etsy).', shopify: 'Shopify : brouillon créé automatiquement.', ebay: "eBay : l'annonce est préparée dans l'onglet Création, tu cliques toi-même sur « Créer listing eBay »." };
+  const notes = { etsy: 'Etsy : annonce créée avec photos et mise en ligne directement (frais de mise en ligne Etsy applicables).', shopify: 'Shopify : brouillon créé automatiquement.', ebay: "eBay : l'annonce est préparée dans l'onglet Création, tu cliques toi-même sur « Créer listing eBay »." };
   if (!confirm(`Copier ${todo.length} article(s) vers ${used.map(t => PLAT_BADGE[t].n).join(', ')} ?\n\n` + used.map(t => notes[t]).join('\n'))) return;
   window.__batch = true;
   const lines = [];
