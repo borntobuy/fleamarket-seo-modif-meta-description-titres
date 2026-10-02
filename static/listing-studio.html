@@ -660,6 +660,10 @@ async function claudeJson(prompt, maxTokens = 1500) {
   return JSON.parse(m[0].replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''));
 }
 
+// Etsy n'accepte que lettres, chiffres et espaces dans les materiaux
+function cleanMaterials(a) {
+  return (a || []).map(x => String(x).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 45)).filter(Boolean).slice(0, 5);
+}
 const ETSY_WHEN_MADE = ['made_to_order','2020_2026','2010_2019','2007_2009','2000_2006','before_2007','1990s','1980s','1970s','1960s','1950s','1940s','1930s','1920s','1910s','1900s','1800s','1700s','before_1700'];
 const WRAP_OPEN = "<div style='font-family:Arial,sans-serif;font-size:24px;text-align:center;'>";
 
@@ -765,7 +769,7 @@ async function generateOne(idx) {
       etsyCategoryGuess: g.etsyCategoryGuess || '',
       productType: g.productType || art.category,
       whenMade,
-      materials: (g.materials || []).slice(0, 5).map(x => String(x).toLowerCase().slice(0, 45))
+      materials: cleanMaterials(g.materials)
     };
     art.generated.ebayTitle = art.generated.etsyTitle = art.generated.title; // alias (titre unique)
     art.ebayCat = ''; art.etsyCat = ''; art.ebayVals = {}; art.etsyVals = {};
@@ -1285,7 +1289,7 @@ async function publishEtsy(idx) {
       quantity: 1, title: title.slice(0, 140), description: htmlToPlain(descHtml(idx)),
       price, shipping_profile_id: Number(ship), who_made: 'someone_else', when_made: g.whenMade,
       is_supply: false, type: 'physical', taxonomy_id: Number(art.etsyCat),
-      tags: g.tags, materials: g.materials, state: 'draft'
+      tags: g.tags, materials: cleanMaterials(g.materials), state: 'draft'
     };
     const rd = document.getElementById(`etsy-ready-${idx}`);
     if (rd && rd.value) body.readiness_state_id = Number(rd.value);
@@ -1607,7 +1611,7 @@ async function deactivateSelected() {
   const plats = sel === 'all' ? ['ebay', 'etsy', 'shopify'] : [sel];
   const names = plats.map(p => PLAT_BADGE[p].n).join(', ');
   if (!confirm(`Désactiver ${rows.length} article(s) sur : ${names} ?\n(eBay terminé · Etsy inactif · Shopify brouillon)`)) return;
-  try { await stockAction('deactivate', rows, plats, 'Désactivation'); await loadStockLive(); }
+  try { await stockAction('deactivate', rows, plats, 'Désactivation'); await refreshRows(rows); }
   catch (e) { stockMsg(`<span class="pub-err">${esc(e.message)}</span>`); }
 }
 async function updateSelectedPrices() {
@@ -1616,7 +1620,7 @@ async function updateSelectedPrices() {
   if (!confirm(`Mettre à jour le prix de ${rows.length} article(s) sur toutes les plateformes où ils sont en ligne ?`)) return;
   try {
     const d = await stockAction('price', rows, ['ebay', 'etsy', 'shopify'], 'Mise à jour des prix');
-    await loadStockLive();
+    await refreshRows(rows);
   } catch (e) { stockMsg(`<span class="pub-err">${esc(e.message)}</span>`); }
 }
 
@@ -1659,7 +1663,7 @@ async function exportOne(r, missing, log) {
     seoTitle: String(meta.seoTitle || '').slice(0, 70), seoDesc: String(meta.seoDesc || '').slice(0, 160),
     etsyCategoryGuess: meta.etsyCategoryGuess || '', productType: meta.productType || '',
     whenMade: ETSY_WHEN_MADE.includes(meta.whenMade) ? meta.whenMade : 'before_2007',
-    materials: (meta.materials || []).slice(0, 5).map(x => String(x).toLowerCase().slice(0, 45))
+    materials: cleanMaterials(meta.materials)
   };
   art.ebayCat = ''; art.etsyCat = ''; art.ebayVals = {}; art.etsyVals = {};
   const idx = articles.push(art) - 1;
@@ -1677,6 +1681,9 @@ async function exportOne(r, missing, log) {
       const nm = t === 'etsy' ? 'Etsy' : 'Shopify';
       let perr = '';
       try { await (t === 'etsy' ? publishEtsy(idx) : publishShopify(idx)); } catch (e) { perr = e.message || 'erreur'; }
+      r.__added = r.__added || {};  // pour recharger uniquement cette ligne ensuite
+      if (t === 'etsy' && art.published.etsy) r.__added.etsy = { id: String(art.published.etsy), shop: etsyInfo.shopId };
+      if (t === 'shopify' && art.published.shopify) r.__added.shopify = { id: String(art.published.shopify) };
       const el = document.getElementById(`pub-${t}-${idx}`); const txt = el ? el.innerText.trim() : '';
       if (!perr && /non posé : SKU/.test(txt)) throw new Error(`${nm} : annonce créée mais le SKU n'a pas pu être posé (${txt.slice(0, 160)}). SKU attendu : ${art.sku}`);
       const bad = perr || (el && (el.querySelector('.pub-err') || /erreur|échec|failed|error/i.test(txt)));
@@ -1711,6 +1718,34 @@ async function exportSelected() {
     }
   } finally { window.__batch = false; }
   stockMsg(`<b>Export terminé</b> (détails dans l'onglet Création)<ul style="margin:4px 0 0 18px">${lines.join('')}</ul>`);
+  await refreshRows(todo.map(x => x.r));
+}
+
+// ── Recharge uniquement les lignes concernees (pas tout le catalogue) ──
+async function refreshRows(rows) {
+  rows = (rows || []).filter(Boolean);
+  if (!rows.length) return;
+  try {
+    for (let from = 0; from < rows.length; from += 100) {
+      const part = rows.slice(from, from + 100);
+      const items = part.map(r => ({ refs: Object.assign({}, r.refs || {}, r.__added || {}) }));
+      const d = await lsFetch(BASE + '/ls/stock_refresh', { method: 'POST', headers: JSON_H, body: JSON.stringify({ items }) }).then(x => x.text()).then(x => JSON.parse(x));
+      (d.items || []).forEach((st, i) => {
+        const r = part[i];
+        const allRefs = items[i].refs;
+        const plats = {}, refs = {}, pb = {}, qb = {};
+        Object.entries(st).forEach(([p, s]) => {
+          if (s.error) { if (r.platforms && r.platforms[p]) { plats[p] = r.platforms[p]; refs[p] = allRefs[p]; } return; }  // doute : on garde l'ancien etat
+          if (s.active) { plats[p] = s.url || true; refs[p] = allRefs[p]; pb[p] = s.price; qb[p] = s.qty; }
+        });
+        r.platforms = plats; r.refs = refs; r.price_by = pb; r.qty_by = qb;
+        const first = pb.ebay || pb.etsy || pb.shopify; if (first) r.price = first;
+        if (!Object.keys(plats).length) r.status = 'sold';
+        delete r.__added; r.newPrice = null; r.sel = false;
+      });
+    }
+    renderStock();
+  } catch (e) { stockMsg((document.getElementById('stockSyncMsg').innerHTML || '') + `<div class="pub-err">Rechargement des lignes impossible : ${esc(String(e.message).slice(0, 100))} (↻ Actualiser pour tout relire)</div>`); }
 }
 
 async function runStockSync() {
@@ -1723,7 +1758,7 @@ async function runStockSync() {
     if (d.actions.length) h += '<ul style="margin:4px 0 0 18px">' + d.actions.map(a => `<li>${esc(a.title)} (disparu de ${esc((a.gone_on || []).join(', '))}) → ${esc(a.did || a.error)}</li>`).join('') + '</ul>';
     if (d.blocked && d.blocked.length) h += `<div class="pub-err">⚠ ${d.blocked.length} disparitions d'un coup : rien n'a été désactivé par sécurité (panne d'API possible). Vérifie puis relance.</div>`;
     stockMsg(h);
-    await loadStockLive();
+    await refreshRows(stockRows.filter(r => (d.actions || []).some(a => a.sku && a.sku === r.sku)));
   } catch (e) { stockMsg(`<span class="pub-err">${esc(String(e.message).slice(0, 200))}</span>`); }
 }
 
