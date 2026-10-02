@@ -1546,8 +1546,21 @@ async function exportOne(r, missing, log) {
   const plain = htmlToPlain(s.description || '');
   const meta = await claudeJson(`Item listed on a marketplace. Title: ${s.title}\nDescription: ${plain.slice(0, 1500)}\nExisting tags: ${(src.shopify && src.shopify.tags || src.etsy && src.etsy.tags || []).join(', ')}\n\nReturn ONLY JSON with keys: keyword (best SEO keyword, 1-6 words), etsyTags (exactly 13 tags, each 20 characters or fewer, letters numbers spaces only), altTexts (${photoIds.length} items, max 250 chars, what is visible plus material and origin), seoTitle (max 70 chars), seoDesc (max 160 chars), productType (2-3 words), whenMade (one of ${ETSY_WHEN_MADE.join(', ')}), materials (up to 5 lowercase), etsyCategoryGuess (Etsy category path in Etsy wording). No double quote characters inside values.`, 1500);
   const desc = String(s.description || '').replace(/<!--\s*fmf-[a-z]+\s*-->/g, '').trim();
-  const art = { id: articles.length + 1, title: s.title, category: '', photoIds, keywords: '', published: {}, sku: r.sku || s.sku || '', suffix: '-', fromStock: true };
+  let sku0 = r.sku || s.sku || '';
+  let renewed = false;
+  if (sku0) {
+    // SKU deja utilise par un article vendu/desactive (relisting) : on en attribue un nouveau
+    const u = await lsFetch(BASE + '/ls/sku_used', { method: 'POST', headers: JSON_H, body: JSON.stringify({ sku: sku0 }) }).then(x => x.json());
+    const liveOthers = Object.keys(r.platforms || {}).filter(p => p !== 'ebay' && r.platforms[p]);
+    if (u.used && !liveOthers.length) { sku0 = ''; renewed = true; }
+  }
+  const art = { id: articles.length + 1, title: s.title, category: '', photoIds, keywords: '', published: {}, sku: sku0, suffix: '-', fromStock: true };
   if (!art.sku) { art.suffix = ''; await reserveRef(art); art.suffix = '-'; }
+  if (renewed && r.refs && r.refs.ebay) {
+    const d = await lsFetch(BASE + '/ls/ebay_set_sku', { method: 'POST', headers: JSON_H, body: JSON.stringify({ item_id: r.refs.ebay.id, sku: art.sku }) }).then(x => x.json());
+    if (d.error) throw new Error('nouveau SKU non appliqué sur eBay : ' + d.error);
+    log && log.push && log.push('nouveau SKU ' + art.sku);
+  }
   const tags = (meta.etsyTags || []).map(t => String(t).replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 20)).filter(Boolean).slice(0, 13);
   art.generated = {
     keyword: meta.keyword || s.title.split(' ').slice(0, 4).join(' '), desc, title: s.title, ebayTitle: s.title, etsyTitle: s.title,
