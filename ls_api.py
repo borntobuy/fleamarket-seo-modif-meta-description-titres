@@ -1100,6 +1100,41 @@ def ls_stock_action():
     return jsonify({'results': results})
 
 
+@ls_bp.route('/ls/sku_used', methods=['POST'])
+def ls_sku_used():
+    """True si ce SKU appartient a un article deja vendu/desactive (relisting -> il faut un nouveau SKU)."""
+    sku = str((request.json or {}).get('sku') or '').strip()
+    if not sku:
+        return jsonify({'used': False})
+    try:
+        st, _ = _load(STOCK_PATH)
+        for it in (st.get('items') or {}).values():
+            if it.get('sku') == sku and (it.get('status') == 'sold' or it.get('sold_at')):
+                return jsonify({'used': True})
+        return jsonify({'used': False})
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@ls_bp.route('/ls/ebay_set_sku', methods=['POST'])
+def ls_ebay_set_sku():
+    j = request.json or {}
+    item_id, sku = str(j.get('item_id') or '').strip(), str(j.get('sku') or '').strip()
+    if not item_id or not sku:
+        return jsonify({'error': 'parametres manquants'}), 400
+    try:
+        root = _ebay_call('ReviseFixedPriceItem',
+                          '<Item><ItemID>%s</ItemID><SKU>%s</SKU></Item>' % (xml_escape(item_id), xml_escape(sku)))
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            return jsonify({'error': 'eBay : ' + errs[0][1][:150]}), 400
+        return jsonify({'ok': True})
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': 'eBay : %s' % e}), 500
+
+
 @ls_bp.route('/ls/stock_source', methods=['POST'])
 def ls_stock_source():
     """Lit une annonce existante (eBay > Shopify > Etsy) : titre, description, prix, photos, tags."""
