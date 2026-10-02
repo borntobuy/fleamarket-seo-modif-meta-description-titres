@@ -773,6 +773,47 @@ def _deactivate(plat, ref):
     raise StoreError('plateforme inconnue')
 
 
+def _stock_left(plat, ref):
+    """(nb_variantes, quantite_dispo_totale) d'une annonce, ou None si illisible."""
+    try:
+        if plat == 'ebay':
+            root = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(ref['id']))
+            it = root.find('.//%sItem' % EBAY_NS)
+            if it is None:
+                return None
+            vs = it.findall('.//%sVariations/%sVariation' % (EBAY_NS, EBAY_NS))
+            if vs:
+                tot = 0
+                for v in vs:
+                    q = int(_t(v, EBAY_NS + 'Quantity') or 0)
+                    s = int(_t(v, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'QuantitySold') or 0)
+                    tot += max(q - s, 0)
+                return len(vs), tot
+            q = int(_t(it, EBAY_NS + 'Quantity') or 0)
+            s = int(_t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'QuantitySold') or 0)
+            return 1, max(q - s, 0)
+        if plat == 'etsy':
+            j = _etsy_get('/application/listings/%s/inventory' % ref['id'])
+            ps = j.get('products') or []
+            tot = 0
+            for p in ps:
+                for o in p.get('offerings') or []:
+                    if o.get('is_enabled', True) and not o.get('is_deleted'):
+                        tot += int(o.get('quantity') or 0)
+            return max(len(ps), 1), tot
+        if plat == 'shopify':
+            shop, h = _shopify_ctx()
+            r = requests.get('https://%s/admin/api/2024-01/products/%s.json' % (shop, ref['id']), headers=h,
+                             params={'fields': 'variants'}, timeout=30)
+            if r.status_code != 200:
+                return None
+            vs = r.json().get('product', {}).get('variants') or []
+            return len(vs), sum(max(int(v.get('inventory_quantity') or 0), 0) for v in vs)
+    except Exception:
+        return None
+    return None
+
+
 def _merge(current):
     """current = {plat: [items]} -> liste d'articles fusionnes par SKU (sinon titre)."""
     merged = []
@@ -903,6 +944,24 @@ def ls_stock_sync():
             if not gone or it.get('status') != 'active':
                 continue
             failed = False
+            # annonce a variantes / quantite > 1 : on ne desactive que si plus aucun stock
+            keep = False
+            for q in PLATS:
+                ref = it['p'].get(q) or {}
+                if q in ok_plats and ref.get('active') and q not in gone:
+                    sl = _stock_left(q, ref)
+                    if sl is None:
+                        keep = True  # doute : on ne touche a rien
+                    elif sl[1] > 0 and (sl[0] > 1 or sl[1] > 1):
+                        keep = True
+            if keep:
+                it.pop('pending', None)
+                for q in gone:
+                    if (it['p'].get(q) or {}).get('active') is False:
+                        it['p'][q]['active'] = False
+                actions.append({'title': it.get('title'), 'sku': it.get('sku'), 'gone_on': gone,
+                                'did': 'ignore : stock restant sur une variante'})
+                continue
             for q in PLATS:
                 ref = it['p'].get(q) or {}
                 if q in ok_plats and ref.get('active') and q not in gone:
