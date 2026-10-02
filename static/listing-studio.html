@@ -1626,7 +1626,8 @@ async function exportOne(r, missing, log) {
   const meta = await claudeJson(`Item listed on a marketplace. Title: ${s.title}\nDescription: ${plain.slice(0, 1500)}\nExisting tags: ${(src.shopify && src.shopify.tags || src.etsy && src.etsy.tags || []).join(', ')}\n\nReturn ONLY JSON with keys: keyword (best SEO keyword, 1-6 words), etsyTags (exactly 13 tags, each 20 characters or fewer, letters numbers spaces only), altTexts (${photoIds.length} items, max 250 chars, what is visible plus material and origin), seoTitle (max 70 chars), seoDesc (max 160 chars), productType (2-3 words), whenMade (one of ${ETSY_WHEN_MADE.join(', ')}), materials (up to 5 lowercase), etsyCategoryGuess (Etsy category path in Etsy wording). No double quote characters inside values.`, 1500);
   const desc = String(s.description || '').replace(/<!--\s*fmf-[a-z]+\s*-->/g, '').trim();
   let sku0 = r.sku || s.sku || '';
-  let renewed = false, skuNote = '';
+  let renewed = false, skuNote = '', ebayRollback = null;
+  const sku1 = sku0;
   if (sku0) {
     // SKU deja utilise par un article vendu/desactive (relisting) : on en attribue un nouveau
     const u = await lsFetch(BASE + '/ls/sku_used', { method: 'POST', headers: JSON_H, body: JSON.stringify({ sku: sku0 }) }).then(x => x.json());
@@ -1637,8 +1638,9 @@ async function exportOne(r, missing, log) {
   if (!art.sku) { art.suffix = ''; await reserveRef(art); art.suffix = '-'; }
   if (renewed && r.refs && r.refs.ebay) {
     const d = await lsFetch(BASE + '/ls/ebay_set_sku', { method: 'POST', headers: JSON_H, body: JSON.stringify({ item_id: r.refs.ebay.id, sku: art.sku }) }).then(x => x.json());
-    if (d.error) throw new Error('nouveau SKU non appliqué sur eBay : ' + d.error);
-    skuNote = d.skipped ? `nouveau SKU ${art.sku} (eBay inchangé : annonce à variantes)` : `nouveau SKU ${art.sku} appliqué sur eBay`;
+    if (d.error) throw new Error(`export annulé, rien n'a été créé : eBay refuse de changer le SKU de cette annonce (${d.error})`);
+    skuNote = `SKU d'origine remplacé par ${art.sku} sur eBay et partout`;
+    ebayRollback = async () => { try { await lsFetch(BASE + '/ls/ebay_set_sku', { method: 'POST', headers: JSON_H, body: JSON.stringify({ item_id: r.refs.ebay.id, sku: sku1 }) }); } catch (_) {} };
   }
   const tags = (meta.etsyTags || []).map(t => String(t).replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 20)).filter(Boolean).slice(0, 13);
   art.generated = {
@@ -1661,8 +1663,18 @@ async function exportOne(r, missing, log) {
   const out = skuNote ? [skuNote] : [];
   for (const t of missing) {
     if (t === 'ebay') { out.push('eBay : préparé dans l\'onglet Création (clique « Créer listing eBay »)'); continue; }
-    if (t === 'etsy') { await publishEtsy(idx); out.push('Etsy : ' + document.getElementById(`pub-etsy-${idx}`).innerText.trim()); }
-    if (t === 'shopify') { await publishShopify(idx); out.push('Shopify : ' + document.getElementById(`pub-shopify-${idx}`).innerText.trim()); }
+    if (t === 'etsy' || t === 'shopify') {
+      const nm = t === 'etsy' ? 'Etsy' : 'Shopify';
+      let perr = '';
+      try { await (t === 'etsy' ? publishEtsy(idx) : publishShopify(idx)); } catch (e) { perr = e.message || 'erreur'; }
+      const el = document.getElementById(`pub-${t}-${idx}`); const txt = el ? el.innerText.trim() : '';
+      const bad = perr || (el && (el.querySelector('.pub-err') || /erreur|échec|failed|error/i.test(txt)));
+      if (bad) {
+        if (ebayRollback) { await ebayRollback(); out.push('SKU eBay remis comme avant'); }
+        throw new Error(`${nm} : ${perr || txt}. Export arrêté, aucune autre modification.` + (out.length ? ' (' + out.join(' · ') + ')' : ''));
+      }
+      out.push(nm + ' : ' + txt);
+    }
   }
   return out;
 }
