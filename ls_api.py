@@ -204,7 +204,16 @@ def _ebay_call(call_name, inner_xml):
         headers['X-EBAY-API-DEV-NAME'] = ''
     if c['cert']:
         headers['X-EBAY-API-CERT-NAME'] = c['cert']
-    resp = requests.post(EBAY_URL, headers=headers, data=xml.encode('utf-8'), timeout=40)
+    resp = None
+    attempts = 3 if call_name.startswith('Get') else 1  # lectures seulement : on peut reessayer sans risque
+    for n in range(attempts):
+        try:
+            resp = requests.post(EBAY_URL, headers=headers, data=xml.encode('utf-8'), timeout=75)
+            break
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
+            if n == attempts - 1:
+                raise
+            time.sleep(2)
     body = (resp.text or '').strip()
     if not body.startswith('<'):
         raise StoreError('eBay %s : réponse vide ou illisible (HTTP %s) %s' % (call_name, resp.status_code, body[:120]))
@@ -635,7 +644,7 @@ def _ebay_page(page):
     """Une page d'annonces eBay actives et achetables -> (items, nb_pages)."""
     out = []
     root = _ebay_call('GetMyeBaySelling',
-                      '<ActiveList><Include>true</Include><Pagination><EntriesPerPage>200</EntriesPerPage>'
+                      '<ActiveList><Include>true</Include><Pagination><EntriesPerPage>100</EntriesPerPage>'
                       '<PageNumber>%d</PageNumber></Pagination></ActiveList>' % page)
     errs = [e for e in _errors(root) if e[0] == 'Error']
     if errs:
