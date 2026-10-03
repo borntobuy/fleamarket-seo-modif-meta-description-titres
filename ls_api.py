@@ -1353,6 +1353,32 @@ def ls_ebay_set_sku():
         return jsonify({'error': 'eBay : %s' % e}), 500
 
 
+@ls_bp.route('/ls/ebay_desc_replace', methods=['POST'])
+def ls_ebay_desc_replace():
+    """Remplace un texte dans la description d'une annonce eBay (GetItem puis ReviseFixedPriceItem)."""
+    j = request.json or {}
+    item_id, old, new = str(j.get('item_id') or '').strip(), j.get('old') or '', j.get('new') or ''
+    if not item_id or not old:
+        return jsonify({'error': 'parametres manquants'}), 400
+    try:
+        root = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(item_id))
+        d = root.find('.//%sItem/%sDescription' % (EBAY_NS, EBAY_NS))
+        desc = (d.text or '') if d is not None else ''
+        if old not in desc:
+            return jsonify({'error': 'texte introuvable', 'found': False, 'len': len(desc)}), 404
+        desc = desc.replace(old, new)
+        root = _ebay_call('ReviseFixedPriceItem',
+                          '<Item><ItemID>%s</ItemID><Description><![CDATA[%s]]></Description></Item>' % (xml_escape(item_id), desc.replace(']]>', ']]]]><![CDATA[>')))
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            return jsonify({'error': 'eBay : ' + errs[0][1][:150]}), 400
+        return jsonify({'ok': True})
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': 'eBay : %s' % e}), 500
+
+
 # --------------------------------------------------------------------------
 # RAPPORT : annonces non actives (vendues / brouillons / inactives) + stockage du rapport
 # --------------------------------------------------------------------------
