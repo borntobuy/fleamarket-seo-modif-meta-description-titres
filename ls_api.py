@@ -1137,7 +1137,19 @@ def ls_stock_sync():
         sids = [it['p']['shopify']['id'] for k, it, g in cands if 'shopify' in g and it['p'].get('shopify', {}).get('id')]
         sstates = _shopify_states(sids) if sids else {}
         mass_shop = sum(1 for s in sstates.values() if s.get('sold_out')) > 15  # rattrapage massif = artefact de filtre, pas des ventes
+        # Idem Etsy : « inactive / brouillon / expiree » (desactivee a la main ou par Etsy) n'est pas une vente.
         for k, it, gone in cands:
+            if 'etsy' in gone:
+                try:
+                    st = _etsy_get('/application/listings/%s' % it['p']['etsy']['id']).get('state')
+                except Exception:
+                    st = None
+                if st != 'sold_out':
+                    it['p']['etsy']['active'] = False
+                    gone = [p for p in gone if p != 'etsy']
+                    if not gone:
+                        continue
+                    # (la liste `gone` locale est reprise ci-dessous)
             if 'shopify' in gone:
                 s = sstates.get(str(it['p']['shopify'].get('id')))
                 if mass_shop or not (s and s.get('sold_out')):  # brouillon / archive / supprime / etat inconnu : retrait manuel
