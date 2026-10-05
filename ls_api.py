@@ -1365,6 +1365,27 @@ def ls_ebay_set_sku():
         return jsonify({'error': 'eBay : %s' % e}), 500
 
 
+@ls_bp.route('/ls/ebay_relist', methods=['POST'])
+def ls_ebay_relist():
+    """Remet en ligne une annonce eBay terminee, avec un nouveau SKU -> nouvel ItemID."""
+    j = request.json or {}
+    item_id, sku = str(j.get('item_id') or '').strip(), str(j.get('sku') or '').strip()
+    if not item_id or not sku:
+        return jsonify({'error': 'parametres manquants'}), 400
+    try:
+        root = _ebay_call('RelistFixedPriceItem',
+                          '<Item><ItemID>%s</ItemID><SKU>%s</SKU></Item>' % (xml_escape(item_id), xml_escape(sku)))
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            return jsonify({'error': 'eBay : ' + errs[0][1][:200]}), 400
+        n = root.find('.//%sItemID' % EBAY_NS)
+        return jsonify({'ok': True, 'item_id': n.text if n is not None else None})
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': 'eBay : %s' % e}), 500
+
+
 @ls_bp.route('/ls/ebay_desc_replace', methods=['POST'])
 def ls_ebay_desc_replace():
     """Remplace un texte dans la description d'une annonce eBay (GetItem puis ReviseFixedPriceItem)."""
