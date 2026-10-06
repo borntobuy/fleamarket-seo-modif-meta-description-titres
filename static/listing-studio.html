@@ -497,7 +497,6 @@ async function groupArticles() {
     const prompt = `Tu es un expert en brocante et antiquités françaises.
 Voici ${photos.length} photos de produits à vendre. Groupe-les par article (même objet physique).
 Chaque article peut avoir 1 à 8 photos (différents angles).
-IMPORTANT : les photos ont été prises à la suite, article après article. Les photos d'un même article sont donc CONSÉCUTIVES (ex. 5,6,7) : ne mets jamais dans un groupe une photo éloignée des autres (ex. 18 avec 5,6,7).
 
 Pour chaque groupe retourne:
 - id (numéro)
@@ -520,11 +519,12 @@ Retourne UNIQUEMENT du JSON valide, rien d'autre:
     if (!jsonMatch) throw new Error('Réponse inattendue de Claude: ' + text.slice(0,200));
     const parsed = JSON.parse(jsonMatch[0]);
 
-    articles = enforceContiguous(parsed.groups, photos.length).map((g, n) => ({
-      id: n + 1,
+    fixIsolatedPhotos(parsed.groups, photos.length);
+    articles = parsed.groups.map(g => ({
+      id: g.id,
       title: g.title,
       category: g.category,
-      photoIds: g.photo_indices,
+      photoIds: g.photo_indices.filter(i => i < photos.length),
       keywords: '',
       generated: null,
       published: {}
@@ -546,39 +546,31 @@ Retourne UNIQUEMENT du JSON valide, rien d'autre:
   setTimeout(() => setProgress(0, false), 500);
 }
 
-// Les photos se suivent : un article = une plage de photos consecutives.
-// Une photo isolee loin de son groupe est rattachee a ses voisines immediates.
-function enforceContiguous(groups, n) {
-  const owner = new Array(n).fill(-1);
-  groups.forEach((g, gi) => (g.photo_indices || []).forEach(i => { if (i >= 0 && i < n && owner[i] < 0) owner[i] = gi; }));
-  // photos oubliees : meme groupe que la precedente
-  for (let i = 0; i < n; i++) if (owner[i] < 0) owner[i] = i > 0 ? owner[i - 1] : (owner.find(o => o >= 0) ?? 0);
-  // decoupe en plages consecutives
-  let runs = [];
-  for (let i = 0; i < n; i++) {
-    const last = runs[runs.length - 1];
-    if (last && last.g === owner[i]) last.end = i; else runs.push({ g: owner[i], start: i, end: i });
-  }
-  // pour chaque groupe, on garde sa plus longue plage ; les autres plages (isolees) passent aux voisines
-  const best = {};
-  runs.forEach((r, k) => { const len = r.end - r.start; if (!(r.g in best) || len > runs[best[r.g]].end - runs[best[r.g]].start) best[r.g] = k; });
-  runs.forEach((r, k) => { r.keep = best[r.g] === k; });
-  for (let k = 0; k < runs.length; k++) {
-    if (runs[k].keep) continue;
-    let prev = k - 1; while (prev >= 0 && !runs[prev].keep) prev--;
-    let next = k + 1; while (next < runs.length && !runs[next].keep) next++;
-    const p = prev >= 0 ? runs[prev] : null, nx = next < runs.length ? runs[next] : null;
-    const tgt = (p && nx) ? (p.g === nx.g ? p : (runs[k].end - runs[k].start >= 0 ? p : nx)) : (p || nx);
-    runs[k].g = tgt.g;
-  }
-  // refusion des plages voisines du meme groupe
-  const merged = [];
-  runs.forEach(r => { const l = merged[merged.length - 1]; if (l && l.g === r.g) l.end = r.end; else merged.push({ g: r.g, start: r.start, end: r.end }); });
-  return merged.map(r => {
-    const src = groups[r.g] || {};
-    const idx = []; for (let i = r.start; i <= r.end; i++) idx.push(i);
-    return { title: src.title || 'Article', category: src.category || '', photo_indices: idx };
+// Les photos se suivent en general : une photo tres loin (plus de 5 rangs) de toutes les autres photos
+// de son groupe est tres probablement une erreur de tri -> elle rejoint le groupe de ses voisines immediates.
+// Rien d'autre n'est modifie (le tri de Claude est conserve tel quel).
+function fixIsolatedPhotos(groups, n) {
+  const ownerOf = new Array(n).fill(-1);
+  groups.forEach((g, gi) => (g.photo_indices || []).forEach(i => { if (i >= 0 && i < n && ownerOf[i] < 0) ownerOf[i] = gi; }));
+  const moves = [];
+  groups.forEach((g, gi) => {
+    const idx = (g.photo_indices || []).filter(i => i >= 0 && i < n && ownerOf[i] === gi);
+    if (idx.length < 2) return;
+    idx.forEach(i => {
+      const dist = Math.min(...idx.filter(j => j !== i).map(j => Math.abs(j - i)));
+      if (dist <= 5) return;
+      const prev = i > 0 ? ownerOf[i - 1] : -1, next = i < n - 1 ? ownerOf[i + 1] : -1;
+      const tgt = prev >= 0 && prev !== gi ? prev : (next >= 0 && next !== gi ? next : -1);
+      if (tgt >= 0) moves.push([i, gi, tgt]);
+    });
   });
+  moves.forEach(([i, from, to]) => {
+    groups[from].photo_indices = groups[from].photo_indices.filter(z => z !== i);
+    groups[to].photo_indices = (groups[to].photo_indices || []).concat([i]).sort((a, b) => a - b);
+    ownerOf[i] = to;
+  });
+  for (let k = groups.length - 1; k >= 0; k--) if (!(groups[k].photo_indices || []).length) groups.splice(k, 1);
+  return moves.length;
 }
 
 function setProgress(pct, show) {
