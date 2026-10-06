@@ -1667,6 +1667,60 @@ def ls_imgproxy():
         return jsonify({'error': str(e)[:100]}), 502
 
 
+@ls_bp.route('/ls/stock_desc_update', methods=['POST'])
+def ls_stock_desc_update():
+    """{refs:{plat:{id,shop}}, title, html, text} -> met a jour titre + description sur chaque plateforme."""
+    j = request.json or {}
+    refs = j.get('refs') or {}
+    title = (j.get('title') or '').strip()
+    html = j.get('html') or ''
+    text = j.get('text') or ''
+    res = {}
+    if not html and not title:
+        return jsonify({'error': 'rien a enregistrer'}), 400
+    if 'ebay' in refs and refs['ebay'].get('id'):
+        try:
+            inner = '<ItemID>%s</ItemID>' % xml_escape(refs['ebay']['id'])
+            if title:
+                inner += '<Title>%s</Title>' % xml_escape(title[:80])
+            if html:
+                inner += '<Description><![CDATA[%s]]></Description>' % html.replace(']]>', ']]]]><![CDATA[>')
+            root = _ebay_call('ReviseFixedPriceItem', '<Item>%s</Item>' % inner)
+            errs = [e for e in _errors(root) if e[0] == 'Error']
+            res['ebay'] = {'error': errs[0][1][:150]} if errs else {'ok': True}
+        except Exception as e:
+            res['ebay'] = {'error': str(e)[:150]}
+    if 'shopify' in refs and refs['shopify'].get('id'):
+        try:
+            shop, h = _shopify_ctx()
+            prod = {'id': int(refs['shopify']['id'])}
+            if title:
+                prod['title'] = title
+            if html:
+                prod['body_html'] = html
+            r = requests.put('https://%s/admin/api/2024-01/products/%s.json' % (shop, refs['shopify']['id']),
+                             headers=h, json={'product': prod}, timeout=40)
+            res['shopify'] = {'ok': True} if r.status_code == 200 else {'error': 'Shopify %s : %s' % (r.status_code, r.text[:100])}
+        except Exception as e:
+            res['shopify'] = {'error': str(e)[:150]}
+    if 'etsy' in refs and refs['etsy'].get('id'):
+        try:
+            h = _etsy_ctx()
+            h['Content-Type'] = 'application/json'
+            body = {}
+            if title:
+                body['title'] = title[:140]
+            if text:
+                body['description'] = text
+            shop = refs['etsy'].get('shop') or _etsy_shop()
+            r = requests.patch('https://openapi.etsy.com/v3/application/shops/%s/listings/%s' % (shop, refs['etsy']['id']),
+                               headers=h, json=body, timeout=40)
+            res['etsy'] = {'ok': True} if r.status_code in (200, 201) else {'error': 'Etsy %s : %s' % (r.status_code, r.text[:100])}
+        except Exception as e:
+            res['etsy'] = {'error': str(e)[:150]}
+    return jsonify({'results': res})
+
+
 # --------------------------------------------------------------------------
 # Etsy : envoi des photos puis mise en ligne (brouillon -> actif)
 # --------------------------------------------------------------------------
