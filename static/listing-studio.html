@@ -484,55 +484,61 @@ async function groupArticles() {
   setProgress(0, true);
 
   try {
-    // Resize all photos to thumbnails for grouping
-    const thumbs = await Promise.all(photos.map(p => resizeDataUrl(p.dataUrl, 400)));
-    setProgress(20);
+    // 1) Les photos sont prises a la suite : on les range par nom de fichier (ordre naturel)
+    photos.sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''), undefined, { numeric: true, sensitivity: 'base' }));
+    updatePhotoUI();
+    btn.disabled = true;
+    const n = photos.length;
+    const thumbs = await Promise.all(photos.map(p => resizeDataUrl(p.dataUrl, 320)));
+    const img = i => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(thumbs[i]) } });
 
-    // Build message with all thumbnails
-    const imageBlocks = thumbs.map((t, i) => [
-      { type: 'text', text: `Photo ${i}:` },
-      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(t) } }
-    ]).flat();
+    // 2) Photo apres photo : la 1re ouvre un article ; chaque nouvelle photo est comparee a l'article en cours
+    const groups = [[0]];
+    for (let i = 1; i < n; i++) {
+      const cur = groups[groups.length - 1];
+      const ref = cur.slice(-3);  // les dernieres photos de l'article en cours
+      const content = [{ type: 'text', text: `Article en cours (${ref.length} photo${ref.length > 1 ? 's' : ''} de cet article) :` }];
+      ref.forEach((r, k) => { content.push({ type: 'text', text: `Photo ${k + 1} :` }); content.push(img(r)); });
+      content.push({ type: 'text', text: 'Nouvelle photo à classer :' });
+      content.push(img(i));
+      content.push({ type: 'text', text: `Les photos ont été prises à la suite, article après article. Cette nouvelle photo montre-t-elle LE MÊME objet physique que l'article en cours (autre angle, détail, marque, dos, dessous, etc.), ou le début d'un AUTRE objet (même s'il est de la même famille, par exemple deux numéros de maison ou deux verres différents) ?
+Réponds UNIQUEMENT par un JSON : {"same":true} si c'est le même objet, {"same":false} si c'est un nouvel objet.` });
+      let same = true;
+      for (let t = 0; t < 3; t++) {
+        try {
+          const txt = await claudeCall([{ role: 'user', content }], 50);
+          const m = txt.match(/"same"\s*:\s*(true|false)/i);
+          if (!m) throw new Error('réponse illisible');
+          same = m[1].toLowerCase() === 'true';
+          break;
+        } catch (e) { if (t === 2) throw e; await new Promise(r => setTimeout(r, 1500)); }
+      }
+      if (same) cur.push(i); else groups.push([i]);
+      setProgress(Math.round(i / n * 85));
+      btn.innerHTML = `<span class="spinner"></span> Photo ${i + 1}/${n} · ${groups.length} article${groups.length > 1 ? 's' : ''}`;
+    }
 
-    const prompt = `Tu es un expert en brocante et antiquités françaises.
-Voici ${photos.length} photos de produits à vendre. Groupe-les par article (même objet physique).
-Chaque article peut avoir 1 à 8 photos (différents angles).
-
-Pour chaque groupe retourne:
-- id (numéro)
-- title: titre court en anglais, style eBay/Etsy (ex: "Vintage French Porcelain Vase")
-- category: catégorie principale en anglais (ex: "Ceramics & Pottery")
-- photo_indices: liste des indices des photos qui appartiennent à cet article
-
-Retourne UNIQUEMENT du JSON valide, rien d'autre:
-{"groups":[{"id":1,"title":"...","category":"...","photo_indices":[0,2,3]},...]}`;
-
-    const text = await claudeCall([{
-      role: 'user',
-      content: [...imageBlocks, { type: 'text', text: prompt }]
-    }], 1024);
-
-    setProgress(80);
-
-    // Parse JSON
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Réponse inattendue de Claude: ' + text.slice(0,200));
-    const parsed = JSON.parse(jsonMatch[0]);
-
-    fixIsolatedPhotos(parsed.groups, photos.length);
-    articles = parsed.groups.map(g => ({
-      id: g.id,
-      title: g.title,
-      category: g.category,
-      photoIds: g.photo_indices.filter(i => i < photos.length),
-      keywords: '',
-      generated: null,
-      published: {}
-    }));
+    // 3) Titre et categorie de chaque article (3 en parallele)
+    articles = groups.map((ph, k) => ({ id: k + 1, title: 'Article ' + (k + 1), category: '', photoIds: ph, keywords: '', generated: null, published: {} }));
+    let done = 0;
+    const titleOne = async art => {
+      const content = [];
+      art.photoIds.slice(0, 4).forEach((pi, k) => { content.push({ type: 'text', text: `Photo ${k + 1} :` }); content.push(img(pi)); });
+      content.push({ type: 'text', text: `Tu es un expert en brocante et antiquités françaises. Ces photos montrent UN seul article à vendre.
+Retourne UNIQUEMENT du JSON valide : {"title":"titre court en anglais, style eBay/Etsy (ex: Vintage French Porcelain Vase)","category":"catégorie principale en anglais (ex: Ceramics & Pottery)"}` });
+      try {
+        const txt = await claudeCall([{ role: 'user', content }], 200);
+        const m = txt.match(/\{[\s\S]*\}/);
+        if (m) { const j = JSON.parse(m[0]); if (j.title) art.title = j.title; art.category = j.category || ''; }
+      } catch (_) {}
+      done++;
+      setProgress(85 + Math.round(done / articles.length * 15));
+    };
+    const queue = articles.slice();
+    await Promise.all([0, 1, 2].map(async () => { while (queue.length) await titleOne(queue.shift()); }));
 
     setProgress(100);
     renderArticles();
-
     btn.innerHTML = `${articles.length} articles détectés ✓`;
     document.getElementById('btnGenAll').style.display = '';
     document.getElementById('articlesTable').style.display = '';
@@ -544,33 +550,6 @@ Retourne UNIQUEMENT du JSON valide, rien d'autre:
   }
 
   setTimeout(() => setProgress(0, false), 500);
-}
-
-// Les photos se suivent en general : une photo tres loin (plus de 5 rangs) de toutes les autres photos
-// de son groupe est tres probablement une erreur de tri -> elle rejoint le groupe de ses voisines immediates.
-// Rien d'autre n'est modifie (le tri de Claude est conserve tel quel).
-function fixIsolatedPhotos(groups, n) {
-  const ownerOf = new Array(n).fill(-1);
-  groups.forEach((g, gi) => (g.photo_indices || []).forEach(i => { if (i >= 0 && i < n && ownerOf[i] < 0) ownerOf[i] = gi; }));
-  const moves = [];
-  groups.forEach((g, gi) => {
-    const idx = (g.photo_indices || []).filter(i => i >= 0 && i < n && ownerOf[i] === gi);
-    if (idx.length < 2) return;
-    idx.forEach(i => {
-      const dist = Math.min(...idx.filter(j => j !== i).map(j => Math.abs(j - i)));
-      if (dist <= 5) return;
-      const prev = i > 0 ? ownerOf[i - 1] : -1, next = i < n - 1 ? ownerOf[i + 1] : -1;
-      const tgt = prev >= 0 && prev !== gi ? prev : (next >= 0 && next !== gi ? next : -1);
-      if (tgt >= 0) moves.push([i, gi, tgt]);
-    });
-  });
-  moves.forEach(([i, from, to]) => {
-    groups[from].photo_indices = groups[from].photo_indices.filter(z => z !== i);
-    groups[to].photo_indices = (groups[to].photo_indices || []).concat([i]).sort((a, b) => a - b);
-    ownerOf[i] = to;
-  });
-  for (let k = groups.length - 1; k >= 0; k--) if (!(groups[k].photo_indices || []).length) groups.splice(k, 1);
-  return moves.length;
 }
 
 function setProgress(pct, show) {
