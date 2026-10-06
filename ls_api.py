@@ -1112,6 +1112,50 @@ def ls_stock():
         return jsonify({'error': str(e)}), 500
 
 
+def _price_align(it, e, ok_plats, out):
+    """Un prix modifie directement sur une plateforme est repercute sur les autres (annonces simples uniquement)."""
+    try:
+        cur = {}
+        for p, v in (e.get('price_by') or {}).items():
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                continue
+            if f > 0 and p in ok_plats and (e['p'].get(p) or {}).get('id'):
+                cur[p] = f
+        prev = it.get('pb') or {}
+        if len(cur) >= 2 and prev and len(out) < 15:
+            changed = [p for p in cur if p in prev and abs(cur[p] - prev[p]) > 0.005]
+            targets = {round(cur[p], 2) for p in changed}
+            if len(targets) == 1:
+                target = targets.pop()
+                todo = [q for q in cur if abs(cur[q] - target) > 0.005]
+                if todo:
+                    multi = False
+                    failed = False
+                    for q in cur:  # annonces a variantes : prix par variante, on ne touche a rien
+                        sl = _stock_left(q, e['p'][q])
+                        if sl is None or sl[0] > 1:
+                            multi = True
+                    if not multi:
+                        for q in todo:
+                            try:
+                                res = _set_price(q, e['p'][q], target)
+                                cur[q] = target
+                                out.append({'title': it.get('title'), 'sku': it.get('sku'), 'gone_on': [],
+                                            'did': 'prix repercute : %s (modifie sur %s)' % (res, '+'.join(changed))})
+                            except Exception as ex:
+                                failed = True
+                                out.append({'title': it.get('title'), 'sku': it.get('sku'), 'gone_on': [],
+                                            'error': 'prix %s : %s' % (q, str(ex)[:100])})
+                        if failed:
+                            return  # on garde l'ancien prix de reference : nouvel essai a la prochaine synchro
+        if cur:
+            it['pb'] = {p: round(v, 2) for p, v in cur.items()}
+    except Exception:
+        pass
+
+
 @ls_bp.route('/ls/stock_sync', methods=['GET', 'POST'])
 def ls_stock_sync():
     key = os.environ.get('STOCK_CRON_KEY', '').strip()
@@ -1141,6 +1185,7 @@ def ls_stock_sync():
         idx_sku = {i['sku']: k for k, i in items.items() if i.get('sku')}
         idx_t = {i['tkey']: k for k, i in items.items() if i.get('tkey')}
         seen_keys = set()
+        price_actions = []
         for e in merged:
             k = idx_sku.get(e['sku']) if e['sku'] else None
             k = k or idx_t.get(e['tkey'])
@@ -1158,9 +1203,10 @@ def ls_stock_sync():
                 if it['status'] == 'sold' and not (it['p'].get(p) or {}).get('active'):
                     it['status'] = 'active'  # remis en vente
                 it['p'][p] = dict(ref, active=True)
+            _price_align(it, e, ok_plats, price_actions)
 
         first_run = not st.get('last')
-        actions, blocked, newly_sold = [], [], []
+        actions, blocked, newly_sold = list(price_actions), [], []
         cands = []
         etsy_sale_keys = set()
         new_sale_ids = set()
