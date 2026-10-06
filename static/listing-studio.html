@@ -52,8 +52,22 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
 .articles-table tr:last-child td{border-bottom:none}
 .articles-table tr:hover td{background:#fafbff}
 
-.photo-strip{display:flex;gap:4px;flex-wrap:wrap;max-width:160px}
-.photo-strip img{width:48px;height:48px;object-fit:cover;border-radius:5px;border:1px solid #dee2e6;cursor:pointer}
+.photo-strip{display:flex;gap:4px;flex-wrap:wrap;max-width:300px}
+.photo-strip img{width:48px;height:48px;object-fit:cover;border-radius:5px;border:1px solid #dee2e6;cursor:pointer;display:block}
+.pth{position:relative;width:48px;height:48px}
+.pth .x{position:absolute;top:-5px;right:-5px;width:17px;height:17px;border-radius:50%;background:#c92a2a;color:#fff;border:0;font-size:12px;line-height:17px;padding:0;cursor:pointer;display:none}
+.pth .st{position:absolute;bottom:-3px;left:-3px;width:17px;height:17px;border-radius:50%;background:#f59f00;color:#fff;border:0;font-size:10px;line-height:17px;padding:0;cursor:pointer;display:none}
+.pth:hover .x,.pth:hover .st{display:block}
+.pth.main img{border:2px solid #f59f00}
+.padd{width:48px;height:48px;border:1px dashed #adb5bd;border-radius:5px;background:#f8f9fa;color:#495057;font-size:22px;cursor:pointer;padding:0}
+.pmodal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:center;justify-content:center}
+.pmodal.open{display:flex}
+.pmodal .box{background:#fff;border-radius:10px;padding:16px;max-width:760px;width:92%;max-height:84vh;overflow:auto}
+.pmodal .grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pmodal .it{position:relative;width:84px;cursor:pointer;text-align:center;font-size:10px;color:#495057}
+.pmodal .it img{width:84px;height:84px;object-fit:cover;border-radius:6px;border:2px solid #dee2e6;display:block}
+.pmodal .it:hover img{border-color:#228be6}
+.pmodal .it.free img{border-color:#40c057}
 .photo-count{font-size:11px;color:#868e96;margin-top:3px}
 
 .auto-title{font-weight:500;color:#212529;margin-bottom:4px;font-size:13px}
@@ -483,6 +497,7 @@ async function groupArticles() {
     const prompt = `Tu es un expert en brocante et antiquités françaises.
 Voici ${photos.length} photos de produits à vendre. Groupe-les par article (même objet physique).
 Chaque article peut avoir 1 à 8 photos (différents angles).
+IMPORTANT : les photos ont été prises à la suite, article après article. Les photos d'un même article sont donc CONSÉCUTIVES (ex. 5,6,7) : ne mets jamais dans un groupe une photo éloignée des autres (ex. 18 avec 5,6,7).
 
 Pour chaque groupe retourne:
 - id (numéro)
@@ -505,11 +520,11 @@ Retourne UNIQUEMENT du JSON valide, rien d'autre:
     if (!jsonMatch) throw new Error('Réponse inattendue de Claude: ' + text.slice(0,200));
     const parsed = JSON.parse(jsonMatch[0]);
 
-    articles = parsed.groups.map(g => ({
-      id: g.id,
+    articles = enforceContiguous(parsed.groups, photos.length).map((g, n) => ({
+      id: n + 1,
       title: g.title,
       category: g.category,
-      photoIds: g.photo_indices.filter(i => i < photos.length),
+      photoIds: g.photo_indices,
       keywords: '',
       generated: null,
       published: {}
@@ -529,6 +544,41 @@ Retourne UNIQUEMENT du JSON valide, rien d'autre:
   }
 
   setTimeout(() => setProgress(0, false), 500);
+}
+
+// Les photos se suivent : un article = une plage de photos consecutives.
+// Une photo isolee loin de son groupe est rattachee a ses voisines immediates.
+function enforceContiguous(groups, n) {
+  const owner = new Array(n).fill(-1);
+  groups.forEach((g, gi) => (g.photo_indices || []).forEach(i => { if (i >= 0 && i < n && owner[i] < 0) owner[i] = gi; }));
+  // photos oubliees : meme groupe que la precedente
+  for (let i = 0; i < n; i++) if (owner[i] < 0) owner[i] = i > 0 ? owner[i - 1] : (owner.find(o => o >= 0) ?? 0);
+  // decoupe en plages consecutives
+  let runs = [];
+  for (let i = 0; i < n; i++) {
+    const last = runs[runs.length - 1];
+    if (last && last.g === owner[i]) last.end = i; else runs.push({ g: owner[i], start: i, end: i });
+  }
+  // pour chaque groupe, on garde sa plus longue plage ; les autres plages (isolees) passent aux voisines
+  const best = {};
+  runs.forEach((r, k) => { const len = r.end - r.start; if (!(r.g in best) || len > runs[best[r.g]].end - runs[best[r.g]].start) best[r.g] = k; });
+  runs.forEach((r, k) => { r.keep = best[r.g] === k; });
+  for (let k = 0; k < runs.length; k++) {
+    if (runs[k].keep) continue;
+    let prev = k - 1; while (prev >= 0 && !runs[prev].keep) prev--;
+    let next = k + 1; while (next < runs.length && !runs[next].keep) next++;
+    const p = prev >= 0 ? runs[prev] : null, nx = next < runs.length ? runs[next] : null;
+    const tgt = (p && nx) ? (p.g === nx.g ? p : (runs[k].end - runs[k].start >= 0 ? p : nx)) : (p || nx);
+    runs[k].g = tgt.g;
+  }
+  // refusion des plages voisines du meme groupe
+  const merged = [];
+  runs.forEach(r => { const l = merged[merged.length - 1]; if (l && l.g === r.g) l.end = r.end; else merged.push({ g: r.g, start: r.start, end: r.end }); });
+  return merged.map(r => {
+    const src = groups[r.g] || {};
+    const idx = []; for (let i = r.start; i <= r.end; i++) idx.push(i);
+    return { title: src.title || 'Article', category: src.category || '', photo_indices: idx };
+  });
 }
 
 function setProgress(pct, show) {
@@ -576,14 +626,7 @@ function renderArticleRow(art, idx) {
       </td>`;
     tbody.appendChild(tr);
 
-    // photo strip
-    const strip = document.getElementById(`strip-${idx}`);
-    art.photoIds.slice(0, 4).forEach(pi => {
-      const img = document.createElement('img');
-      img.src = photos[pi].dataUrl;
-      img.onclick = () => openLightbox(photos[pi].dataUrl);
-      strip.appendChild(img);
-    });
+    refreshStrip(idx);
 
     // generated panel row (hidden by default)
     const panelRow = document.createElement('tr');
@@ -594,6 +637,113 @@ function renderArticleRow(art, idx) {
     </td>`;
     tbody.appendChild(panelRow);
   }
+}
+
+// ── Photos d'un article : retirer, mettre en premier, ajouter ──
+function refreshStrip(idx) {
+  const art = articles[idx];
+  const strip = document.getElementById(`strip-${idx}`);
+  if (!art || !strip) return;
+  strip.innerHTML = '';
+  art.photoIds.forEach((pi, k) => {
+    const w = document.createElement('div');
+    w.className = 'pth' + (k === 0 ? ' main' : '');
+    const img = document.createElement('img');
+    img.src = photos[pi].dataUrl;
+    img.title = k === 0 ? 'Photo principale' : 'Photo ' + (k + 1);
+    img.onclick = () => openLightbox(photos[pi].dataUrl);
+    const x = document.createElement('button');
+    x.className = 'x'; x.textContent = '×'; x.title = 'Retirer cette photo de l\'article';
+    x.onclick = e => { e.stopPropagation(); removePhoto(idx, pi); };
+    w.appendChild(img); w.appendChild(x);
+    if (k > 0) {
+      const s = document.createElement('button');
+      s.className = 'st'; s.textContent = '★'; s.title = 'Mettre en photo principale';
+      s.onclick = e => { e.stopPropagation(); art.photoIds = [pi].concat(art.photoIds.filter(z => z !== pi)); refreshStrip(idx); };
+      w.appendChild(s);
+    }
+    strip.appendChild(w);
+  });
+  const add = document.createElement('button');
+  add.className = 'padd'; add.textContent = '+'; add.title = 'Ajouter une photo';
+  add.onclick = () => openPhotoPicker(idx);
+  strip.appendChild(add);
+  const row = document.getElementById(`row-${idx}`);
+  const pc = row && row.querySelector('.photo-count');
+  if (pc) pc.textContent = art.photoIds.length + ' photo' + (art.photoIds.length > 1 ? 's' : '') + (art.generated ? ' (regénère pour les textes des photos)' : '');
+}
+
+function removePhoto(idx, pi) {
+  const art = articles[idx];
+  if (art.photoIds.length <= 1 && !confirm('C\'est la dernière photo de cet article : le retirer quand même ?')) return;
+  art.photoIds = art.photoIds.filter(z => z !== pi);
+  refreshStrip(idx);
+}
+
+let _pickerIdx = null;
+function ensurePicker() {
+  if (document.getElementById('pmodal')) return;
+  const m = document.createElement('div');
+  m.className = 'pmodal'; m.id = 'pmodal';
+  m.onclick = e => { if (e.target === m) m.classList.remove('open'); };
+  m.innerHTML = `<div class="box">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <b id="pmTitle">Ajouter une photo</b>
+      <span><button class="btn btn-primary" style="padding:6px 12px" onclick="document.getElementById('pmFile').click()">⬆ Importer de nouvelles photos</button>
+      <button class="btn btn-outline" style="padding:6px 12px" onclick="document.getElementById('pmodal').classList.remove('open')">Fermer</button></span>
+    </div>
+    <div style="font-size:12px;color:#868e96;margin-top:4px">Clique une photo pour l'ajouter. Vert = photo libre ; sinon elle est déplacée depuis son article.</div>
+    <input type="file" id="pmFile" accept="image/*" multiple style="display:none" onchange="pickerUpload(this.files)">
+    <div class="grid" id="pmGrid"></div></div>`;
+  document.body.appendChild(m);
+}
+
+function openPhotoPicker(idx) {
+  ensurePicker();
+  _pickerIdx = idx;
+  const art = articles[idx];
+  document.getElementById('pmTitle').textContent = 'Ajouter une photo à l\'article #' + art.id;
+  const owner = {};
+  articles.forEach((a, ai) => { if (!a.deleted) a.photoIds.forEach(p => { owner[p] = ai; }); });
+  const g = document.getElementById('pmGrid');
+  g.innerHTML = '';
+  // libres d'abord, puis les photos des autres articles (les plus proches en premier)
+  const order = photos.map((_, i) => i).filter(i => !art.photoIds.includes(i));
+  order.sort((a, b) => ((a in owner) - (b in owner)) || a - b);
+  order.forEach(i => {
+    const it = document.createElement('div');
+    it.className = 'it' + (i in owner ? '' : ' free');
+    it.innerHTML = `<img src="${photos[i].dataUrl}"><div>${i in owner ? 'art. #' + articles[owner[i]].id : 'libre'} · n°${i + 1}</div>`;
+    it.onclick = () => { addPhotoTo(idx, i); };
+    g.appendChild(it);
+  });
+  if (!order.length) g.innerHTML = '<div style="font-size:13px;color:#868e96">Aucune autre photo disponible : importe-en de nouvelles.</div>';
+  document.getElementById('pmodal').classList.add('open');
+}
+
+function addPhotoTo(idx, pi) {
+  const art = articles[idx];
+  articles.forEach((a, ai) => { if (ai !== idx && a.photoIds.includes(pi)) { a.photoIds = a.photoIds.filter(z => z !== pi); refreshStrip(ai); } });
+  if (!art.photoIds.includes(pi)) art.photoIds.push(pi);
+  refreshStrip(idx);
+  openPhotoPicker(idx);
+}
+
+function pickerUpload(files) {
+  const arr = Array.from(files || []).filter(f => f.type.startsWith('image/'));
+  if (!arr.length) return;
+  const idx = _pickerIdx;
+  let done = 0;
+  arr.forEach(file => {
+    const rd = new FileReader();
+    rd.onload = ev => {
+      photos.push({ file, dataUrl: ev.target.result, name: file.name });
+      articles[idx].photoIds.push(photos.length - 1);
+      if (++done === arr.length) { refreshStrip(idx); updatePhotoUI(); openPhotoPicker(idx); }
+    };
+    rd.readAsDataURL(file);
+  });
+  document.getElementById('pmFile').value = '';
 }
 
 function esc(s) {
