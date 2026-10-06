@@ -1395,7 +1395,7 @@ function renderGenerated(idx) {
         <select id="ebay-ship-${idx}" onchange="saveShipChoice(${idx},'ebay-ship')" style="${inp}"></select>
         <div class="info-text" id="ebay-pr-${idx}" style="margin-top:4px"></div></div>
       <div class="gen-field"><div class="gen-label">Prix ($ USD)</div>
-        <div class="gen-value" contenteditable="true" id="ebay-price-${idx}">${g.price || ''}</div></div>
+        <div class="gen-value" contenteditable="true" oninput="syncPrice(${idx},'ebay')" id="ebay-price-${idx}">${g.price || ''}</div></div>
       <div class="pub-row">
         <button class="btn-pub ebay" onclick="publishEbay(${idx})">Créer listing eBay</button>
         <button class="btn-pub" style="background:#364fc7;color:#fff;margin-left:6px" onclick="publishAllOne(${idx})" title="eBay + Etsy + Shopify, même SKU">Créer listing sur toutes les plateformes</button>
@@ -1415,7 +1415,7 @@ function renderGenerated(idx) {
         <select id="etsy-ship-${idx}" onchange="saveShipChoice(${idx},'etsy-ship')" style="${inp}"></select>
         <select id="etsy-ready-${idx}" onchange="saveShipChoice(${idx},'etsy-ready')" style="${inp};margin-top:6px;display:none"></select></div>
       <div class="gen-field"><div class="gen-label">Prix (devise de ta boutique Etsy)</div>
-        <div class="gen-value" contenteditable="true" id="etsy-price-${idx}">${g.price || ''}</div></div>
+        <div class="gen-value" contenteditable="true" oninput="syncPrice(${idx},'etsy')" id="etsy-price-${idx}">${g.price || ''}</div></div>
       <div class="pub-row">
         <button class="btn-pub etsy" onclick="publishEtsy(${idx})">Publier sur Etsy (en ligne)</button>
         <span id="pub-etsy-${idx}"></span>
@@ -1436,7 +1436,7 @@ function renderGenerated(idx) {
           <img src="${thumbOf(pi)}" style="width:46px;height:46px;object-fit:cover;border-radius:4px;flex:none">
           <div class="gen-value" contenteditable="true" oninput="articles[${idx}].generated.altTexts[${ii}]=this.innerText.trim()" id="shopify-alt-${idx}-${ii}" style="flex:1">${esc(g.altTexts[ii] || g.title)}</div></div>`).join('')}</div>
       <div class="gen-field"><div class="gen-label">Prix ($ USD)</div>
-        <div class="gen-value" contenteditable="true" id="shopify-price-${idx}">${g.price || ''}</div></div>
+        <div class="gen-value" contenteditable="true" oninput="syncPrice(${idx},'shopify')" id="shopify-price-${idx}">${g.price || ''}</div></div>
       <div class="info-text">Les frais de port Shopify se règlent dans les paramètres de livraison de la boutique, pas par article.</div>
       <div class="pub-row">
         <button class="btn-pub shopify" onclick="publishShopify(${idx})">Publier sur Shopify (en ligne)</button>
@@ -1448,6 +1448,20 @@ function renderGenerated(idx) {
   renderCategories(idx);
   document.getElementById(`ebay-specs-${idx}`).innerHTML = '<span class="info-text">…</span>';
   document.getElementById(`etsy-specs-${idx}`).innerHTML = '<span class="info-text">…</span>';
+}
+
+// Un prix modifie dans un onglet (eBay / Etsy / Shopify) se recopie tout de suite dans les deux autres
+function syncPrice(idx, src) {
+  const el = document.getElementById(`${src}-price-${idx}`);
+  if (!el) return;
+  const v = el.innerText.trim();
+  ['ebay', 'etsy', 'shopify'].forEach(p => {
+    if (p === src) return;
+    const o = document.getElementById(`${p}-price-${idx}`);
+    if (o && o.innerText.trim() !== v) o.innerText = v;
+  });
+  const art = articles[idx];
+  if (art && art.generated && Number(v) > 0) art.generated.price = Number(v);
 }
 
 function switchTab(idx, plat, btn) {
