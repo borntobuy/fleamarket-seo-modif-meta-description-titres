@@ -492,31 +492,64 @@ async function groupArticles() {
     const thumbs = await Promise.all(photos.map(p => resizeDataUrl(p.dataUrl, 320)));
     const img = i => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(thumbs[i]) } });
 
-    // 2) Photo apres photo : la 1re ouvre un article ; chaque nouvelle photo est comparee a l'article en cours
-    const groups = [[0]];
-    for (let i = 1; i < n; i++) {
-      const cur = groups[groups.length - 1];
-      const ref = cur.slice(-3);  // les dernieres photos de l'article en cours
-      const content = [{ type: 'text', text: `Article en cours (${ref.length} photo${ref.length > 1 ? 's' : ''} de cet article) :` }];
-      ref.forEach((r, k) => { content.push({ type: 'text', text: `Photo ${k + 1} :` }); content.push(img(r)); });
-      content.push({ type: 'text', text: 'Nouvelle photo à classer :' });
-      content.push(img(i));
-      content.push({ type: 'text', text: `Les photos ont été prises à la suite, article après article. Cette nouvelle photo montre-t-elle LE MÊME objet physique que l'article en cours (autre angle, détail, marque, dos, dessous, etc.), ou le début d'un AUTRE objet (même s'il est de la même famille, par exemple deux numéros de maison ou deux verres différents) ?
-Réponds UNIQUEMENT par un JSON : {"same":true} si c'est le même objet, {"same":false} si c'est un nouvel objet.` });
-      let same = true;
+    // 2) Premiere passe (en parallele) : chaque photo est comparee a la precedente. Dans le doute -> meme article.
+    const pool = async (items, size, fn) => { const q = items.slice(); await Promise.all(Array.from({ length: size }, async () => { while (q.length) await fn(q.shift()); })); };
+    const ask = async (content, maxTok) => {
       for (let t = 0; t < 3; t++) {
-        try {
-          const txt = await claudeCall([{ role: 'user', content }], 50);
-          const m = txt.match(/"same"\s*:\s*(true|false)/i);
-          if (!m) throw new Error('réponse illisible');
-          same = m[1].toLowerCase() === 'true';
-          break;
-        } catch (e) { if (t === 2) throw e; await new Promise(r => setTimeout(r, 1500)); }
+        try { return await claudeCall([{ role: 'user', content }], maxTok); }
+        catch (e) { if (t === 2) throw e; await new Promise(r => setTimeout(r, 1500)); }
       }
-      if (same) cur.push(i); else groups.push([i]);
-      setProgress(Math.round(i / n * 85));
-      btn.innerHTML = `<span class="spinner"></span> Photo ${i + 1}/${n} · ${groups.length} article${groups.length > 1 ? 's' : ''}`;
-    }
+    };
+    const sameAsPrev = new Array(n).fill(true);
+    let done1 = 0;
+    await pool(Array.from({ length: n - 1 }, (_, k) => k + 1), 8, async i => {
+      const content = [
+        { type: 'text', text: 'Photo précédente :' }, img(i - 1),
+        { type: 'text', text: 'Photo suivante :' }, img(i),
+        { type: 'text', text: `Ces photos ont été prises à la suite, article après article. Les photos d'un même article sont souvent très semblables, mais peuvent aussi être très différentes (dessous, dos, détail, marque, intérieur, plan large ou gros plan). Montrent-elles le même objet physique ?
+Réponds same:true SAUF si c'est clairement un autre objet (même de la même famille : deux numéros de maison, deux verres différents...). En cas de doute, réponds same:true.
+Réponds UNIQUEMENT par un JSON : {"same":true} ou {"same":false}` }
+      ];
+      const txt = await ask(content, 50);
+      const m = txt.match(/"same"\s*:\s*(true|false)/i);
+      sameAsPrev[i] = m ? m[1].toLowerCase() === 'true' : true;
+      done1++;
+      setProgress(Math.round(done1 / n * 60));
+      btn.innerHTML = `<span class="spinner"></span> Comparaison ${done1}/${n - 1}`;
+    });
+    let groups = [[0]];
+    for (let i = 1; i < n; i++) { if (sameAsPrev[i]) groups[groups.length - 1].push(i); else groups.push([i]); }
+
+    // 3) Verification des coupures : la photo qui ouvre un nouvel article est comparee a l'article precedent (3 dernieres photos)
+    //    ET aux photos suivantes (le dessous / un detail n'est pas toujours la derniere photo d'une serie).
+    const cuts = groups.slice(1).map((g, k) => ({ i: g[0], prev: groups[k].slice(-3), next: g.slice(0, 3).filter(x => x !== g[0]).slice(0, 2).concat(n > g[0] + 1 && g.length === 1 ? [g[0] + 1] : []).slice(0, 2) }));
+    const verdict = {};
+    let done2 = 0;
+    await pool(cuts, 8, async c => {
+      const content = [{ type: 'text', text: 'Article précédent :' }];
+      c.prev.forEach((r, k) => { content.push({ type: 'text', text: `Photo ${k + 1} :` }); content.push(img(r)); });
+      content.push({ type: 'text', text: 'Photo à classer :' }); content.push(img(c.i));
+      if (c.next.length) { content.push({ type: 'text', text: 'Photos qui suivent (article suivant probable) :' }); c.next.forEach((r, k) => { content.push({ type: 'text', text: `Suite ${k + 1} :` }); content.push(img(r)); }); }
+      content.push({ type: 'text', text: `La photo à classer appartient-elle à l'article précédent (ex. c'est son dessous, son dos, un détail, une marque), à l'article suivant, ou est-ce un objet seul ?
+Les photos d'un même article sont souvent très semblables entre elles. En cas de doute entre précédent et suivant, choisis celui dont l'objet, la matière, la couleur et le décor (fond, sol, éclairage) ressemblent le plus.
+Réponds UNIQUEMENT par un JSON : {"belongs":"previous"} ou {"belongs":"next"} ou {"belongs":"alone"}` });
+      const txt = await ask(content, 50);
+      const m = txt.match(/"belongs"\s*:\s*"(previous|next|alone)"/i);
+      verdict[c.i] = m ? m[1].toLowerCase() : 'next';
+      done2++;
+      setProgress(60 + Math.round(done2 / Math.max(1, cuts.length) * 25));
+      btn.innerHTML = `<span class="spinner"></span> Vérification ${done2}/${cuts.length}`;
+    });
+    // applique : "previous" -> la photo rejoint l'article precedent (si elle est seule a ouvrir son groupe, elle le quitte)
+    const out = [];
+    groups.forEach((g, gi) => {
+      if (gi > 0 && verdict[g[0]] === 'previous') {
+        out[out.length - 1].push(g[0]);
+        if (g.length > 1) out.push(g.slice(1)); // le reste devient un article a part
+      } else out.push(g.slice());
+    });
+    groups = out;
+    btn.innerHTML = `<span class="spinner"></span> Titres…`;
 
     // 3) Titre et categorie de chaque article (3 en parallele)
     articles = groups.map((ph, k) => ({ id: k + 1, title: 'Article ' + (k + 1), category: '', photoIds: ph, keywords: '', generated: null, published: {} }));
