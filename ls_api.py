@@ -38,6 +38,19 @@ except Exception:  # pragma: no cover
 
 ls_bp = Blueprint('ls_api', __name__)
 
+
+@ls_bp.after_app_request
+def _etsy_more_scopes(resp):
+    """Ajoute l'autorisation de lecture des commandes Etsy (transactions_r) a la connexion OAuth."""
+    try:
+        if request.path == '/etsy/auth_url' and resp.status_code == 200:
+            body = resp.get_data(as_text=True)
+            if 'transactions_r' not in body and 'listings_r%20listings_w' in body:
+                resp.set_data(body.replace('listings_r%20listings_w', 'listings_r%20listings_w%20transactions_r'))
+    except Exception:
+        pass
+    return resp
+
 GH_REPO = os.environ.get('GITHUB_REPO', 'borntobuy/fleamarket-seo-modif-meta-description-titres')
 GH_BRANCH = os.environ.get('LS_DATA_BRANCH', 'ls-data')
 GH_PATH = os.environ.get('LS_DATA_PATH', 'ls_registry.json')
