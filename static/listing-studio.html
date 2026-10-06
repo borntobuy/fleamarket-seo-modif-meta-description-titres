@@ -684,11 +684,26 @@ function refreshStrip(idx) {
   if (pc) pc.textContent = art.photoIds.length + ' photo' + (art.photoIds.length > 1 ? 's' : '') + (art.generated ? ' (regénère pour les textes des photos)' : '');
 }
 
+// Un article sans photo disparait tout seul de la liste
+function dropIfEmpty(idx) {
+  const art = articles[idx];
+  if (!art || art.deleted || art.photoIds.length) return false;
+  art.deleted = true;
+  const r = document.getElementById(`row-${idx}`), pn = document.getElementById(`panel-${idx}`);
+  if (r) r.style.display = 'none';
+  if (pn) pn.style.display = 'none';
+  const n = articles.filter(a => !a.deleted).length;
+  document.getElementById('photoCount').textContent = n + ' article' + (n > 1 ? 's' : '') + ' restant' + (n > 1 ? 's' : '');
+  banner('ok', `Article #${art.id} supprimé (plus aucune photo)`);
+  return true;
+}
+
 function removePhoto(idx, pi) {
   const art = articles[idx];
-  if (art.photoIds.length <= 1 && !confirm('C\'est la dernière photo de cet article : le retirer quand même ?')) return;
+  if (art.photoIds.length <= 1 && !confirm('C\'est la dernière photo de cet article : il sera supprimé de la liste. Continuer ?')) return;
   art.photoIds = art.photoIds.filter(z => z !== pi);
   refreshStrip(idx);
+  dropIfEmpty(idx);
 }
 
 let _pickerIdx = null;
@@ -744,7 +759,7 @@ async function openPhotoPicker(idx) {
 
 function addPhotoTo(idx, pi) {
   const art = articles[idx];
-  articles.forEach((a, ai) => { if (ai !== idx && a.photoIds.includes(pi)) { a.photoIds = a.photoIds.filter(z => z !== pi); refreshStrip(ai); } });
+  articles.forEach((a, ai) => { if (ai !== idx && a.photoIds.includes(pi)) { a.photoIds = a.photoIds.filter(z => z !== pi); refreshStrip(ai); dropIfEmpty(ai); } });
   if (!art.photoIds.includes(pi)) art.photoIds.push(pi);
   refreshStrip(idx);
   openPhotoPicker(idx);  // miniatures en cache : reconstruction instantanee
@@ -849,13 +864,13 @@ SELLER NOTES (highest priority; the seller knows the object, you do not. Never c
 
 === DESCRIPTION RULES ===
 Audience: American buyers who search eBay and Etsy for French vintage, antique, farmhouse, kitchenalia, decor, linens, pottery, glass, metalware, furniture and collectibles. They want facts, honesty and a clear picture of size and condition before paying for international shipping.
-Voice: a specialist dealer writing a catalogue entry. Precise, factual, calm, confident. No sales hype. Total length 300 to 350 words (all paragraphs plus the details block). English only.
+Voice: a specialist dealer writing a catalogue entry. Precise, factual, calm, confident. No sales hype. Total length 300 to 350 words (all paragraphs together). English only.
 1. KEYWORD: choose the single best SEO keyword (1 to 6 words) as a US buyer would type it. It MUST appear in the title, in the H2, in the first sentence, and then naturally 1 or 2 times per 100 words. Never stuff.
 2. P1 (what it is): object, material, French origin or French use, era if you can justify it. Use the French term once with its US equivalent when that helps (example: pot a confiture, a French jam jar). Style words buyers search (French country, farmhouse, rustic) are allowed only where they are factually apt, at most twice.
 3. P2 (what you can see): shape, finish, glaze, patina, colour, construction, decoration, hardware, any mark, stamp, signature, label or hallmark visible in a photo (quote it exactly). Say what is visibly handmade or period construction only if you can see it.
 4. P3 (condition): honest and specific. Name every flaw visible in the photos (chips, hairline cracks, crazing, stains, rust, scratches, repairs, missing parts, replaced parts) and where it is. State what is original. Normal age wear is described as such. End the paragraph with: Sold as pictured.
 5. P4 (size and use): dimensions are MANDATORY. Give INCHES FIRST, then centimetres: 7.3 x 3.1 in (18.5 x 8 cm). Convert if the seller gave one unit. If no dimension exists anywhere, estimate from the photos and write "approximately". Add weight only if known. Then one or two sentences on realistic use or display.
-6. DETAILS BLOCK: one <p> with lines separated by <br>, in this order, skipping a line only if truly unknown: Dimensions / Material / Era / Origin: France / Maker or marks / Condition / Ships from: France.
+6. NO recap or summary block: everything (dimensions, material, era, marks, condition) is already said once in P1 to P4, never repeat it in a list at the end.
 7. LAST PARAGRAPH: EXACTLY this sentence and nothing else: 95% of my items are tariff-free to the US.
 Safety and honesty rules:
 - Never invent provenance, a maker, a date, a famous owner or a place of origin. Hedge when unsure (probably, appears to be, circa). No claim of rarity or value you cannot support.
@@ -867,7 +882,7 @@ Safety and honesty rules:
 - FORBIDDEN openings: This authentic, This vintage, This antique, This piece, Originally used, Originating from, Beautiful. Start with the object itself, its maker, its use or one precise visible detail.
 - Each regeneration must read differently (different first sentence and structure) while keeping the same facts.
 HTML format, exactly, with single quotes for every attribute:
-${WRAP_OPEN}<h2 style='font-family:Arial,sans-serif;font-size:24px;text-align:center;'>KEYWORD</h2><p>P1</p><p>P2</p><p>P3</p><p>P4</p><p>DETAILS BLOCK</p><p>95% of my items are tariff-free to the US.</p></div>
+${WRAP_OPEN}<h2 style='font-family:Arial,sans-serif;font-size:24px;text-align:center;'>KEYWORD</h2><p>P1</p><p>P2</p><p>P3</p><p>P4</p><p>95% of my items are tariff-free to the US.</p></div>
 
 === OTHER FIELDS ===
 - newTitle (the SAME title is used on eBay, Etsy and Shopify): MAXIMUM ${maxEbay} characters, keyword first, object name and material exactly as the seller gave them, keep Vintage / Antique / French when true, rich in buyer search terms, no quote marks. Do NOT add any number or date at the end, it is added automatically.
