@@ -352,7 +352,19 @@ async function loadShipping() {
       const rd = await etsyApi('GET', `/application/shops/${etsyInfo.shopId}/readiness-state-definitions`);
       etsyInfo.readiness = rd.results || [];
     } catch (_) { etsyInfo.readiness = []; }
-    notes.push(`Etsy : ${etsyInfo.shipping.length} profil(s)`);
+    // politique de retour par defaut : 30 jours
+    try {
+      const rp = await etsyApi('GET', `/application/shops/${etsyInfo.shopId}/policies/returns`);
+      const list = rp.results || [];
+      let def = list.find(x => x.accepts_returns && Number(x.return_deadline) === 30);
+      if (!def) {
+        try {
+          def = await etsyApi('POST', `/application/shops/${etsyInfo.shopId}/policies/returns`, { accepts_returns: true, accepts_exchanges: false, return_deadline: 30 });
+        } catch (_) { def = null; }
+      }
+      etsyInfo.returnId = def ? def.return_policy_id : null;
+    } catch (_) { etsyInfo.returnId = null; }
+    notes.push(`Etsy : ${etsyInfo.shipping.length} profil(s), retours 30 j ${etsyInfo.returnId ? 'OK' : 'non trouvés'}`);
   } catch (e) {
     const m = String(e.message);
     notes.push('Etsy : ' + (/scope|shops_r|403|insufficient/i.test(m) ? 'autorisation manquante, clique sur "Etsy" en haut pour te reconnecter' : m.slice(0, 70)));
@@ -864,25 +876,26 @@ SELLER NOTES (highest priority; the seller knows the object, you do not. Never c
 
 === DESCRIPTION RULES ===
 Audience: American buyers who search eBay and Etsy for French vintage, antique, farmhouse, kitchenalia, decor, linens, pottery, glass, metalware, furniture and collectibles. They want facts, honesty and a clear picture of size and condition before paying for international shipping.
-Voice: a specialist dealer writing a catalogue entry. Precise, factual, calm, confident. No sales hype. Total length 300 to 350 words (all paragraphs together). English only.
+Voice and model: write like the best French antiques dealers selling to the American design trade (think the product pages of chezpluie.com). Warm, polished, knowledgeable and confident, in flowing sentences, never a dry list. Describe the form, the material, the character of the piece and where it would live in a home, and add a short line of regional or historical context about this type of object in France when you are sure of it. Appreciative but credible: no exaggeration, no sales hype. Total length 170 to 260 words. English only.
 1. KEYWORD: choose the single best SEO keyword (1 to 6 words) as a US buyer would type it. It MUST appear in the title, in the H2, in the first sentence, and then naturally 1 or 2 times per 100 words. Never stuff.
 2. P1 (what it is): object, material, French origin or French use, era if you can justify it. Use the French term once with its US equivalent when that helps (example: pot a confiture, a French jam jar). Style words buyers search (French country, farmhouse, rustic) are allowed only where they are factually apt, at most twice.
-3. P2 (what you can see): shape, finish, glaze, patina, colour, construction, decoration, hardware, any mark, stamp, signature, label or hallmark visible in a photo (quote it exactly). Say what is visibly handmade or period construction only if you can see it.
-4. P3 (condition): honest and specific. Name every flaw visible in the photos (chips, hairline cracks, crazing, stains, rust, scratches, repairs, missing parts, replaced parts) and where it is. State what is original. Normal age wear is described as such. End the paragraph with: Sold as pictured.
-5. P4 (size and use): dimensions are MANDATORY. Give INCHES FIRST, then centimetres: 7.3 x 3.1 in (18.5 x 8 cm). Convert if the seller gave one unit. If no dimension exists anywhere, estimate from the photos and write "approximately". Add weight only if known. Then one or two sentences on realistic use or display.
+3. P2 (character and use): what makes the piece appealing: shape, finish, glaze, patina, colour, decoration, any mark or signature clearly legible in a photo (quote it exactly), the context of this kind of object in French daily life or regional craft (only if you are sure), and how it can be used or displayed today (shelf, table, kitchen, garden, collection). Mention handmade or period construction only if you can see it.
+4. P3 (condition): short, calm and reassuring, 1 to 2 sentences. Start with "Condition and patina consistent with age." Then mention ONLY the one or two most visible characteristics seen in the photos (for example a small rim chip, light crazing, some rust spots), in neutral wording such as "light wear along the rim" or "small glaze losses". Do not list every tiny flaw, do not alarm the buyer, never use words like damaged, broken, defective or warning. If nothing notable is visible, say only that the item is in good vintage condition.
+5. P4 (size): ONLY if the seller notes contain dimensions. Never invent, estimate or guess any dimension or weight, not even approximately from the photos. The seller gives dimensions as WIDTH x HEIGHT (in that order) unless the notes say otherwise (for example depth, diameter, length). Convert and give INCHES FIRST then centimetres, with the label of each value: "Approx. 7.5 in wide x 6 in high (19 x 15 cm)". Add weight only if the seller gave it. If the seller notes contain no dimension, write NO size sentence at all and leave P4 out entirely.
 6. NO recap or summary block: everything (dimensions, material, era, marks, condition) is already said once in P1 to P4, never repeat it in a list at the end.
 7. LAST PARAGRAPH: EXACTLY this sentence and nothing else: 95% of my items are tariff-free to the US.
 Safety and honesty rules:
 - Never invent provenance, a maker, a date, a famous owner or a place of origin. Hedge when unsure (probably, appears to be, circa). No claim of rarity or value you cannot support.
-- Food-contact antiques (pottery, enamel, pewter, copper, old glass): add one sentence that the item is sold as a decorative collectible and has not been tested for food use.
-- Electrical items: state that it has European wiring (about 220V), is untested, and will need rewiring or a converter for US use.
-- FORBIDDEN words (zero exceptions): beautiful, perfect, remarkable, magnificent, impressive, exceptional, stunning, lovely, charming, wonderful, delightful, exquisite, timeless, enduring, spirit, soul, journey, treasure, superb, outstanding, fantastic, incredible, splendid, gorgeous, rare, unique, must-have, elegant (except as a factual style name). Replace with observations: visible wood grain, good condition with minor wear, classic form.
+- Do NOT add disclaimers, legal or safety remarks, or phrases such as "provided by the seller", "has not been tested", "sold as pictured", "sold as is", "for decorative purposes only". Never mention food use unless the seller notes do.
+- Only for clearly electrical items (lamp, light fixture, clock): one short sentence that it has European wiring (about 220V) and needs a converter or rewiring for US use.
+- Never invent facts that are not visible or in the seller notes: no dimensions, weight, maker, date, material or function. If unsure, stay general.
+- FORBIDDEN words: perfect, remarkable, magnificent, exceptional, stunning, wonderful, exquisite, timeless, spirit, soul, journey, treasure, superb, outstanding, fantastic, incredible, splendid, gorgeous, rare, unique, must-have, one of a kind. Measured appreciative words (charming, rustic, graphic, warm, handsome, well balanced, classic) are fine, used sparingly.
 - COLOUR RULE: never use a colour name that is also a food name for pottery or ceramics (not mustard yellow: use golden yellow, ochre or amber).
 - Plain ASCII only: no accented letters, no curly quotes, no fractions (write 5.5 not 5 1/2). Write inches as "in", never with a quote mark.
 - FORBIDDEN openings: This authentic, This vintage, This antique, This piece, Originally used, Originating from, Beautiful. Start with the object itself, its maker, its use or one precise visible detail.
 - Each regeneration must read differently (different first sentence and structure) while keeping the same facts.
 HTML format, exactly, with single quotes for every attribute:
-${WRAP_OPEN}<h2 style='font-family:Arial,sans-serif;font-size:24px;text-align:center;'>KEYWORD</h2><p>P1</p><p>P2</p><p>P3</p><p>P4</p><p>95% of my items are tariff-free to the US.</p></div>
+${WRAP_OPEN}<h2 style='font-family:Arial,sans-serif;font-size:24px;text-align:center;'>KEYWORD</h2><p>P1</p><p>P2</p><p>P3</p><p>P4 (only if the seller gave dimensions, otherwise omit this paragraph)</p><p>95% of my items are tariff-free to the US.</p></div>
 
 === OTHER FIELDS ===
 - newTitle (the SAME title is used on eBay, Etsy and Shopify): MAXIMUM ${maxEbay} characters, keyword first, object name and material exactly as the seller gave them, keep Vintage / Antique / French when true, rich in buyer search terms, no quote marks. Do NOT add any number or date at the end, it is added automatically.
@@ -1176,7 +1189,7 @@ Rules:
 - SelectionOnly aspects: the value MUST be copied exactly from the allowed list. FreeText aspects: the allowed list is only a guide, write the true value.
 - Every Required aspect must get a value: if truly unknown use "Does not apply" (Brand: "Unbranded").
 - Recommended and Optional aspects: include only when you are confident, otherwise leave them out.
-- Country/Region of Manufacture is France unless the seller says otherwise. Dimensions in inches with the unit (example 7.3 in). Plain ASCII, max 60 characters per value.
+- Country/Region of Manufacture is France unless the seller says otherwise. Dimensions only if the seller notes give them (width x height order unless stated), in inches with the unit (example 7.3 in); NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
 - Aspects marked "up to N values" may be an array of strings.
 Return ONLY JSON: {"Aspect name":"value"} using the exact aspect names.`, 1500);
     return r;
@@ -1294,7 +1307,12 @@ function optionsHtml(list, valKey, labelFn, saved) {
 function refreshShippingSelects(idx) {
   const eb = document.getElementById(`ebay-ship-${idx}`);
   if (eb) {
-    const saved = (articles[idx].shipEbay) || localStorage.getItem('ls_ship_ebay');
+    // defaut : Flat / Standard Shipping a 39 $, sinon dernier choix
+    const txt = p => (p.name + ' ' + (p.summary || ''));
+    const defEb = ebayProfiles.shipping.find(p => /flat/i.test(txt(p)) && /standard/i.test(txt(p)) && /\b39(\.00)?\b/.test(txt(p)))
+      || ebayProfiles.shipping.find(p => /standard/i.test(txt(p)) && /\b39(\.00)?\b/.test(txt(p)))
+      || ebayProfiles.shipping.find(p => /flat/i.test(txt(p)) && /standard/i.test(txt(p)));
+    const saved = (articles[idx].shipEbay) || (defEb ? defEb.id : localStorage.getItem('ls_ship_ebay'));
     eb.innerHTML = optionsHtml(ebayProfiles.shipping, 'id', p => p.name + (p.summary ? ' — ' + p.summary : ''), saved);
     articles[idx].shipEbay = eb.value;
     const pay = (ebayProfiles.payment[0] || {}).name, ret = (ebayProfiles.return[0] || {}).name;
@@ -1560,6 +1578,7 @@ async function publishEtsy(idx) {
     };
     const rd = document.getElementById(`etsy-ready-${idx}`);
     if (rd && rd.value) body.readiness_state_id = Number(rd.value);
+    if (etsyInfo.returnId) body.return_policy_id = Number(etsyInfo.returnId);
 
     const d = await etsyApi('POST', `/application/shops/${etsyInfo.shopId}/listings`, body);
     art.published.etsy = d.listing_id;
@@ -1712,6 +1731,37 @@ async function loadStockLive() {
     const loadPlat = async (p) => {
       try {
         let next = null, first = true, page = 1;
+        const getPart = async (q) => {
+          let d = null;
+          for (let t = 0; t < 8 && !d; t++) {
+            try { d = await lsFetch(BASE + `/ls/stock_part?plat=${p}${q}`).then(r => r.text()).then(x => JSON.parse(x)); if (d.error && t < 3) { d = null; throw new Error('retry'); } }
+            catch (_) { info.innerHTML = 'une plateforme répond lentement ou le serveur redémarre, nouvelle tentative…'; await new Promise(r => setTimeout(r, 5000)); }
+          }
+          if (!d) throw new Error('serveur injoignable, réessaie dans une minute');
+          if (d.error) throw new Error(d.error);
+          return d;
+        };
+        if (p === 'ebay' || p === 'etsy') {
+          // page 1 pour connaitre le nombre de pages, puis le reste en parallele (4 a la fois)
+          const d1 = await getPart(p === 'ebay' ? '&page=1' : '&offset=0');
+          const total = d1.pages || 1;
+          prog[p][1] = total; prog[p][0] = 1; showPct();
+          const parts = [d1.items || []];
+          let nextPage = 2;
+          const worker = async () => {
+            while (nextPage <= total) {
+              const k = nextPage++;
+              const d = await getPart(p === 'ebay' ? `&page=${k}` : `&offset=${(k - 1) * 100}`);
+              parts[k - 1] = d.items || [];
+              prog[p][0]++; showPct();
+            }
+          };
+          await Promise.all([worker(), worker(), worker(), worker()]);
+          parts.forEach(a => current[p].push(...(a || [])));
+          prog[p][1] = prog[p][0];
+          showPct();
+          return;
+        }
         for (let n = 0; n < 60; n++) {
           const q = p === 'ebay' ? `&page=${page}` : (p === 'etsy' ? `&offset=${next || 0}` : (next ? `&cursor=${encodeURIComponent(next)}` : ''));
           let d = null;
@@ -1731,9 +1781,17 @@ async function loadStockLive() {
       } catch (e) { errors[p] = String(e.message).slice(0, 200); delete current[p]; prog[p][1] = prog[p][0] = 1; }
       showPct();
     };
+    const savedP = lsFetch(BASE + '/ls/stock').then(r => r.json()).catch(() => ({}));
+    // affichage immediat du dernier etat enregistre pendant que la lecture en direct se termine
+    savedP.then(sv => {
+      if (stockRows.length || !(sv.items || []).length) return;
+      const quick = (sv.items || []).filter(i => i.status !== 'sold').map((r, k) => Object.assign({ status: 'active', platforms: {}, refs: {} }, r, { _i: k, sel: false, newPrice: null }));
+      if (!quick.length) return;
+      stockRows = quick; renderStock();
+    });
     const [, saved] = await Promise.all([
       Promise.all(['ebay', 'etsy', 'shopify'].map(loadPlat)),
-      lsFetch(BASE + '/ls/stock').then(r => r.json()).catch(() => ({}))
+      savedP
     ]);
     info.innerHTML = 'rapprochement des articles… <b>99 %</b>';
     const live = await lsFetch(BASE + '/ls/stock_merge', { method: 'POST', headers: JSON_H, body: JSON.stringify({ current }) }).then(r => r.json());
@@ -1790,12 +1848,69 @@ function renderStock() {
     const priceVal = r.newPrice !== null ? r.newPrice : (r.price || '');
     const priceCell = sold ? esc(r.price ? '$' + r.price : '') :
       `<span style="color:#868e96">$</span><input type="number" min="0" step="0.01" value="${esc(priceVal)}" oninput="onStockPrice(${r._i},this)" onchange="applyStockPrice(${r._i},this)" onkeydown="if(event.key==='Enter')this.blur()" style="width:78px;padding:4px 6px;border:1px solid ${r.newPrice !== null ? '#f59f00' : '#ced4da'};border-radius:6px;font-size:13px;${r.newPrice !== null ? 'background:#fff9db' : ''}">`;
-    const thumb = r.img ? `<img src="${esc(r.img)}" loading="lazy" style="width:48px;height:48px;object-fit:cover;border-radius:6px;display:block" onerror="this.style.visibility='hidden'">` : '<div style="width:48px;height:48px;border-radius:6px;background:#f1f3f5"></div>';
+    const canOpen = !sold && r.refs && Object.keys(r.refs).length;
+    const thumb = (r.img ? `<img src="${esc(r.img)}" loading="lazy" style="width:48px;height:48px;object-fit:cover;border-radius:6px;display:block" onerror="this.style.visibility='hidden'">` : '<div style="width:48px;height:48px;border-radius:6px;background:#f1f3f5"></div>');
+    const thumbBox = canOpen ? `<div onclick="openStockPreview(${r._i})" title="Aperçu / modifier l'annonce" style="cursor:pointer">${thumb}</div>` : thumb;
     return `<tr><td><input type="checkbox" ${r.sel ? 'checked' : ''} ${sold ? 'disabled' : ''} onchange="stockRows[${r._i}].sel=this.checked;updateSelCount()"></td>` +
-      `<td>${thumb}</td><td style="font-family:monospace;font-size:12px">${esc(r.sku || '—')}</td><td>${esc(r.title)}</td>` +
+      `<td>${thumbBox}</td><td style="font-family:monospace;font-size:12px">${esc(r.sku || '—')}</td><td>${esc(r.title)}</td>` +
       `<td style="white-space:nowrap">${priceCell}</td><td style="white-space:nowrap">${Object.keys(PLAT_BADGE).map(p => platIcon(p, r.platforms && r.platforms[p])).join('')}</td><td>${status}</td></tr>`;
   }).join('');
   updateSelCount();
+}
+// ── Aperçu / modification d'une annonce du stock (titre + description sur toutes les plateformes) ──
+async function openStockPreview(i) {
+  const r = stockRows[i];
+  if (!r || !r.refs) return;
+  let m = document.getElementById('stockPrev');
+  if (m) m.remove();
+  m = document.createElement('div');
+  m.id = 'stockPrev';
+  m.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:92vh;overflow:auto;padding:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>${esc(r.sku || '')} · aperçu de l'annonce</b><button class="btn btn-outline" onclick="closeStockPreview()">Fermer</button></div>
+    <div id="spBody" class="info-text">chargement de l'annonce…</div></div>`;
+  m.addEventListener('mousedown', e => { if (e.target === m) closeStockPreview(); });
+  document.body.appendChild(m);
+  try {
+    const src = await lsFetch(BASE + '/ls/stock_source', { method: 'POST', headers: JSON_H, body: JSON.stringify({ refs: r.refs }) }).then(x => x.json());
+    const s = src.ebay || src.shopify || src.etsy;
+    if (!s) throw new Error('annonce illisible');
+    const imgs = [...new Set([].concat(...[src.ebay, src.shopify, src.etsy].filter(Boolean).map(x => x.images || [])))].slice(0, 12);
+    let desc = String(s.description || '').replace(/<!--\s*fmf-[a-z]+\s*-->/g, '').trim();
+    if (!/<[a-z][\s\S]*>/i.test(desc)) desc = desc.split(/\n{2,}/).map(p => '<p>' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
+    const plats = Object.keys(r.refs).map(p => PLAT_BADGE[p].n).join(', ');
+    document.getElementById('spBody').className = '';
+    document.getElementById('spBody').innerHTML =
+      `<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px">${imgs.map(u => `<img src="${esc(u)}" style="height:90px;border-radius:6px">`).join('')}</div>` +
+      `<label style="font-size:12px;color:#868e96">Titre (max 80 caractères sur eBay)</label>` +
+      `<input id="spTitle" value="${esc(s.title || '')}" maxlength="140" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px;margin-bottom:10px">` +
+      `<label style="font-size:12px;color:#868e96">Description (modifiable ici)</label>` +
+      `<div id="spDesc" contenteditable="true" style="border:1px solid #ced4da;border-radius:6px;padding:10px;min-height:200px;max-height:42vh;overflow:auto;font-size:15px">${desc}</div>` +
+      `<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><button class="btn btn-primary" id="spSave" onclick="saveStockPreview(${i})">Enregistrer sur ${esc(plats)}</button><span id="spMsg" class="info-text"></span></div>`;
+  } catch (e) {
+    document.getElementById('spBody').innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 160))}</span>`;
+  }
+}
+function closeStockPreview() { const m = document.getElementById('stockPrev'); if (m) m.remove(); }
+async function saveStockPreview(i) {
+  const r = stockRows[i];
+  const title = document.getElementById('spTitle').value.trim();
+  const box = document.getElementById('spDesc');
+  const html = box.innerHTML.trim();
+  const text = htmlToPlain(html);
+  const msg = document.getElementById('spMsg'), btn = document.getElementById('spSave');
+  btn.disabled = true; msg.textContent = 'enregistrement…';
+  try {
+    const d = await lsFetch(BASE + '/ls/stock_desc_update', { method: 'POST', headers: JSON_H, body: JSON.stringify({ refs: r.refs, title, html, text }) }).then(x => x.json());
+    if (d.error) throw new Error(d.error);
+    const res = d.results || {};
+    const bad = Object.entries(res).filter(([, v]) => v.error).map(([p, v]) => PLAT_BADGE[p].n + ' : ' + v.error);
+    const ok = Object.entries(res).filter(([, v]) => v.ok).map(([p]) => PLAT_BADGE[p].n);
+    if (title) r.title = title;
+    msg.innerHTML = (ok.length ? `<span style="color:#1b6b2b">✓ ${esc(ok.join(', '))}</span> ` : '') + (bad.length ? `<span class="pub-err">${esc(bad.join(' · '))}</span>` : '');
+    if (!bad.length) { banner('ok', 'Annonce mise à jour sur ' + ok.join(', ')); renderStock(); }
+  } catch (e) { msg.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 160))}</span>`; }
+  btn.disabled = false;
 }
 function onStockPrice(i, el) {
   const r = stockRows[i];
