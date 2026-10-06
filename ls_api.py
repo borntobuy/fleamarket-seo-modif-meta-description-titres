@@ -1141,10 +1141,10 @@ def ls_stock_sync():
         for k, it, gone in cands:
             if 'etsy' in gone:
                 try:
-                    st = _etsy_get('/application/listings/%s' % it['p']['etsy']['id']).get('state')
+                    e_state = _etsy_get('/application/listings/%s' % it['p']['etsy']['id']).get('state')
                 except Exception:
-                    st = None
-                if st != 'sold_out':
+                    e_state = None
+                if e_state != 'sold_out':
                     it['p']['etsy']['active'] = False
                     gone = [p for p in gone if p != 'etsy']
                     if not gone:
