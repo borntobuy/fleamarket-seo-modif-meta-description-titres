@@ -232,6 +232,9 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
   <button class="btn btn-outline" id="btnGenAll" onclick="generateAll()" style="display:none">
     Générer tous les listings
   </button>
+  <button class="btn btn-primary" id="btnExportAll" onclick="exportAll()" style="display:none">
+    Exporter tous les articles
+  </button>
   <span class="info-text" id="photoCount">Aucune photo chargée</span>
 </div>
 
@@ -490,6 +493,7 @@ async function groupArticles() {
     btn.disabled = true;
     const n = photos.length;
     const thumbs = await Promise.all(photos.map(p => resizeDataUrl(p.dataUrl, 320)));
+    thumbs.forEach((t, i) => { photos[i].thumb = t; });  // miniatures reutilisees partout dans l'interface
     const img = i => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(thumbs[i]) } });
 
     // 2) Premiere passe (en parallele) : chaque photo est comparee a la precedente. Dans le doute -> meme article.
@@ -576,6 +580,7 @@ Retourne UNIQUEMENT du JSON valide : {"title":"titre court en anglais, style eBa
     renderArticles();
     btn.innerHTML = `${articles.length} articles détectés ✓`;
     document.getElementById('btnGenAll').style.display = '';
+    document.getElementById('btnExportAll').style.display = '';
     document.getElementById('articlesTable').style.display = '';
 
   } catch(e) {
@@ -655,7 +660,7 @@ function refreshStrip(idx) {
     const w = document.createElement('div');
     w.className = 'pth' + (k === 0 ? ' main' : '');
     const img = document.createElement('img');
-    img.src = photos[pi].dataUrl;
+    img.src = thumbOf(pi); img.decoding = 'async';
     img.title = k === 0 ? 'Photo principale' : 'Photo ' + (k + 1);
     img.onclick = () => openLightbox(photos[pi].dataUrl);
     const x = document.createElement('button');
@@ -704,8 +709,18 @@ function ensurePicker() {
   document.body.appendChild(m);
 }
 
-function openPhotoPicker(idx) {
+function thumbOf(pi) { return (photos[pi] && (photos[pi].thumb || photos[pi].dataUrl)) || ''; }
+let _thumbsBusy = null;
+function ensureThumbs() {
+  if (_thumbsBusy) return _thumbsBusy;
+  _thumbsBusy = Promise.all(photos.map(async p => { if (!p.thumb) { try { p.thumb = await resizeDataUrl(p.dataUrl, 240); } catch (_) {} } }))
+    .finally(() => { _thumbsBusy = null; });
+  return _thumbsBusy;
+}
+
+async function openPhotoPicker(idx) {
   ensurePicker();
+  if (photos.some(p => !p.thumb)) { document.getElementById('pmGrid').innerHTML = '<div style="font-size:13px;color:#868e96">Préparation des miniatures…</div>'; document.getElementById('pmodal').classList.add('open'); await ensureThumbs(); }
   _pickerIdx = idx;
   const art = articles[idx];
   document.getElementById('pmTitle').textContent = 'Ajouter une photo à l\'article #' + art.id;
@@ -719,7 +734,7 @@ function openPhotoPicker(idx) {
   order.forEach(i => {
     const it = document.createElement('div');
     it.className = 'it' + (i in owner ? '' : ' free');
-    it.innerHTML = `<img src="${photos[i].dataUrl}"><div>${i in owner ? 'art. #' + articles[owner[i]].id : 'libre'} · n°${i + 1}</div>`;
+    it.innerHTML = `<img src="${thumbOf(i)}" loading="lazy" decoding="async"><div>${i in owner ? 'art. #' + articles[owner[i]].id : 'libre'} · n°${i + 1}</div>`;
     it.onclick = () => { addPhotoTo(idx, i); };
     g.appendChild(it);
   });
@@ -732,7 +747,7 @@ function addPhotoTo(idx, pi) {
   articles.forEach((a, ai) => { if (ai !== idx && a.photoIds.includes(pi)) { a.photoIds = a.photoIds.filter(z => z !== pi); refreshStrip(ai); } });
   if (!art.photoIds.includes(pi)) art.photoIds.push(pi);
   refreshStrip(idx);
-  openPhotoPicker(idx);
+  openPhotoPicker(idx);  // miniatures en cache : reconstruction instantanee
 }
 
 function pickerUpload(files) {
@@ -745,7 +760,7 @@ function pickerUpload(files) {
     rd.onload = ev => {
       photos.push({ file, dataUrl: ev.target.result, name: file.name });
       articles[idx].photoIds.push(photos.length - 1);
-      if (++done === arr.length) { refreshStrip(idx); updatePhotoUI(); openPhotoPicker(idx); }
+      if (++done === arr.length) { ensureThumbs().then(() => { refreshStrip(idx); updatePhotoUI(); openPhotoPicker(idx); }); }
     };
     rd.readAsDataURL(file);
   });
@@ -961,12 +976,78 @@ function deleteArticle(idx) {
 }
 
 async function generateAll() {
-  for (let i = 0; i < articles.length; i++) {
-    if (!articles[i].generated && !articles[i].deleted) {
-      await generateOne(i);
-      await new Promise(r => setTimeout(r, 500));
-    }
+  const todo = articles.map((a, i) => i).filter(i => !articles[i].deleted);
+  if (!todo.length) return;
+  const already = todo.filter(i => articles[i].generated).length;
+  if (already && !confirm(already + ' article(s) ont déjà un listing généré.\nTout regénérer ? (les modifications faites à la main dans les listings seront remplacées)')) return;
+  const btn = document.getElementById('btnGenAll');
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  let done = 0;
+  const upd = () => { btn.innerHTML = `<span class="spinner"></span> Génération ${done}/${todo.length}`; banner('run', `Génération des listings : ${done}/${todo.length} (reste ${todo.length - done})`); };
+  upd();
+  const q = todo.slice();
+  await Promise.all([0, 1, 2].map(async () => {
+    while (q.length) { const i = q.shift(); await generateOne(i); done++; upd(); }
+  }));
+  btn.disabled = false; btn.innerHTML = label;
+  banner('ok', `Génération terminée : ${todo.length} article(s)`);
+}
+
+// ── Publication sur les 3 plateformes (meme SKU partout) ──
+async function publishAll(idx, quiet) {
+  const art = articles[idx];
+  const res = {};
+  if (!art.generated) { await generateOne(idx); }
+  if (!art.generated) return { generation: 'erreur : listing non généré' };
+  for (const [plat, fn] of [['ebay', publishEbay], ['etsy', publishEtsy], ['shopify', publishShopify]]) {
+    if (art.published && art.published[plat]) { res[plat] = 'déjà publié'; continue; }
+    try { await fn(idx); } catch (_) {}
+    const el = document.getElementById(`pub-${plat}-${idx}`);
+    const bad = el && el.querySelector('.pub-err');
+    res[plat] = (art.published && art.published[plat]) ? 'ok' : ('erreur' + (bad ? ' : ' + bad.innerText.slice(0, 120) : ''));
   }
+  return res;
+}
+
+async function publishAllOne(idx) {
+  const art = articles[idx];
+  if (art.generated) {
+    const { missing } = gatherEbaySpecifics(idx);
+    if (missing.length && !confirm('Caractéristiques eBay obligatoires vides : ' + missing.join(', ') + '\nPublier quand même sur toutes les plateformes ?')) return;
+  }
+  banner('run', `Création des listings sur toutes les plateformes (article #${art.id}) en cours…`);
+  window.__batch = true;
+  let res;
+  try { res = await publishAll(idx); } finally { window.__batch = false; }
+  const bad = Object.entries(res).filter(([, v]) => v.startsWith('erreur'));
+  if (bad.length) banner('err', `Article #${art.id} : ` + bad.map(([p, v]) => p + ' → ' + v).join(' · '));
+  else banner('ok', `Article #${art.id} publié partout (eBay, Etsy, Shopify)`);
+}
+
+async function exportAll() {
+  const todo = articles.map((a, i) => i).filter(i => !articles[i].deleted && !(articles[i].published && articles[i].published.ebay && articles[i].published.etsy && articles[i].published.shopify));
+  if (!todo.length) { alert('Tous les articles sont déjà exportés.'); return; }
+  const nogen = todo.filter(i => !articles[i].generated).length;
+  if (!confirm(`Exporter ${todo.length} article(s) vers eBay, Etsy et Shopify (même SKU partout) ?` + (nogen ? `\n${nogen} article(s) n'ont pas encore de listing : il sera généré d'abord.` : '') + '\nLes publications Etsy et Shopify sont mises en ligne directement.')) return;
+  const btn = document.getElementById('btnExportAll');
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  window.__batch = true;
+  let done = 0, ok = 0; const errs = [];
+  const upd = () => { btn.innerHTML = `<span class="spinner"></span> ${done}/${todo.length} exportés`; banner('run', `Export : ${done}/${todo.length} articles exportés (reste ${todo.length - done})`); };
+  upd();
+  try {
+    for (const i of todo) {
+      let res;
+      try { res = await publishAll(i); } catch (e) { res = { erreur: 'erreur : ' + e.message }; }
+      const bad = Object.entries(res).filter(([, v]) => String(v).startsWith('erreur'));
+      if (bad.length) errs.push('#' + articles[i].id + ' ' + bad.map(([p, v]) => p + ' ' + v).join(', ')); else ok++;
+      done++; upd();
+    }
+  } finally { window.__batch = false; btn.disabled = false; btn.innerHTML = label; }
+  if (errs.length) banner('err', `Export terminé : ${ok}/${todo.length} sans erreur. À revoir : ` + errs.slice(0, 4).join(' | '));
+  else banner('ok', `Export terminé : ${ok}/${todo.length} articles publiés partout`);
 }
 
 function setStatus(idx, cls, text) {
@@ -1302,6 +1383,7 @@ function renderGenerated(idx) {
         <div class="gen-value" contenteditable="true" id="ebay-price-${idx}">${g.price || ''}</div></div>
       <div class="pub-row">
         <button class="btn-pub ebay" onclick="publishEbay(${idx})">Créer listing eBay</button>
+        <button class="btn-pub" style="background:#364fc7;color:#fff;margin-left:6px" onclick="publishAllOne(${idx})" title="eBay + Etsy + Shopify, même SKU">Créer listing sur toutes les plateformes</button>
         <span id="pub-ebay-${idx}"></span>
       </div>
     </div>
@@ -1336,7 +1418,7 @@ function renderGenerated(idx) {
         <div class="gen-value" contenteditable="true" id="shopify-seo-desc-${idx}">${esc(g.seoDesc)}</div></div>
       <div class="gen-field"><div class="gen-label">Alt des images (une par photo, envoyé à Shopify)</div>
         ${art.photoIds.slice(0, 10).map((pi, ii) => `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px">
-          <img src="${photos[pi].dataUrl}" style="width:46px;height:46px;object-fit:cover;border-radius:4px;flex:none">
+          <img src="${thumbOf(pi)}" style="width:46px;height:46px;object-fit:cover;border-radius:4px;flex:none">
           <div class="gen-value" contenteditable="true" oninput="articles[${idx}].generated.altTexts[${ii}]=this.innerText.trim()" id="shopify-alt-${idx}-${ii}" style="flex:1">${esc(g.altTexts[ii] || g.title)}</div></div>`).join('')}</div>
       <div class="gen-field"><div class="gen-label">Prix ($ USD)</div>
         <div class="gen-value" contenteditable="true" id="shopify-price-${idx}">${g.price || ''}</div></div>
