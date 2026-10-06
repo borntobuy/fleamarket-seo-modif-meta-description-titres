@@ -760,6 +760,30 @@ def _etsy_shop():
     return _etsy_shop_cache['id']
 
 
+def _etsy_paid_receipts():
+    """Commandes Etsy payees recentes (4 jours) -> ([receipt_id], [(receipt_id, [listing_id])])."""
+    shop = _etsy_shop()
+    data = _etsy_get('/application/shops/%s/receipts' % shop,
+                     {'limit': 100, 'was_paid': 'true', 'min_created': int(time.time()) - 4 * 86400})
+    ids, lst = [], []
+    for r in data.get('results', []):
+        rid = str(r.get('receipt_id'))
+        ids.append(rid)
+        lst.append((rid, [str(t.get('listing_id')) for t in (r.get('transactions') or []) if t.get('listing_id')]))
+    return ids, lst
+
+
+def _etsy_stock_left(ref):
+    inv = _etsy_get('/application/listings/%s/inventory' % ref['id'])
+    prods = inv.get('products', [])
+    qty = 0
+    for p in prods:
+        for o in p.get('offerings', []):
+            if o.get('is_enabled', True):
+                qty += int(o.get('quantity') or 0)
+    return len(prods), qty
+
+
 def _etsy_page(offset):
     """Une page (100) d'annonces Etsy actives et achetables -> (items, count_total)."""
     shop = _etsy_shop()
@@ -1138,11 +1162,34 @@ def ls_stock_sync():
         first_run = not st.get('last')
         actions, blocked, newly_sold = [], [], []
         cands = []
+        etsy_sale_keys = set()
+        new_sale_ids = set()
+        try:
+            rc_ids, rc_listings = _etsy_paid_receipts()
+            seen_rc = st.get('etsy_rc')
+            if seen_rc is not None:  # premier passage : on memorise sans agir
+                for rid, lids in rc_listings:
+                    if rid not in seen_rc:
+                        new_sale_ids |= set(lids)
+            st['etsy_rc'] = sorted(set(seen_rc or []) | set(rc_ids))[-400:]
+        except Exception:
+            pass  # autorisation « transactions_r » absente ou Etsy injoignable : on retombe sur la detection classique
         for k, it in items.items():
             if it.get('status') != 'active' or not it.get('sku'):
                 continue  # sans SKU : rapprochement par titre trop risque, jamais d'action auto
             gone = [p for p in ok_plats if (it['p'].get(p) or {}).get('active') and
                     p not in next((m['p'] for m in merged if (m['sku'] and m['sku'] == it.get('sku')) or m['tkey'] == it.get('tkey')), {})]
+            # Vente Etsy confirmee par une commande payee alors que l'annonce reste active (stock non decremente)
+            er = it['p'].get('etsy') or {}
+            if 'etsy' not in gone and er.get('active') and str(er.get('id')) in new_sale_ids:
+                try:
+                    sl = _etsy_stock_left(er)
+                    if not (sl and sl[1] > 0 and (sl[0] > 1 or sl[1] > 1)):  # pas de variante/quantite restante
+                        _deactivate('etsy', er)
+                        etsy_sale_keys.add(k)
+                        gone = list(gone) + ['etsy']
+                except Exception:
+                    pass
             if gone:
                 cands.append((k, it, gone))
         # Une annonce Shopify absente de la liste « achetable » n'est PAS forcement vendue : brouillon, archivee,
@@ -1152,7 +1199,7 @@ def ls_stock_sync():
         mass_shop = sum(1 for s in sstates.values() if s.get('sold_out')) > 15  # rattrapage massif = artefact de filtre, pas des ventes
         # Idem Etsy : « inactive / brouillon / expiree » (desactivee a la main ou par Etsy) n'est pas une vente.
         for k, it, gone in cands:
-            if 'etsy' in gone:
+            if 'etsy' in gone and k not in etsy_sale_keys:
                 try:
                     e_state = _etsy_get('/application/listings/%s' % it['p']['etsy']['id']).get('state')
                 except Exception:
