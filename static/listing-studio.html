@@ -1774,7 +1774,7 @@ function renderStock() {
       (n === 3 ? '<span class="status-badge ready">Partout</span>' : `<span class="status-badge generating">${n}/3 plateformes</span>`);
     const priceVal = r.newPrice !== null ? r.newPrice : (r.price || '');
     const priceCell = sold ? esc(r.price ? '$' + r.price : '') :
-      `<span style="color:#868e96">$</span><input type="number" min="0" step="0.01" value="${esc(priceVal)}" oninput="onStockPrice(${r._i},this)" style="width:78px;padding:4px 6px;border:1px solid ${r.newPrice !== null ? '#f59f00' : '#ced4da'};border-radius:6px;font-size:13px;${r.newPrice !== null ? 'background:#fff9db' : ''}">`;
+      `<span style="color:#868e96">$</span><input type="number" min="0" step="0.01" value="${esc(priceVal)}" onchange="applyStockPrice(${r._i},this)" onkeydown="if(event.key==='Enter')this.blur()" style="width:78px;padding:4px 6px;border:1px solid ${r.newPrice !== null ? '#f59f00' : '#ced4da'};border-radius:6px;font-size:13px;${r.newPrice !== null ? 'background:#fff9db' : ''}">`;
     const thumb = r.img ? `<img src="${esc(r.img)}" loading="lazy" style="width:48px;height:48px;object-fit:cover;border-radius:6px;display:block" onerror="this.style.visibility='hidden'">` : '<div style="width:48px;height:48px;border-radius:6px;background:#f1f3f5"></div>';
     return `<tr><td><input type="checkbox" ${r.sel ? 'checked' : ''} ${sold ? 'disabled' : ''} onchange="stockRows[${r._i}].sel=this.checked;updateSelCount()"></td>` +
       `<td>${thumb}</td><td style="font-family:monospace;font-size:12px">${esc(r.sku || '—')}</td><td>${esc(r.title)}</td>` +
@@ -1867,6 +1867,29 @@ async function deactivateSelected() {
   try { await stockAction('deactivate', rows, plats, 'Désactivation'); await refreshRows(rows); }
   catch (e) { stockMsg(`<span class="pub-err">${esc(e.message)}</span>`); }
 }
+// Le prix se met a jour tout seul sur toutes les plateformes des qu'on valide la saisie (Entree ou clic ailleurs)
+async function applyStockPrice(i, el) {
+  const r = stockRows[i];
+  const v = el.value;
+  if (!r || r.status !== 'active' || r.__pricing) return;
+  if (v === '' || !(Number(v) > 0) || Number(v) === Number(r.price)) { el.value = r.price || ''; return; }
+  r.__pricing = true;
+  el.disabled = true; el.style.background = '#fff9db';
+  const plats = ['ebay', 'etsy', 'shopify'].filter(p => r.refs && r.refs[p]);
+  banner('run', `Prix → $${v} sur ${plats.map(p => PLAT_BADGE[p].n).join(', ')} en cours…`);
+  try {
+    r.newPrice = v;
+    const d = await stockAction('price', [r], plats, 'Prix');
+    const ko = (d.results || []).filter(x => x.error);
+    await refreshRows([r]);
+    if (ko.length) banner('err', `Prix modifié avec erreurs : ` + ko.map(x => x.platform + ' : ' + x.error).join(' · ').slice(0, 220));
+    else banner('ok', `Prix mis à jour à $${v} sur ${plats.map(p => PLAT_BADGE[p].n).join(', ')}`);
+  } catch (e) {
+    r.newPrice = null; renderStock();
+    banner('err', 'Prix : ' + String(e.message || e).slice(0, 180));
+  } finally { r.__pricing = false; }
+}
+
 async function updateSelectedPrices() {
   const rows = checkedRows().filter(r => r.newPrice !== null);
   if (!rows.length) return alert('Modifie le prix d\'au moins un article coché.');
