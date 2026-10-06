@@ -1387,7 +1387,10 @@ def _set_price(plat, ref, price):
         for pr in inv.get('products', []):
             offs = []
             for o in pr.get('offerings', []):
-                offs.append({'quantity': o.get('quantity', 1), 'is_enabled': o.get('is_enabled', True), 'price': price})
+                off = {'quantity': o.get('quantity', 1), 'is_enabled': o.get('is_enabled', True), 'price': price}
+                if o.get('readiness_state_id'):  # exige par Etsy sur chaque offre
+                    off['readiness_state_id'] = o['readiness_state_id']
+                offs.append(off)
             products.append({'sku': pr.get('sku', ''),
                              'property_values': [{'property_id': pv.get('property_id'), 'property_name': pv.get('property_name'),
                                                   'scale_id': pv.get('scale_id'), 'value_ids': pv.get('value_ids', []),
@@ -1396,13 +1399,14 @@ def _set_price(plat, ref, price):
         body = {'products': products,
                 'price_on_property': inv.get('price_on_property') or [],
                 'quantity_on_property': inv.get('quantity_on_property') or [],
-                'sku_on_property': inv.get('sku_on_property') or []}
+                'sku_on_property': inv.get('sku_on_property') or [],
+                'readiness_state_on_property': inv.get('readiness_state_on_property') or []}
         h2 = dict(h)
         h2['Content-Type'] = 'application/json'
         u = requests.put('https://openapi.etsy.com/v3/application/listings/%s/inventory' % ref['id'],
                          headers=h2, json=body, timeout=30)
         if u.status_code not in (200, 201):
-            raise StoreError('Etsy %s : %s' % (u.status_code, u.text[:100]))
+            raise StoreError('Etsy %s : %s' % (u.status_code, u.text[:200]))
         return 'Etsy %.2f' % price
     raise StoreError('plateforme inconnue')
 
