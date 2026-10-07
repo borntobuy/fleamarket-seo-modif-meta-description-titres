@@ -57,7 +57,8 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
 .pth{position:relative;width:48px;height:48px}
 .pth .x{position:absolute;top:-5px;right:-5px;width:17px;height:17px;border-radius:50%;background:#c92a2a;color:#fff;border:0;font-size:12px;line-height:17px;padding:0;cursor:pointer;display:none}
 .pth .st{position:absolute;bottom:-3px;left:-3px;width:17px;height:17px;border-radius:50%;background:#f59f00;color:#fff;border:0;font-size:10px;line-height:17px;padding:0;cursor:pointer;display:none}
-.pth:hover .x,.pth:hover .st{display:block}
+.pth .sp{position:absolute;bottom:-3px;right:-3px;width:17px;height:17px;border-radius:50%;background:#1971c2;color:#fff;border:0;font-size:10px;line-height:17px;padding:0;cursor:pointer;display:none}
+.pth:hover .x,.pth:hover .st,.pth:hover .sp{display:block}
 .pth.main img{border:2px solid #f59f00}
 .padd{width:48px;height:48px;border:1px dashed #adb5bd;border-radius:5px;background:#f8f9fa;color:#495057;font-size:22px;cursor:pointer;padding:0}
 .pmodal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:center;justify-content:center}
@@ -516,7 +517,7 @@ async function groupArticles() {
         { type: 'text', text: 'Photo précédente :' }, img(i - 1),
         { type: 'text', text: 'Photo suivante :' }, img(i),
         { type: 'text', text: `Ces photos ont été prises à la suite, article après article. Les photos d'un même article sont souvent très semblables, mais peuvent aussi être très différentes (dessous, dos, détail, marque, intérieur, plan large ou gros plan). Montrent-elles le même objet physique ?
-Un article se termine souvent par une photo de dessous ou de détail, qui reste avec l'article. Réponds same:true SAUF si c'est clairement un autre objet (même de la même famille : deux numéros de maison, deux verres différents...). En cas de doute, réponds same:true.
+Un article se termine souvent par une photo de dessous ou de détail, qui reste avec l'article. ATTENTION : deux objets du même TYPE (deux pots, deux verres, deux numéros de maison...) mais de COULEUR, de glaçure, de forme, de taille ou de décor différents sont deux articles différents : réponds same:false. Compare attentivement la couleur et la matière visibles (ex. pot brun-noir brillant ≠ pot orange). Un intérieur, un dessous ou un détail du même objet reste same:true.
 Réponds UNIQUEMENT par un JSON : {"same":true} ou {"same":false}` }
       ];
       const txt = await ask(content, 50);
@@ -543,7 +544,7 @@ Réponds UNIQUEMENT par un JSON : {"same":true} ou {"same":false}` }
       content.push({ type: 'text', text: `Il y a AU PLUS UNE coupure entre deux articles dans cette suite. Règles :
 - Les photos d'un même article sont souvent très semblables, mais un article montre aussi son dessous, son dos, des détails, des marques, des gros plans. Même objet = même type, même matière, mêmes couleurs, même décor (fond, sol, éclairage).
 - Un article se termine très souvent par une photo (ou 2-3 photos) de dessous, de détail ou de marque : ces photos restent avec l'article qu'elles prolongent, pas avec le suivant.
-- Un même objet vu sous d'autres angles n'est PAS un nouvel article. Ne coupe que si tu vois clairement un autre objet ; en cas de doute, ne coupe pas.
+- Un même objet vu sous d'autres angles n'est PAS un nouvel article. Mais deux objets du même type (deux pots, deux verres...) de couleur, de glaçure, de forme ou de taille différentes SONT deux articles : compare bien les couleurs et matières. Les photos du début de la suite peuvent appartenir à l'article PRÉCÉDENT (son dessous, son intérieur), à repérer par la couleur et la forme.
 Réponds UNIQUEMENT par un JSON : {"new_start":N} où N est le numéro de la première photo du nouvel article (entre 2 et ${idxs.length}), ou {"new_start":null} s'il n'y a aucune coupure (toutes ces photos sont le même article).` });
       const txt = await ask(content, 60);
       const m = txt.match(/"new_start"\s*:\s*(null|\d+)/i);
@@ -677,6 +678,10 @@ function refreshStrip(idx) {
       s.className = 'st'; s.textContent = '★'; s.title = 'Mettre en photo principale';
       s.onclick = e => { e.stopPropagation(); art.photoIds = [pi].concat(art.photoIds.filter(z => z !== pi)); refreshStrip(idx); };
       w.appendChild(s);
+      const sp = document.createElement('button');
+      sp.className = 'sp'; sp.textContent = '✂'; sp.title = 'Séparer : cette photo et les suivantes forment un nouvel article';
+      sp.onclick = e => { e.stopPropagation(); splitArticle(idx, k); };
+      w.appendChild(sp);
     }
     strip.appendChild(w);
   });
@@ -687,6 +692,42 @@ function refreshStrip(idx) {
   const row = document.getElementById(`row-${idx}`);
   const pc = row && row.querySelector('.photo-count');
   if (pc) pc.textContent = art.photoIds.length + ' photo' + (art.photoIds.length > 1 ? 's' : '') + (art.generated ? ' (regénère pour les textes des photos)' : '');
+}
+
+// Separer un article en deux : la photo k et les suivantes forment un NOUVEL article (ajoute en bas de liste)
+async function splitArticle(idx, k) {
+  const art = articles[idx];
+  if (!art || k < 1 || k >= art.photoIds.length) return;
+  const moved = art.photoIds.slice(k);
+  if (art.generated || (art.published && Object.values(art.published).some(Boolean)))
+    if (!confirm('Cet article est déjà généré ou publié : la séparation ne touche ni les textes ni les annonces existantes (régénère-le ensuite). Continuer ?')) return;
+  art.photoIds = art.photoIds.slice(0, k);
+  const na = { id: articles.length + 1, title: 'Article ' + (articles.length + 1), category: art.category || '', photoIds: moved, keywords: '', generated: null, published: {} };
+  const nidx = articles.push(na) - 1;
+  renderArticleRow(na, nidx);
+  refreshStrip(idx);
+  const n = articles.filter(a => !a.deleted).length;
+  document.getElementById('photoCount').textContent = n + ' article' + (n > 1 ? 's' : '');
+  banner('ok', `Séparé : nouvel article #${na.id} en bas de la liste (${moved.length} photo${moved.length > 1 ? 's' : ''})`);
+  // titre automatique du nouvel article
+  try {
+    const content = [];
+    for (const [j, pi] of moved.slice(0, 4).entries()) {
+      const t = thumbOf(pi);
+      content.push({ type: 'text', text: `Photo ${j + 1} :` });
+      content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(t) } });
+    }
+    content.push({ type: 'text', text: `Tu es un expert en brocante et antiquités françaises. Ces photos montrent UN seul article à vendre.\nRetourne UNIQUEMENT du JSON valide : {"title":"titre court en anglais, style eBay/Etsy","category":"catégorie principale en anglais"}` });
+    const txt = await claudeCall([{ role: 'user', content }], 200);
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (m) {
+      const j = JSON.parse(m[0]);
+      if (j.title) na.title = j.title;
+      na.category = j.category || na.category;
+      const r = document.getElementById(`row-${nidx}`);
+      if (r) { r.querySelector('.auto-title').textContent = na.title; r.querySelector('.auto-cat').textContent = na.category; }
+    }
+  } catch (_) {}
 }
 
 // Un article sans photo disparait tout seul de la liste
