@@ -365,9 +365,15 @@ async function loadShipping() {
     } catch (_) { etsyInfo.readiness = []; }
     // politiques de retour : choix par article, defaut = « no return » (aucun retour)
     try {
-      const rp = await etsyApi('GET', `/application/shops/${etsyInfo.shopId}/policies/returns`);
+      const rp = await etsyApi('GET', `/application/shops/${etsyInfo.shopId}/policies/return`);
       etsyInfo.returns = rp.results || [];
     } catch (_) { etsyInfo.returns = []; }
+    if (!etsyInfo.returns.length) {  // aucune politique : on cree « no returns or exchanges »
+      try {
+        const c = await etsyApi('POST', `/application/shops/${etsyInfo.shopId}/policies/return`, { accepts_returns: false, accepts_exchanges: false });
+        if (c && c.return_policy_id) etsyInfo.returns = [c];
+      } catch (_) {}
+    }
     notes.push(`Etsy : ${etsyInfo.shipping.length} profil(s), ${etsyInfo.returns.length} politique(s) de retour`);
   } catch (e) {
     const m = String(e.message);
@@ -1005,6 +1011,7 @@ Voice and model: write like the best French antiques dealers selling to the Amer
 7. LAST PARAGRAPH: EXACTLY this sentence and nothing else: 95% of my items are tariff-free to the US.
 Safety and honesty rules:
 - Never invent provenance, a maker, a date, a famous owner or a place of origin. Hedge when unsure (probably, appears to be, circa). No claim of rarity or value you cannot support.
+- NEVER refer to the seller, the seller notes, "the notes", "the seller states/measured/said" or any source in the text. State facts directly: "Measurements are 7.5 in wide x 6 in high (19 x 15 cm)", "Marked ... on the base". The text is written in the dealer's own voice.
 - Do NOT add disclaimers, legal or safety remarks, or phrases such as "provided by the seller", "has not been tested", "sold as pictured", "sold as is", "for decorative purposes only". Never mention food use unless the seller notes do.
 - Only for clearly electrical items (lamp, light fixture, clock): one short sentence that it has European wiring (about 220V) and needs a converter or rewiring for US use.
 - Never invent facts that are not visible or in the seller notes: no dimensions, weight, maker, date, material or function. If unsure, stay general.
@@ -1464,7 +1471,7 @@ function refreshShippingSelects(idx) {
     const rl = etsyInfo.returns || [];
     const noRet = rl.find(x => !x.accepts_returns && !x.accepts_exchanges) || rl.find(x => !x.accepts_returns);
     const keep = rt.value;
-    const label = x => (!x.accepts_returns && !x.accepts_exchanges) ? 'Pas de retour (no return)' : (x.accepts_returns ? 'Retours acceptés' : 'Échanges seulement') + (x.return_deadline ? ' · ' + x.return_deadline + ' jours' : '');
+    const label = x => (!x.accepts_returns && !x.accepts_exchanges) ? 'No returns or exchanges' : (x.accepts_returns ? 'Retours acceptés' : 'Échanges seulement') + (x.return_deadline ? ' · ' + x.return_deadline + ' jours' : '');
     rt.innerHTML = rl.length ? rl.map(x => `<option value="${esc(x.return_policy_id)}">${esc(label(x))}</option>`).join('') : '<option value="">— aucune politique —</option>';
     rt.value = keep || (noRet ? String(noRet.return_policy_id) : (rl[0] ? String(rl[0].return_policy_id) : ''));
   }
