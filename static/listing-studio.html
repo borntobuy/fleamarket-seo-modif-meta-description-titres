@@ -352,19 +352,12 @@ async function loadShipping() {
       const rd = await etsyApi('GET', `/application/shops/${etsyInfo.shopId}/readiness-state-definitions`);
       etsyInfo.readiness = rd.results || [];
     } catch (_) { etsyInfo.readiness = []; }
-    // politique de retour par defaut : 30 jours
+    // politiques de retour : choix par article, defaut = « no return » (aucun retour)
     try {
       const rp = await etsyApi('GET', `/application/shops/${etsyInfo.shopId}/policies/returns`);
-      const list = rp.results || [];
-      let def = list.find(x => x.accepts_returns && Number(x.return_deadline) === 30);
-      if (!def) {
-        try {
-          def = await etsyApi('POST', `/application/shops/${etsyInfo.shopId}/policies/returns`, { accepts_returns: true, accepts_exchanges: false, return_deadline: 30 });
-        } catch (_) { def = null; }
-      }
-      etsyInfo.returnId = def ? def.return_policy_id : null;
-    } catch (_) { etsyInfo.returnId = null; }
-    notes.push(`Etsy : ${etsyInfo.shipping.length} profil(s), retours 30 j ${etsyInfo.returnId ? 'OK' : 'non trouvés'}`);
+      etsyInfo.returns = rp.results || [];
+    } catch (_) { etsyInfo.returns = []; }
+    notes.push(`Etsy : ${etsyInfo.shipping.length} profil(s), ${etsyInfo.returns.length} politique(s) de retour`);
   } catch (e) {
     const m = String(e.message);
     notes.push('Etsy : ' + (/scope|shops_r|403|insufficient/i.test(m) ? 'autorisation manquante, clique sur "Etsy" en haut pour te reconnecter' : m.slice(0, 70)));
@@ -1340,6 +1333,15 @@ function refreshShippingSelects(idx) {
     }, saved);
     articles[idx].shipEtsy = et.value;
   }
+  const rt = document.getElementById(`etsy-ret-${idx}`);
+  if (rt) {
+    const rl = etsyInfo.returns || [];
+    const noRet = rl.find(x => !x.accepts_returns && !x.accepts_exchanges) || rl.find(x => !x.accepts_returns);
+    const keep = rt.value;
+    const label = x => (!x.accepts_returns && !x.accepts_exchanges) ? 'Pas de retour (no return)' : (x.accepts_returns ? 'Retours acceptés' : 'Échanges seulement') + (x.return_deadline ? ' · ' + x.return_deadline + ' jours' : '');
+    rt.innerHTML = rl.length ? rl.map(x => `<option value="${esc(x.return_policy_id)}">${esc(label(x))}</option>`).join('') : '<option value="">— aucune politique —</option>';
+    rt.value = keep || (noRet ? String(noRet.return_policy_id) : (rl[0] ? String(rl[0].return_policy_id) : ''));
+  }
   const rd = document.getElementById(`etsy-ready-${idx}`);
   if (rd) {
     rd.style.display = etsyInfo.readiness.length ? '' : 'none';
@@ -1431,7 +1433,9 @@ function renderGenerated(idx) {
         <div class="gen-tags">${g.tags.map(t => `<span class="gen-tag">${esc(t)}</span>`).join('')}</div></div>
       <div class="gen-field"><div class="gen-label">Tarif d'expédition (profil Etsy)</div>
         <select id="etsy-ship-${idx}" onchange="saveShipChoice(${idx},'etsy-ship')" style="${inp}"></select>
-        <select id="etsy-ready-${idx}" onchange="saveShipChoice(${idx},'etsy-ready')" style="${inp};margin-top:6px;display:none"></select></div>
+        <select id="etsy-ready-${idx}" onchange="saveShipChoice(${idx},'etsy-ready')" style="${inp};margin-top:6px;display:none"></select>
+        <div class="gen-label" style="margin-top:8px">Politique de retour Etsy</div>
+        <select id="etsy-ret-${idx}" style="${inp}"></select></div>
       <div class="gen-field"><div class="gen-label">Prix (devise de ta boutique Etsy)</div>
         <div class="gen-value" contenteditable="true" oninput="syncPrice(${idx},'etsy')" id="etsy-price-${idx}">${g.price || ''}</div></div>
       <div class="pub-row">
@@ -1578,7 +1582,8 @@ async function publishEtsy(idx) {
     };
     const rd = document.getElementById(`etsy-ready-${idx}`);
     if (rd && rd.value) body.readiness_state_id = Number(rd.value);
-    if (etsyInfo.returnId) body.return_policy_id = Number(etsyInfo.returnId);
+    const rt = document.getElementById(`etsy-ret-${idx}`);
+    if (rt && rt.value) body.return_policy_id = Number(rt.value);
 
     const d = await etsyApi('POST', `/application/shops/${etsyInfo.shopId}/listings`, body);
     art.published.etsy = d.listing_id;
