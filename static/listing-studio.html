@@ -239,6 +239,16 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
   <span class="info-text" id="photoCount">Aucune photo chargée</span>
 </div>
 
+<!-- Liste d'infos collee (dimensions, caracteristiques) -->
+<div style="margin:10px 0;background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:10px 14px">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <b style="font-size:13px">Liste d'infos (dimensions, caractéristiques)</b>
+    <span><button class="btn btn-outline" id="btnInfos" onclick="distributeInfos()" style="padding:6px 12px">Répartir dans les articles</button></span>
+  </div>
+  <textarea id="infoList" rows="5" placeholder="Colle ici ta liste, par ex. :&#10;Bonbonne&#10;32/42&#10;Pots&#10;12,5/9.5&#10;12/12&#10;…  (modifiable à tout moment, puis « Répartir dans les articles »)" oninput="localStorage.setItem('ls_infolist', this.value)" style="width:100%;margin-top:6px;padding:8px;border:1px solid #ced4da;border-radius:6px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+  <div id="infoMsg" class="info-text" style="margin-top:4px">Les articles sont pris dans l'ordre, l'IA vérifie avec les photos. Le résultat arrive dans la colonne « Mots-clés / Infos » (modifiable).</div>
+</div>
+
 <div class="progress-bar-wrap" id="progressWrap">
   <div class="progress-bar" id="progressBar" style="width:0%"></div>
 </div>
@@ -588,6 +598,7 @@ Retourne UNIQUEMENT du JSON valide : {"title":"titre court en anglais, style eBa
     document.getElementById('btnGenAll').style.display = '';
     document.getElementById('btnExportAll').style.display = '';
     document.getElementById('articlesTable').style.display = '';
+    if ((document.getElementById('infoList').value || '').trim()) { try { await distributeInfos(); } catch (_) {} }
 
   } catch(e) {
     btn.innerHTML = '❌ Erreur — Réessayer';
@@ -662,10 +673,19 @@ function refreshStrip(idx) {
   const strip = document.getElementById(`strip-${idx}`);
   if (!art || !strip) return;
   strip.innerHTML = '';
+  strip.ondragover = e => { if (window._drag) e.preventDefault(); };
+  strip.ondrop = e => { e.preventDefault(); movePhotoDrag(idx, null); };
   art.photoIds.forEach((pi, k) => {
     const w = document.createElement('div');
     w.className = 'pth' + (k === 0 ? ' main' : '');
+    w.draggable = true;
+    w.ondragstart = e => { window._drag = { idx, pi }; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(pi)); } catch (_) {} setTimeout(() => { w.style.opacity = '.35'; }, 0); };
+    w.ondragend = () => { w.style.opacity = ''; window._drag = null; };
+    w.ondragover = e => { if (window._drag) { e.preventDefault(); e.stopPropagation(); w.style.outline = '2px solid #4263eb'; } };
+    w.ondragleave = () => { w.style.outline = ''; };
+    w.ondrop = e => { e.preventDefault(); e.stopPropagation(); w.style.outline = ''; movePhotoDrag(idx, pi); };
     const img = document.createElement('img');
+    img.draggable = false;
     img.src = thumbOf(pi); img.decoding = 'async';
     img.title = k === 0 ? 'Photo principale' : 'Photo ' + (k + 1);
     img.onclick = () => openLightbox(photos[pi].dataUrl);
@@ -694,7 +714,68 @@ function refreshStrip(idx) {
   if (pc) pc.textContent = art.photoIds.length + ' photo' + (art.photoIds.length > 1 ? 's' : '') + (art.generated ? ' (regénère pour les textes des photos)' : '');
 }
 
-// Separer un article en deux : la photo k et les suivantes forment un NOUVEL article (ajoute en bas de liste)
+// ── Liste d'infos collee : repartition dans les articles ──
+window.addEventListener('load', () => { try { const t = document.getElementById('infoList'); if (t) t.value = localStorage.getItem('ls_infolist') || ''; } catch (_) {} });
+async function distributeInfos() {
+  const list = (document.getElementById('infoList').value || '').trim();
+  const msg = document.getElementById('infoMsg');
+  if (!list) { msg.textContent = 'La liste est vide.'; return; }
+  const vis = articles.map((a, i) => ({ a, i })).filter(x => !x.a.deleted);
+  if (!vis.length) { msg.textContent = 'Groupe d\'abord les photos par article.'; return; }
+  if (!getKey()) { alert('Entrez votre clé Anthropic en haut'); return; }
+  const btn = document.getElementById('btnInfos');
+  btn.disabled = true; msg.textContent = 'répartition en cours…';
+  try {
+    const content = [{ type: 'text', text: `LISTE DU VENDEUR (collée telle quelle) :\n${list}\n\nVoici maintenant les articles, dans l'ordre de la liste de photos (une photo de chacun) :` }];
+    vis.forEach((x, k) => {
+      content.push({ type: 'text', text: `Article ${k + 1} (${x.a.title}) :` });
+      const t = thumbOf(x.a.photoIds[0]);
+      if (t) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: dataUrlToBase64(t) } });
+    });
+    content.push({ type: 'text', text: `La liste du vendeur donne, article par article, des dimensions (en cm) et des caractéristiques. Les lignes sont dans l'ordre des articles : un mot (Bonbonne, Pots, Seau, Lot couteaux...) est le nom de l'objet, suivi d'une ligne par objet de ce type (si le mot n'est répété sur aucune ligne, la ligne suivante appartient au même mot). Une ligne = un article. Associe chaque ligne au bon article en t'aidant de l'ordre ET des photos (type d'objet visible). Plusieurs articles peuvent avoir le même nom (ex. 8 pots = 8 lignes).
+Pour chaque article concerné, écris l'info : le nom de l'objet puis les chiffres EXACTEMENT comme dans la liste, sans rien inventer ni convertir (ex. "Pots : 12,5/9.5").
+Réponds UNIQUEMENT par un JSON : {"items":[{"article":N,"info":"..."}]} (N = numéro de l'article ci-dessus). Les articles sans ligne correspondante sont simplement omis.` });
+    const txt = await claudeCall([{ role: 'user', content }], 3000);
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('réponse illisible');
+    const items = (JSON.parse(m[0]).items) || [];
+    let n = 0;
+    items.forEach(it => {
+      const x = vis[(parseInt(it.article, 10) || 0) - 1];
+      if (!x || !it.info) return;
+      const a = x.a;
+      // on ne remplace que ce qui vient de la liste (ou un champ vide) : le texte tape a la main est conserve
+      if (!a.keywords || a.keywords === a._auto) { a.keywords = String(it.info); const el = document.getElementById(`kw-${x.i}`); if (el) el.value = a.keywords; }
+      else if (!a.keywords.includes(String(it.info))) { a.keywords = a.keywords + '\n' + it.info; const el = document.getElementById(`kw-${x.i}`); if (el) el.value = a.keywords; }
+      a._auto = String(it.info);
+      n++;
+    });
+    msg.textContent = `${n} article(s) renseigné(s) sur ${vis.length}. Vérifie la colonne « Mots-clés / Infos » (modifiable).`;
+  } catch (e) { msg.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 150))}</span>`; }
+  btn.disabled = false;
+}
+
+// ── Glisser-deposer des photos d'une case a l'autre ──
+function movePhotoDrag(toIdx, beforePi) {
+  const d = window._drag; window._drag = null;
+  if (!d) return;
+  const from = articles[d.idx], to = articles[toIdx];
+  if (!from || !to || d.pi === beforePi) { refreshStrip(toIdx); return; }
+  from.photoIds = from.photoIds.filter(z => z !== d.pi);
+  const arr = to.photoIds.filter(z => z !== d.pi);
+  const at = beforePi == null ? -1 : arr.indexOf(beforePi);
+  if (at < 0) arr.push(d.pi); else arr.splice(at, 0, d.pi);
+  to.photoIds = arr;
+  refreshStrip(toIdx);
+  if (d.idx !== toIdx) { refreshStrip(d.idx); dropIfEmpty(d.idx); }
+}
+
+function renumberRows() {
+  const rows = [...document.querySelectorAll('#articlesTbody tr[id^="row-"]')].filter(r => r.style.display !== 'none');
+  rows.forEach((r, k) => { const i = parseInt(r.id.slice(4), 10); if (articles[i]) articles[i].id = k + 1; r.firstElementChild.textContent = k + 1; });
+}
+
+// Separer un article en deux : la photo k et les suivantes forment un NOUVEL article, insere juste apres
 async function splitArticle(idx, k) {
   const art = articles[idx];
   if (!art || k < 1 || k >= art.photoIds.length) return;
@@ -705,10 +786,14 @@ async function splitArticle(idx, k) {
   const na = { id: articles.length + 1, title: 'Article ' + (articles.length + 1), category: art.category || '', photoIds: moved, keywords: '', generated: null, published: {} };
   const nidx = articles.push(na) - 1;
   renderArticleRow(na, nidx);
+  // place le nouvel article juste apres l'article d'origine, puis renumerote l'affichage
+  const srcPanel = document.getElementById(`panel-${idx}`), nr = document.getElementById(`row-${nidx}`), np = document.getElementById(`panel-${nidx}`);
+  if (srcPanel && nr && np) { srcPanel.after(nr); nr.after(np); }
+  renumberRows();
   refreshStrip(idx);
   const n = articles.filter(a => !a.deleted).length;
   document.getElementById('photoCount').textContent = n + ' article' + (n > 1 ? 's' : '');
-  banner('ok', `Séparé : nouvel article #${na.id} en bas de la liste (${moved.length} photo${moved.length > 1 ? 's' : ''})`);
+  banner('ok', `Séparé : nouvel article #${na.id} juste après (${moved.length} photo${moved.length > 1 ? 's' : ''})`);
   // titre automatique du nouvel article
   try {
     const content = [];
@@ -915,7 +1000,7 @@ Voice and model: write like the best French antiques dealers selling to the Amer
 2. P1 (what it is): object, material, French origin or French use, era if you can justify it. Use the French term once with its US equivalent when that helps (example: pot a confiture, a French jam jar). Style words buyers search (French country, farmhouse, rustic) are allowed only where they are factually apt, at most twice.
 3. P2 (character and use): what makes the piece appealing: shape, finish, glaze, patina, colour, decoration, any mark or signature clearly legible in a photo (quote it exactly), the context of this kind of object in French daily life or regional craft (only if you are sure), and how it can be used or displayed today (shelf, table, kitchen, garden, collection). Mention handmade or period construction only if you can see it.
 4. P3 (condition): short, calm and reassuring, 1 to 2 sentences. Start with "Condition and patina consistent with age." Then mention ONLY the one or two most visible characteristics seen in the photos (for example a small rim chip, light crazing, some rust spots), in neutral wording such as "light wear along the rim" or "small glaze losses". Do not list every tiny flaw, do not alarm the buyer, never use words like damaged, broken, defective or warning. If nothing notable is visible, say only that the item is in good vintage condition.
-5. P4 (size): ONLY if the seller notes contain dimensions. Never invent, estimate or guess any dimension or weight, not even approximately from the photos. The seller gives dimensions as WIDTH x HEIGHT (in that order) unless the notes say otherwise (for example depth, diameter, length). Convert and give INCHES FIRST then centimetres, with the label of each value: "Approx. 7.5 in wide x 6 in high (19 x 15 cm)". Add weight only if the seller gave it. If the seller notes contain no dimension, write NO size sentence at all and leave P4 out entirely.
+5. P4 (size): ONLY if the seller notes contain dimensions. Never invent, estimate or guess any dimension or weight, not even approximately from the photos. The seller writes dimensions in centimetres in a shorthand: values separated by "/" are WIDTH / HEIGHT for two values, WIDTH / DEPTH / HEIGHT for three values (for example 61/41/6 = 61 wide, 41 deep, 6 high); "-" between two numbers is a range or a measurement that varies (20-10 = from 20 to 10); "ss" means "without" (ss les poignees = without the handles); a single number is the main dimension (height, or diameter for a round object, judge from the photos); a list of several numbers for a "lot" are the individual lengths of the pieces; two pairs for a mirror = overall size then glass size. A word at the start of the notes is the object name. Use these labels only as far as they are clear, otherwise give the numbers without a label. Convert and give INCHES FIRST then centimetres, with the label of each value: "Approx. 7.5 in wide x 6 in high (19 x 15 cm)". Add weight only if the seller gave it. If the seller notes contain no dimension, write NO size sentence at all and leave P4 out entirely.
 6. NO recap or summary block: everything (dimensions, material, era, marks, condition) is already said once in P1 to P4, never repeat it in a list at the end.
 7. LAST PARAGRAPH: EXACTLY this sentence and nothing else: 95% of my items are tariff-free to the US.
 Safety and honesty rules:
