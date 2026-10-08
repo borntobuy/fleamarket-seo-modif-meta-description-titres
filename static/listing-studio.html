@@ -58,7 +58,8 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
 .pth .x{position:absolute;top:-5px;right:-5px;width:17px;height:17px;border-radius:50%;background:#c92a2a;color:#fff;border:0;font-size:12px;line-height:17px;padding:0;cursor:pointer;display:none}
 .pth .st{position:absolute;bottom:-3px;left:-3px;width:17px;height:17px;border-radius:50%;background:#f59f00;color:#fff;border:0;font-size:10px;line-height:17px;padding:0;cursor:pointer;display:none}
 .pth .sp{position:absolute;bottom:-3px;right:-3px;width:17px;height:17px;border-radius:50%;background:#1971c2;color:#fff;border:0;font-size:10px;line-height:17px;padding:0;cursor:pointer;display:none}
-.pth:hover .x,.pth:hover .st,.pth:hover .sp{display:block}
+.pth .rv{position:absolute;top:-5px;left:-5px;width:17px;height:17px;border-radius:50%;background:#2f9e44;color:#fff;border:0;font-size:11px;line-height:17px;padding:0;cursor:pointer;display:none}
+.pth:hover .x,.pth:hover .st,.pth:hover .sp,.pth:hover .rv{display:block}
 .pth.main img{border:2px solid #f59f00}
 .padd{width:48px;height:48px;border:1px dashed #adb5bd;border-radius:5px;background:#f8f9fa;color:#495057;font-size:22px;cursor:pointer;padding:0}
 .pmodal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:center;justify-content:center}
@@ -230,6 +231,12 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
   <button class="btn btn-primary" id="btnGroup" onclick="groupArticles()" disabled>
     Analyser &amp; Grouper par article
   </button>
+  <button class="btn btn-outline" id="btnEnhance" onclick="enhanceAll()" style="display:none" title="Luminosité, balance des blancs, netteté et redressement léger (calcul gratuit dans ton navigateur)">
+    Retoucher les photos
+  </button>
+  <button class="btn btn-outline" id="btnUnenhance" onclick="revertAllPhotos()" style="display:none">
+    Annuler la retouche
+  </button>
   <button class="btn btn-outline" id="btnGenAll" onclick="generateAll()" style="display:none">
     Générer tous les listings
   </button>
@@ -276,6 +283,7 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
 <div class="lb" id="lb" onclick="this.classList.remove('open')">
   <span class="lb-close">&times;</span>
   <img id="lbImg" src="">
+  <span id="lbTag" style="position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#fff;font-size:14px"></span>
 </div>
 
 <script>
@@ -601,6 +609,7 @@ Retourne UNIQUEMENT du JSON valide : {"title":"titre court en anglais, style eBa
     setProgress(100);
     renderArticles();
     btn.innerHTML = `${articles.length} articles détectés ✓`;
+    document.getElementById('btnEnhance').style.display = '';
     document.getElementById('btnGenAll').style.display = '';
     document.getElementById('btnExportAll').style.display = '';
     document.getElementById('articlesTable').style.display = '';
@@ -694,7 +703,13 @@ function refreshStrip(idx) {
     img.draggable = false;
     img.src = thumbOf(pi); img.decoding = 'async';
     img.title = k === 0 ? 'Photo principale' : 'Photo ' + (k + 1);
-    img.onclick = () => openLightbox(photos[pi].dataUrl);
+    img.onclick = () => openLightbox(photos[pi].dataUrl, photos[pi].orig);
+    if (photos[pi].orig) {
+      const rv = document.createElement('button');
+      rv.className = 'rv'; rv.textContent = '↺'; rv.title = 'Revenir à la photo originale';
+      rv.onclick = e => { e.stopPropagation(); restorePhoto(pi); };
+      w.appendChild(rv);
+    }
     const x = document.createElement('button');
     x.className = 'x'; x.textContent = '×'; x.title = 'Retirer cette photo de l\'article';
     x.onclick = e => { e.stopPropagation(); removePhoto(idx, pi); };
@@ -931,9 +946,150 @@ function togglePanel(idx) {
   btn.textContent = open ? 'Voir ▼' : 'Masquer ▲';
 }
 
-function openLightbox(src) {
-  document.getElementById('lbImg').src = src;
+function openLightbox(src, orig) {
+  const im = document.getElementById('lbImg'), tag = document.getElementById('lbTag');
+  im.src = src; im.onclick = null; if (tag) tag.textContent = '';
+  if (orig && tag) {
+    let cur = true;
+    const set = () => { im.src = cur ? src : orig; tag.textContent = (cur ? 'Retouchée' : 'Originale') + ' — clique sur la photo pour basculer'; };
+    set();
+    im.onclick = e => { e.stopPropagation(); cur = !cur; set(); };
+  }
   document.getElementById('lb').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════
+// Retouche automatique des photos (gratuite : tout se calcule dans le navigateur, aucun appel Claude)
+// ══════════════════════════════════════════════════════
+function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+
+// Inclinaison : on cherche l'angle (-5 a +5 deg) qui rend les lignes horizontales (bord de table, etc.) les plus nettes
+function estimateTilt(img) {
+  const S = 360, sc = Math.min(1, S / Math.max(img.width, img.height));
+  const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  const score = ang => {
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.fillStyle = '#808080'; x.fillRect(0, 0, w, h);
+    x.translate(w / 2, h / 2); x.rotate(ang * Math.PI / 180); x.drawImage(img, -w / 2, -h / 2, w, h);
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    const m = Math.round(Math.min(w, h) * 0.18);
+    const d = x.getImageData(m, m, w - 2 * m, h - 2 * m), W = d.width, H = d.height, p = d.data;
+    const prof = new Float32Array(H);
+    for (let yy = 0; yy < H; yy++) { let s = 0; for (let xx = 0; xx < W; xx++) { const i = (yy * W + xx) * 4; s += 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; } prof[yy] = s / W; }
+    let g = 0; for (let yy = 1; yy < H - 1; yy++) { const t = prof[yy + 1] - prof[yy - 1]; g += t * t; }
+    return g;
+  };
+  const s0 = score(0);
+  let best = 0, bs = s0;
+  for (let a = -5; a <= 5.001; a += 0.5) { const s = score(a); if (s > bs) { bs = s; best = a; } }
+  const c0 = best;
+  for (let a = c0 - 0.5; a <= c0 + 0.501; a += 0.1) { const s = score(a); if (s > bs) { bs = s; best = a; } }
+  best = Math.round(best * 10) / 10;
+  // on ne corrige que si le gain de nettete est net ; sinon (pas de ligne claire) on laisse la photo telle quelle
+  if (Math.abs(best) < 0.3 || Math.abs(best) > 5 || bs < s0 * 1.12) return 0;
+  return best;
+}
+
+async function retouchDataUrl(src) {
+  const img = await loadImg(src);
+  const MAXW = 2400, sc = Math.min(1, MAXW / Math.max(img.width, img.height));
+  const W = Math.round(img.width * sc), H = Math.round(img.height * sc);
+  const ang = estimateTilt(img);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  if (ang) {
+    const a = Math.abs(ang) * Math.PI / 180, s = Math.cos(a) + Math.sin(a) * Math.max(W / H, H / W);  // zoom mini pour ne pas avoir de bords vides
+    x.translate(W / 2, H / 2); x.rotate(ang * Math.PI / 180); x.scale(s, s); x.drawImage(img, -W / 2, -H / 2, W, H); x.setTransform(1, 0, 0, 1, 0, 0);
+  } else x.drawImage(img, 0, 0, W, H);
+
+  const hasF = 'filter' in CanvasRenderingContext2D.prototype;
+  const blurData = r => {
+    if (!hasF) return null;
+    const b = document.createElement('canvas'); b.width = W; b.height = H;
+    const bx = b.getContext('2d', { willReadFrequently: true });
+    bx.filter = `blur(${r}px)`; bx.drawImage(c, 0, 0);
+    return bx.getImageData(0, 0, W, H).data;
+  };
+  const big = blurData(Math.max(8, W / 30)), small = blurData(Math.max(1, W / 900));
+  const id = x.getImageData(0, 0, W, H), p = id.data, n = W * H;
+
+  // statistiques : histogramme de luminance + balance des blancs (pixels clairs peu satures)
+  const hist = new Uint32Array(256); let cnt = 0;
+  const brightRGB = [];
+  for (let i = 0; i < n; i += 5) {
+    const o = i * 4, r = p[o], g = p[o + 1], b = p[o + 2];
+    const Y = (0.299 * r + 0.587 * g + 0.114 * b) | 0; hist[Y]++; cnt++;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (Y > 150 && mx > 0 && (mx - mn) / mx < 0.18) brightRGB.push(r, g, b);
+  }
+  const pct = q => { let s = 0; const t = cnt * q; for (let v = 0; v < 256; v++) { s += hist[v]; if (s >= t) return v; } return 255; };
+  const lo = Math.min(pct(0.005), 30), hi = Math.max(pct(0.995), 220);
+  let gr = 1, gg = 1, gb = 1;
+  if (brightRGB.length / 3 > cnt * 0.02) {
+    let sr = 0, sg = 0, sb = 0, k = brightRGB.length / 3;
+    for (let i = 0; i < brightRGB.length; i += 3) { sr += brightRGB[i]; sg += brightRGB[i + 1]; sb += brightRGB[i + 2]; }
+    sr /= k; sg /= k; sb /= k; const m = (sr + sg + sb) / 3;
+    const cl = v => Math.min(1.08, Math.max(0.92, v));
+    gr = cl(m / sr); gg = cl(m / sg); gb = cl(m / sb);
+  }
+  // gamma : on n'eclaircit que (jamais d'assombrissement), entre 0.8 et 1
+  let ms = 0; for (let v = 0; v < 256; v++) ms += hist[v] * Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+  ms = Math.max(0.05, ms / cnt);
+  const gamma = Math.min(1, Math.max(0.8, Math.log(0.5) / Math.log(ms)));
+
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const r = p[o] * gr, g = p[o + 1] * gg, b = p[o + 2] * gb;
+    const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+    let Y1 = 255 * Math.pow(Math.min(1, Math.max(0, (Y - lo) / (hi - lo))), gamma);
+    if (big) { const Yb = 0.299 * big[o] + 0.587 * big[o + 1] + 0.114 * big[o + 2]; Y1 += 0.22 * (Y - Yb); }   // contraste local doux
+    if (small) { const Ys = 0.299 * small[o] + 0.587 * small[o + 1] + 0.114 * small[o + 2]; Y1 += 0.3 * (Y - Ys); }  // nettete legere
+    const k = Math.min(2.2, Math.max(0.4, Y1 / Math.max(Y, 1)));
+    p[o] = Math.min(255, r * k); p[o + 1] = Math.min(255, g * k); p[o + 2] = Math.min(255, b * k);
+  }
+  x.putImageData(id, 0, 0);
+  return { url: c.toDataURL('image/jpeg', 0.92), angle: ang };
+}
+
+async function enhanceAll() {
+  const btn = document.getElementById('btnEnhance');
+  const ids = [...new Set(articles.filter(a => !a.deleted).flatMap(a => a.photoIds))].filter(pi => photos[pi] && !photos[pi].enh);
+  if (!ids.length) { banner('ok', 'Toutes les photos sont déjà retouchées'); return; }
+  btn.disabled = true;
+  let done = 0, tilted = 0;
+  banner('run', `Retouche des photos… 0/${ids.length}`);
+  const q = ids.slice();
+  await Promise.all([0, 1].map(async () => {
+    while (q.length) {
+      const pi = q.shift(), p = photos[pi];
+      try {
+        const r = await retouchDataUrl(p.dataUrl);
+        p.orig = p.orig || p.dataUrl; p.dataUrl = r.url; p.enh = { angle: r.angle };
+        p.thumb = await resizeDataUrl(r.url, 320);
+        if (r.angle) tilted++;
+      } catch (_) {}
+      done++;
+      banner('run', `Retouche des photos… ${done}/${ids.length}`);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }));
+  articles.forEach((a, i) => { if (!a.deleted) refreshStrip(i); });
+  btn.disabled = false;
+  document.getElementById('btnUnenhance').style.display = '';
+  banner('ok', `${done} photo(s) retouchée(s), ${tilted} redressée(s). Clique une photo pour comparer, ↺ pour revenir à l'original.`);
+}
+async function restorePhoto(pi) {
+  const p = photos[pi]; if (!p || !p.orig) return;
+  p.dataUrl = p.orig; delete p.orig; delete p.enh;
+  p.thumb = await resizeDataUrl(p.dataUrl, 320);
+  articles.forEach((a, i) => { if (!a.deleted && a.photoIds.includes(pi)) refreshStrip(i); });
+}
+async function revertAllPhotos() {
+  const ids = photos.map((p, i) => (p && p.orig) ? i : -1).filter(i => i >= 0);
+  for (const pi of ids) await restorePhoto(pi);
+  banner('ok', `${ids.length} photo(s) remise(s) à l'original`);
 }
 
 // ══════════════════════════════════════════════════════
