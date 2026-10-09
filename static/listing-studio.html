@@ -963,33 +963,59 @@ function openLightbox(src, orig) {
 // ══════════════════════════════════════════════════════
 function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
 
-// Inclinaison : on cherche l'angle (-5 a +5 deg) qui rend les lignes horizontales (bord de table, etc.) les plus nettes
+// Inclinaison : vote de lignes (type Hough). On cherche l'angle (-8 a +8 deg) qui aligne le plus de contours LONGS
+// a la fois horizontaux et verticaux (cadre d'un tableau, bord de meuble, etagere...). Photo sans ligne nette : on ne touche a rien.
 function estimateTilt(img) {
-  const S = 360, sc = Math.min(1, S / Math.max(img.width, img.height));
+  const S = 500, sc = Math.min(1, S / Math.max(img.width, img.height));
   const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const x = c.getContext('2d', { willReadFrequently: true });
-  const score = ang => {
-    x.setTransform(1, 0, 0, 1, 0, 0);
-    x.fillStyle = '#808080'; x.fillRect(0, 0, w, h);
-    x.translate(w / 2, h / 2); x.rotate(ang * Math.PI / 180); x.drawImage(img, -w / 2, -h / 2, w, h);
-    x.setTransform(1, 0, 0, 1, 0, 0);
-    const m = Math.round(Math.min(w, h) * 0.18);
-    const d = x.getImageData(m, m, w - 2 * m, h - 2 * m), W = d.width, H = d.height, p = d.data;
-    const prof = new Float32Array(H);
-    for (let yy = 0; yy < H; yy++) { let s = 0; for (let xx = 0; xx < W; xx++) { const i = (yy * W + xx) * 4; s += 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; } prof[yy] = s / W; }
-    let g = 0; for (let yy = 1; yy < H - 1; yy++) { const t = prof[yy + 1] - prof[yy - 1]; g += t * t; }
-    return g;
+  x.filter = 'blur(1px)'; x.drawImage(img, 0, 0, w, h); x.filter = 'none';
+  const p = x.getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = 0.299 * p[i * 4] + 0.587 * p[i * 4 + 1] + 0.114 * p[i * 4 + 2];
+  const mag = new Float32Array(w * h), gxA = new Float32Array(w * h), gyA = new Float32Array(w * h);
+  const m = Math.max(2, Math.round(Math.min(w, h) * 0.02));
+  const vals = [];
+  for (let yy = m; yy < h - m; yy++) for (let xx = m; xx < w - m; xx++) {
+    const i = yy * w + xx;
+    const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
+    const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
+    gxA[i] = gx; gyA[i] = gy; mag[i] = Math.hypot(gx, gy);
+    if ((xx + yy) % 3 === 0) vals.push(mag[i]);
+  }
+  vals.sort((a, b) => a - b);
+  const thr = vals[Math.floor(vals.length * 0.9)] || 1;
+  const H = [], V = [];  // pixels de contour : lignes horizontales / verticales (a +-12 deg)
+  for (let yy = m; yy < h - m; yy++) for (let xx = m; xx < w - m; xx++) {
+    const i = yy * w + xx;
+    if (mag[i] <= thr) continue;
+    const a = Math.abs(Math.atan2(gyA[i], gxA[i]) * 180 / Math.PI);  // 0..180
+    if (Math.abs(a - 90) < 12) H.push(xx, yy);            // gradient vertical -> ligne horizontale
+    else if (a < 12 || a > 168) V.push(xx, yy);           // gradient horizontal -> ligne verticale
+  }
+  const bins = Math.ceil(Math.hypot(w, h)) * 2 + 4, off = bins >> 1;
+  const acc = new Float64Array(bins);
+  const S_ = ang => {
+    const r = ang * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
+    let tot = 0;
+    acc.fill(0);
+    for (let k = 0; k < H.length; k += 2) acc[Math.round(H[k + 1] * cs - H[k] * sn) + off]++;
+    for (let k = 0; k < bins; k++) { tot += acc[k] * acc[k]; }
+    acc.fill(0);
+    for (let k = 0; k < V.length; k += 2) acc[Math.round(V[k] * cs + V[k + 1] * sn) + off]++;
+    for (let k = 0; k < bins; k++) { tot += acc[k] * acc[k]; }
+    return tot;
   };
-  const s0 = score(0);
+  const s0 = S_(0);
   let best = 0, bs = s0;
-  for (let a = -5; a <= 5.001; a += 0.5) { const s = score(a); if (s > bs) { bs = s; best = a; } }
+  for (let a = -8; a <= 8.001; a += 0.25) { const s = S_(a); if (s > bs) { bs = s; best = a; } }
   const c0 = best;
-  for (let a = c0 - 0.5; a <= c0 + 0.501; a += 0.1) { const s = score(a); if (s > bs) { bs = s; best = a; } }
+  for (let a = c0 - 0.25; a <= c0 + 0.251; a += 0.05) { const s = S_(a); if (s > bs) { bs = s; best = a; } }
   best = Math.round(best * 10) / 10;
-  // on ne corrige que si le gain de nettete est net ; sinon (pas de ligne claire) on laisse la photo telle quelle
-  if (Math.abs(best) < 0.3 || Math.abs(best) > 5 || bs < s0 * 1.12) return 0;
-  return best;
+  // correction = rotation inverse de l'inclinaison trouvee ; seulement si le gain est net
+  if (Math.abs(best) < 0.4 || bs < s0 * 1.12 || H.length + V.length < 200) return 0;
+  return -best;
 }
 
 async function retouchDataUrl(src) {
@@ -1149,11 +1175,20 @@ const WRAP_OPEN = "<div style='font-family:Arial,sans-serif;font-size:24px;text-
 // ══════════════════════════════════════════════════════
 // Prompt principal : UNE description pour toutes les plateformes
 // ══════════════════════════════════════════════════════
+// Les dimensions du vendeur sont TOUJOURS en cm : on pre-calcule les pouces pour que le modele ne les confonde jamais
+function convHint(text) {
+  const nums = [...new Set(String(text || '').match(/\d+(?:[.,]\d+)?/g) || [])].filter(n => parseFloat(n.replace(',', '.')) <= 400).slice(0, 40);
+  if (!nums.length) return '';
+  const rows = nums.map(n => { const v = parseFloat(n.replace(',', '.')); return `${n} cm = ${(v / 2.54).toFixed(1)} in`; });
+  return '\nPRE-COMPUTED CONVERSIONS (every number in the notes is in CENTIMETRES; when an inch value is needed use ONLY these values, and NEVER write a centimetre number followed by "in" or "inches"): ' + rows.join('; ') + '.';
+}
+function framedRule() { return 'For paintings, prints, mirrors and any framed item, every size aspect must be the OVERALL size INCLUDING THE FRAME (if two sizes are given, the larger one is the framed size).'; }
+
 function buildPrompt(art, kwText, maxEbay, maxEtsy) {
   return `You are the in-house copywriter and SEO specialist of Fleamarketfrance, a French dealer of vintage and antique brocante (French flea-market and estate finds) who ships from France to American collectors, interior decorators and home cooks. Study ALL the photos and the seller notes, then write ONE listing text that will be used word for word on eBay, Etsy and Shopify.
 
 DETECTED ITEM (from photos, may be approximate): ${art.title} (category: ${art.category})
-SELLER NOTES (highest priority; the seller knows the object, you do not. Never contradict them): ${kwText}
+SELLER NOTES (highest priority; the seller knows the object, you do not. Never contradict them): ${kwText}${convHint(kwText)}
 
 === DESCRIPTION RULES ===
 Audience: American buyers who search eBay and Etsy for French vintage, antique, farmhouse, kitchenalia, decor, linens, pottery, glass, metalware, furniture and collectibles. They want facts, honesty and a clear picture of size and condition before paying for international shipping.
@@ -1162,7 +1197,7 @@ Voice and model: write like the best French antiques dealers selling to the Amer
 2. P1 (what it is): object, material, French origin or French use, era if you can justify it. Use the French term once with its US equivalent when that helps (example: pot a confiture, a French jam jar). Style words buyers search (French country, farmhouse, rustic) are allowed only where they are factually apt, at most twice.
 3. P2 (character and use): what makes the piece appealing: shape, finish, glaze, patina, colour, decoration, any mark or signature clearly legible in a photo (quote it exactly), the context of this kind of object in French daily life or regional craft (only if you are sure), and how it can be used or displayed today (shelf, table, kitchen, garden, collection). Mention handmade or period construction only if you can see it.
 4. P3 (condition): short, calm and reassuring, 1 to 2 sentences. Start with "Condition and patina consistent with age." Then mention ONLY the one or two most visible characteristics seen in the photos (for example a small rim chip, light crazing, some rust spots), in neutral wording such as "light wear along the rim" or "small glaze losses". Do not list every tiny flaw, do not alarm the buyer, never use words like damaged, broken, defective or warning. If nothing notable is visible, say only that the item is in good vintage condition.
-5. P4 (size): ONLY if the seller notes contain dimensions. Never invent, estimate or guess any dimension or weight, not even approximately from the photos. The seller writes dimensions in centimetres in a shorthand: values separated by "/" are WIDTH / HEIGHT for two values, WIDTH / DEPTH / HEIGHT for three values (for example 61/41/6 = 61 wide, 41 deep, 6 high); "-" between two numbers in the FIRST position of a non-round object means length-width of its footprint (28.5-35.5/18 = 28.5 long, 35.5 wide, 18 high; the object is not round), whereas in the LAST (height) position it is a height that varies (20-10 = from 20 down to 10); "ss" means "without" (ss les poignees = without the handles); a single number is the main dimension (height, or diameter for a round object, judge from the photos); a list of several numbers for a "lot" are the individual lengths of the pieces; two pairs for a mirror = overall size then glass size. A word at the start of the notes is the object name. Use these labels only as far as they are clear, otherwise give the numbers without a label. Convert and give INCHES FIRST then centimetres, with the label of each value: "Approx. 7.5 in wide x 6 in high (19 x 15 cm)". Add weight only if the seller gave it. If the seller notes contain no dimension, write NO size sentence at all and leave P4 out entirely.
+5. P4 (size): MANDATORY whenever the notes contain ANY measurement: every measurement given must appear in this paragraph, none left out. For paintings, prints, mirrors and any framed or mounted item, ALWAYS give the OVERALL size INCLUDING THE FRAME (if two sizes are given, the larger is the framed size; the other may be added as "canvas" or "glass" size). Use ONLY the pre-computed inch conversions provided below the notes. If the notes contain no dimension, leave P4 out. Never invent, estimate or guess any dimension or weight, not even approximately from the photos. The seller writes dimensions in centimetres in a shorthand: values separated by "/" are WIDTH / HEIGHT for two values, WIDTH / DEPTH / HEIGHT for three values (for example 61/41/6 = 61 wide, 41 deep, 6 high); "-" between two numbers in the FIRST position of a non-round object means length-width of its footprint (28.5-35.5/18 = 28.5 long, 35.5 wide, 18 high; the object is not round), whereas in the LAST (height) position it is a height that varies (20-10 = from 20 down to 10); "ss" means "without" (ss les poignees = without the handles); a single number is the main dimension (height, or diameter for a round object, judge from the photos); a list of several numbers for a "lot" are the individual lengths of the pieces; two pairs for a mirror = overall size then glass size. A word at the start of the notes is the object name. Use these labels only as far as they are clear, otherwise give the numbers without a label. Convert and give INCHES FIRST then centimetres, with the label of each value: "Approx. 7.5 in wide x 6 in high (19 x 15 cm)". Add weight only if the seller gave it. If the seller notes contain no dimension, write NO size sentence at all and leave P4 out entirely.
 6. NO recap or summary block: everything (dimensions, material, era, marks, condition) is already said once in P1 to P4, never repeat it in a list at the end.
 7. LAST PARAGRAPH: EXACTLY this sentence and nothing else: 95% of my items are tariff-free to the US.
 Safety and honesty rules:
@@ -1232,6 +1267,15 @@ async function generateOne(idx) {
 
     let desc = dm[1].trim().replace(/^```(html)?/i, '').replace(/```$/, '').trim();
     if (!/^<div/i.test(desc)) desc = WRAP_OPEN + desc + '</div>';
+
+    // les mesures donnees doivent TOUJOURS figurer dans la description : sinon on fait ajouter le paragraphe manquant
+    if (convHint(art.keywords) && !/\d[\d.,]*\s*(cm|in)\b/i.test(htmlToPlain(desc))) {
+      try {
+        const t2 = await claudeCall([{ role: 'user', content: [{ type: 'text', text: `Here is a product description in HTML:\n${desc}\n\nIt is missing the measurements. Add ONE paragraph <p>...</p> just before the last paragraph (the tariff sentence) giving ALL the measurements below, inches first then centimetres in parentheses, for example "Measurements are 7.5 in wide x 6 in high (19 x 15 cm)".\nNotes (all numbers in CENTIMETRES): ${kwText}${convHint(kwText)}\nShorthand: values separated by "/" are WIDTH/HEIGHT for two values and WIDTH/DEPTH/HEIGHT for three; "-" in the last position is a height that varies; "ss" means "without". ${framedRule()}\nNever mention notes or the seller. Return ONLY the complete HTML description, nothing else.` }] }], 2500);
+        const m2 = t2.match(/<div[\s\S]*<\/div>/i);
+        if (m2 && /\d[\d.,]*\s*(cm|in)\b/i.test(htmlToPlain(m2[0]))) desc = m2[0];
+      } catch (_) {}
+    }
 
     const price = Math.round(Number(g.price) || 0);
     const whenMade = ETSY_WHEN_MADE.includes(g.whenMade) ? g.whenMade : 'before_2007';
@@ -1345,7 +1389,12 @@ async function exportAll() {
   btn.disabled = true;
   window.__batch = true;
   let done = 0, ok = 0; const errs = [];
-  const upd = () => { btn.innerHTML = `<span class="spinner"></span> ${done}/${todo.length} exportés`; banner('run', `Export : ${done}/${todo.length} articles exportés (reste ${todo.length - done})`); };
+  const pc = document.getElementById('photoCount');
+  const upd = () => {
+    btn.innerHTML = `<span class="spinner"></span> ${done}/${todo.length} exportés`;
+    if (pc) pc.textContent = `Export en cours : ${done} exporté${done > 1 ? 's' : ''}, ${todo.length - done} restant${todo.length - done > 1 ? 's' : ''}`;
+    banner('run', `Export : ${done}/${todo.length} articles exportés (reste ${todo.length - done})`);
+  };
   upd();
   try {
     for (const i of todo) {
@@ -1355,7 +1404,16 @@ async function exportAll() {
       if (bad.length) errs.push('#' + articles[i].id + ' ' + bad.map(([p, v]) => p + ' ' + v).join(', ')); else ok++;
       done++; upd();
     }
-  } finally { window.__batch = false; btn.disabled = false; btn.innerHTML = label; }
+  } finally {
+    window.__batch = false; btn.disabled = false;
+    // etat final lisible : le bouton et le texte a droite disent la meme chose
+    const live = articles.filter(a => !a.deleted);
+    const full = live.filter(a => a.published && a.published.ebay && a.published.etsy && a.published.shopify).length;
+    const rest = live.length - full;
+    if (!rest) { btn.innerHTML = `✓ ${full} article${full > 1 ? 's' : ''} exporté${full > 1 ? 's' : ''}`; }
+    else { btn.innerHTML = `Exporter les ${rest} restant${rest > 1 ? 's' : ''}`; }
+    if (pc) pc.textContent = `${full} exporté${full > 1 ? 's' : ''} sur ${live.length}` + (rest ? ` · ${rest} à exporter` : ' · tout est exporté');
+  }
   if (errs.length) banner('err', `Export terminé : ${ok}/${todo.length} sans erreur. À revoir : ` + errs.slice(0, 4).join(' | '));
   else banner('ok', `Export terminé : ${ok}/${todo.length} articles publiés partout`);
 }
@@ -1461,7 +1519,7 @@ async function fillEbay(art) {
   try {
     const r = await claudeJson(`Fill the eBay item specifics for this item. Use ONLY what the seller notes, the title and the description state or clearly show.
 ITEM: ${g.keyword}. Title: ${g.ebayTitle}.
-Seller notes: ${art.keywords || '(none)'}
+Seller notes: ${art.keywords || '(none)'}${convHint(art.keywords)}
 Description: ${htmlToPlain(g.desc).slice(0, 1500)}
 
 ASPECTS FOR THIS CATEGORY:
@@ -1471,7 +1529,7 @@ Rules:
 - SelectionOnly aspects: the value MUST be copied exactly from the allowed list. FreeText aspects: the allowed list is only a guide, write the true value.
 - Every Required aspect must get a value: if truly unknown use "Does not apply" (Brand: "Unbranded").
 - Recommended and Optional aspects: include only when you are confident, otherwise leave them out.
-- Country/Region of Manufacture is France unless the seller says otherwise. Dimensions only if the seller notes give them (width x height order unless stated), in inches with the unit (example 7.3 in); NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
+- Country/Region of Manufacture is France unless the seller says otherwise. Dimensions only if the seller notes give them (width x height order unless stated). The notes are in CENTIMETRES: aspects asking for inches get the pre-computed inch value with the unit (example 21.7 in), aspects asking for centimetres get the cm number with "cm"; NEVER put a cm number with "in". ${framedRule()} NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
 - Aspects marked "up to N values" may be an array of strings.
 Return ONLY JSON: {"Aspect name":"value"} using the exact aspect names.`, 1500);
     return r;
@@ -1540,7 +1598,8 @@ async function fillEtsy(art) {
   try {
     const r = await claudeJson(`Choose Etsy listing attributes for this item. Use ONLY what the notes, title and description state or clearly show; leave out any attribute you are not confident about unless it is REQUIRED (then choose the closest option).
 ITEM: ${g.keyword}. Title: ${g.etsyTitle}.
-Seller notes: ${art.keywords || '(none)'}
+Seller notes: ${art.keywords || '(none)'}${convHint(art.keywords)}
+${framedRule()} Dimension attributes: the notes are in centimetres, use the pre-computed inch values when inches are needed.
 Description: ${htmlToPlain(g.desc).slice(0, 1200)}
 
 ATTRIBUTES (property id, options as value_id=name):
