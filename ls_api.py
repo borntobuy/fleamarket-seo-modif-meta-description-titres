@@ -1156,6 +1156,48 @@ def _price_align(it, e, ok_plats, out):
         pass
 
 
+def _ebay_sold_skus(days=10):
+    """SKU vendus sur eBay ces derniers jours (liste des ventes), meme si l'annonce n'a jamais ete vue active."""
+    out, page, total = set(), 1, 1
+    while page <= total and page <= 5:
+        root = _ebay_call('GetMyeBaySelling',
+                          '<SoldList><Include>true</Include><DurationInDays>%d</DurationInDays><Pagination>'
+                          '<EntriesPerPage>200</EntriesPerPage><PageNumber>%d</PageNumber></Pagination></SoldList>' % (days, page))
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            raise StoreError('eBay : ' + errs[0][1][:120])
+        for tr in root.findall('.//%sSoldList//%sTransaction' % (EBAY_NS, EBAY_NS)):
+            it = tr.find(EBAY_NS + 'Item')
+            if it is None:
+                continue
+            sku = (_t(it, EBAY_NS + 'SKU') or _t(tr, EBAY_NS + 'Variation/' + EBAY_NS + 'SKU')).strip()
+            if sku:
+                out.add(sku)
+        total = int(_t(root, './/%sSoldList/%sPaginationResult/%sTotalNumberOfPages' % (EBAY_NS, EBAY_NS, EBAY_NS)) or 1)
+        page += 1
+    return out
+
+
+def _shopify_sold_skus(days=10):
+    """SKU des commandes Shopify payees ces derniers jours (non annulees)."""
+    shop, h = _shopify_ctx()
+    since = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - days * 86400))
+    r = requests.get('https://%s/admin/api/2024-01/orders.json' % shop, headers=h, timeout=40,
+                     params={'status': 'any', 'financial_status': 'paid', 'created_at_min': since,
+                             'limit': 250, 'fields': 'line_items,cancelled_at'})
+    if r.status_code != 200:
+        raise StoreError('Shopify commandes %s' % r.status_code)
+    out = set()
+    for o in r.json().get('orders', []):
+        if o.get('cancelled_at'):
+            continue
+        for li in o.get('line_items') or []:
+            s = (li.get('sku') or '').strip()
+            if s:
+                out.add(s)
+    return out
+
+
 @ls_bp.route('/ls/stock_sync', methods=['GET', 'POST'])
 def ls_stock_sync():
     key = os.environ.get('STOCK_CRON_KEY', '').strip()
@@ -1266,6 +1308,31 @@ def ls_stock_sync():
             for p in gone:
                 it['p'][p]['active'] = False
             newly_sold.append((k, gone))
+
+        # Ventes confirmees par les commandes recentes (eBay / Shopify) alors que l'annonce a ete vendue AVANT
+        # d'avoir ete vue active par la synchro (jamais enregistree sur cette plateforme) : on propage quand meme.
+        if not first_run:
+            sold_by = {}
+            for plat_s, fn in (('ebay', _ebay_sold_skus), ('shopify', _shopify_sold_skus)):
+                if plat_s in ok_plats:
+                    try:
+                        for sk in fn(10):
+                            sold_by.setdefault(sk, set()).add(plat_s)
+                    except Exception:
+                        pass  # liste des ventes indisponible : la detection classique continue
+            ns_keys = {k for k, _g in newly_sold}
+            for k, it in items.items():
+                if it.get('status') != 'active' or not it.get('sku') or it['sku'] not in sold_by or k in ns_keys:
+                    continue
+                cur_p = next((m['p'] for m in merged if m['sku'] == it['sku']), None)
+                if cur_p is None:
+                    continue  # plus en ligne nulle part
+                extra = sorted(p for p in sold_by[it['sku']] if p not in cur_p)
+                if not extra:
+                    continue
+                for p in extra:
+                    it['p'].setdefault(p, {})['active'] = False
+                newly_sold.append((k, extra))
 
         if len(newly_sold) > MAX_AUTO and not first_run:
             blocked = [{'key': k, 'title': items[k].get('title'), 'gone_on': g} for k, g in newly_sold]
