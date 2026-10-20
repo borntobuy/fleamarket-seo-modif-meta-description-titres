@@ -1316,7 +1316,7 @@ def ls_stock_sync():
             for plat_s, fn in (('ebay', _ebay_sold_skus), ('shopify', _shopify_sold_skus)):
                 if plat_s in ok_plats:
                     try:
-                        for sk in fn(10):
+                        for sk in fn(30):
                             sold_by.setdefault(sk, set()).add(plat_s)
                     except Exception:
                         pass  # liste des ventes indisponible : la detection classique continue
