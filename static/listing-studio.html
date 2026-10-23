@@ -1018,14 +1018,193 @@ function estimateTilt(img) {
   return -best;
 }
 
+// ── Redressement perspectif : cadres, tableaux, miroirs... (calcul local, gratuit) ──
+// On cherche les 4 cotes de l'objet rectangulaire (lignes longues) ; s'ils ne forment pas un rectangle
+// (photo prise de biais), on applique une correction de perspective, sinon une simple rotation.
+function edgeData(img, S) {
+  const sc = Math.min(1, S / Math.max(img.width, img.height));
+  const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.filter = 'blur(1px)'; x.drawImage(img, 0, 0, w, h); x.filter = 'none';
+  const p = x.getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = 0.299 * p[i * 4] + 0.587 * p[i * 4 + 1] + 0.114 * p[i * 4 + 2];
+  const mag = new Float32Array(w * h), gxA = new Float32Array(w * h), gyA = new Float32Array(w * h);
+  const m = Math.max(2, Math.round(Math.min(w, h) * 0.01));
+  const vals = [];
+  for (let yy = m; yy < h - m; yy++) for (let xx = m; xx < w - m; xx++) {
+    const i = yy * w + xx;
+    const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
+    const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
+    gxA[i] = gx; gyA[i] = gy; mag[i] = Math.hypot(gx, gy);
+    if ((xx + yy) % 3 === 0) vals.push(mag[i]);
+  }
+  vals.sort((a, b) => a - b);
+  const thr = vals[Math.floor(vals.length * 0.9)] || 1;
+  const Hp = [], Vp = [];
+  for (let yy = m; yy < h - m; yy++) for (let xx = m; xx < w - m; xx++) {
+    const i = yy * w + xx;
+    if (mag[i] <= thr) continue;
+    const a = Math.abs(Math.atan2(gyA[i], gxA[i]) * 180 / Math.PI);
+    if (Math.abs(a - 90) < 20) Hp.push(xx, yy);          // lignes plutot horizontales
+    else if (a < 20 || a > 160) Vp.push(xx, yy);         // lignes plutot verticales
+  }
+  return { w, h, Hp, Vp, sc };
+}
+
+// meilleure ligne (angle -15..+15 deg) dans une zone ; entre lignes presque aussi fortes on prend la plus exterieure
+function bestLine(pts, w, h, vertical, side) {
+  const A0 = -15, st = 0.5, nA = 61, diag = Math.ceil(Math.hypot(w, h)), nR = diag * 2 + 4, off = nR >> 1;
+  const acc = new Uint16Array(nA * nR);
+  for (let ia = 0; ia < nA; ia++) {
+    const r = (A0 + ia * st) * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r), base = ia * nR + off;
+    for (let k = 0; k < pts.length; k += 2) {
+      const X = pts[k], Y = pts[k + 1];
+      acc[base + Math.round(vertical ? X * cs + Y * sn : Y * cs - X * sn)]++;
+    }
+  }
+  const posOf = (ia, ir) => {
+    const r = (A0 + ia * st) * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r), rho = ir - off;
+    return vertical ? (rho - (h / 2) * sn) / cs : (rho + (w / 2) * sn) / cs;
+  };
+  const lim = vertical ? w : h;
+  const inZone = pos => side === 0 ? pos < lim * 0.42 : pos > lim * 0.58;
+  let best = 0;
+  for (let ia = 0; ia < nA; ia++) for (let ir = 0; ir < nR; ir++) {
+    const v = acc[ia * nR + ir];
+    if (v > best && inZone(posOf(ia, ir))) best = v;
+  }
+  if (best < 30) return null;
+  let sel = null;
+  for (let ia = 0; ia < nA; ia++) for (let ir = 0; ir < nR; ir++) {
+    const v = acc[ia * nR + ir];
+    if (v >= best * 0.8) {
+      const pos = posOf(ia, ir);
+      if (!inZone(pos)) continue;
+      const better = !sel || (side === 0 ? pos < sel.pos - 3 : pos > sel.pos + 3) || (Math.abs(pos - sel.pos) <= 3 && v > sel.v);
+      if (better) sel = { ia, ir, v, pos };
+    }
+  }
+  if (!sel) return null;
+  // affinage : moindres carres sur les points proches de la ligne trouvee
+  const r = (A0 + sel.ia * st) * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r), rho = sel.ir - off;
+  let n = 0, sa = 0, sb = 0, saa = 0, sab = 0;   // a = coord le long de la ligne, b = coord perpendiculaire
+  for (let k = 0; k < pts.length; k += 2) {
+    const X = pts[k], Y = pts[k + 1];
+    const d = (vertical ? X * cs + Y * sn : Y * cs - X * sn) - rho;
+    if (Math.abs(d) > 2) continue;
+    const a = vertical ? Y : X, b = vertical ? X : Y;
+    n++; sa += a; sb += b; saa += a * a; sab += a * b;
+  }
+  if (n < Math.min(w, h) * 0.22) return null;
+  const den = n * saa - sa * sa; if (Math.abs(den) < 1e-6) return null;
+  const mm = (n * sab - sa * sb) / den, cc = (sb - mm * sa) / n;
+  return { m: mm, c: cc, n, vertical };  // horizontale : y = m x + c ; verticale : x = m y + c
+}
+
+function lineTilt(L) { return (L.vertical ? -Math.atan(L.m) : Math.atan(L.m)) * 180 / Math.PI; }  // deg, sens horaire positif
+
+function detectFrameGeometry(img) {
+  const E = edgeData(img, 600), w = E.w, h = E.h;
+  const top = bestLine(E.Hp, w, h, false, 0), bot = bestLine(E.Hp, w, h, false, 1);
+  const lef = bestLine(E.Vp, w, h, true, 0), rig = bestLine(E.Vp, w, h, true, 1);
+  if (!top || !bot || !lef || !rig) return null;
+  const meet = (Hl, Vl) => { const d = 1 - Hl.m * Vl.m; const X = (Vl.m * Hl.c + Vl.c) / d; return [X, Hl.m * X + Hl.c]; };
+  const TL = meet(top, lef), TR = meet(top, rig), BR = meet(bot, rig), BL = meet(bot, lef);
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const wt = dist(TL, TR), wb = dist(BL, BR), hl = dist(TL, BL), hr = dist(TR, BR);
+  const area = Math.abs((TL[0] * TR[1] - TR[0] * TL[1]) + (TR[0] * BR[1] - BR[0] * TR[1]) + (BR[0] * BL[1] - BL[0] * BR[1]) + (BL[0] * TL[1] - TL[0] * BL[1])) / 2;
+  if (area < w * h * 0.2) return null;                      // l'objet doit occuper une bonne partie de la photo
+  if (wt < w * 0.2 || hl < h * 0.2) return null;
+  if (Math.max(wt, wb) / Math.min(wt, wb) > 1.3 || Math.max(hl, hr) / Math.min(hl, hr) > 1.3) return null;  // pas un rectangle plausible
+  for (const P of [TL, TR, BR, BL]) if (P[0] < -w * 0.08 || P[0] > w * 1.08 || P[1] < -h * 0.08 || P[1] > h * 1.08) return null;
+  const tilts = [lineTilt(top), lineTilt(bot), lineTilt(lef), lineTilt(rig)];
+  return { quad: [TL, TR, BR, BL], tilts, w, h, f: 1 / E.sc };
+}
+
+function solveHomography(src, dst) {   // renvoie h (8) tel que dst(u,v) -> src : X = (a u + b v + c)/(g u + h v + 1)
+  const A = [], B = [];
+  for (let i = 0; i < 4; i++) {
+    const [u, v] = dst[i], [X, Y] = src[i];
+    A.push([u, v, 1, 0, 0, 0, -u * X, -v * X]); B.push(X);
+    A.push([0, 0, 0, u, v, 1, -u * Y, -v * Y]); B.push(Y);
+  }
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    let mx = i; for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[mx][i])) mx = r;
+    [A[i], A[mx]] = [A[mx], A[i]]; [B[i], B[mx]] = [B[mx], B[i]];
+    if (Math.abs(A[i][i]) < 1e-12) return null;
+    for (let r = i + 1; r < n; r++) { const f = A[r][i] / A[i][i]; for (let k = i; k < n; k++) A[r][k] -= f * A[i][k]; B[r] -= f * B[i]; }
+  }
+  const sol = new Array(n);
+  for (let i = n - 1; i >= 0; i--) { let s = B[i]; for (let k = i + 1; k < n; k++) s -= A[i][k] * sol[k]; sol[i] = s / A[i][i]; }
+  return sol;
+}
+
+// Prepare la correction : { type:'warp', hm, s, cx, cy, mean } | { type:'rot', angle } | { type:'none' }
+function planGeometry(img, W, H) {
+  const g = detectFrameGeometry(img);
+  if (!g) return { type: 'rot', angle: estimateTilt(img) };
+  const mean = g.tilts.reduce((a, b) => a + b, 0) / 4, spread = Math.max(...g.tilts) - Math.min(...g.tilts);
+  if (spread < 1.0) {   // rectangle simplement penche : rotation
+    return Math.abs(mean) < 0.4 ? { type: 'rot', angle: 0 } : { type: 'rot', angle: -Math.round(mean * 10) / 10 };
+  }
+  if (spread > 16) return { type: 'rot', angle: estimateTilt(img) };
+  const k = W / g.w, Q = g.quad.map(p => [p[0] * k, p[1] * k]);
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const wq = (d(Q[0], Q[1]) + d(Q[3], Q[2])) / 2, hq = (d(Q[0], Q[3]) + d(Q[1], Q[2])) / 2;
+  const cx = (Q[0][0] + Q[1][0] + Q[2][0] + Q[3][0]) / 4, cy = (Q[0][1] + Q[1][1] + Q[2][1] + Q[3][1]) / 4;
+  const D = [[cx - wq / 2, cy - hq / 2], [cx + wq / 2, cy - hq / 2], [cx + wq / 2, cy + hq / 2], [cx - wq / 2, cy + hq / 2]];
+  const hm = solveHomography(Q, D);
+  if (!hm) return { type: 'rot', angle: -Math.round(mean * 10) / 10 };
+  const map = (u, v, s) => { const uu = cx + (u - cx) / s, vv = cy + (v - cy) / s; const den = hm[6] * uu + hm[7] * vv + 1; return [(hm[0] * uu + hm[1] * vv + hm[2]) / den, (hm[3] * uu + hm[4] * vv + hm[5]) / den]; };
+  let s = 0;
+  for (let t = 1; t <= 1.45; t += 0.02) {   // zoom minimal pour qu'aucun bord vide n'apparaisse
+    let ok = true;
+    for (let i = 0; i <= 40 && ok; i++) {
+      const f = i / 40;
+      for (const [u, v] of [[f * W, 0], [f * W, H - 1], [0, f * H], [W - 1, f * H]]) {
+        const [X, Y] = map(u, v, t);
+        if (!(X >= 0 && X <= W - 1 && Y >= 0 && Y <= H - 1)) { ok = false; break; }
+      }
+    }
+    if (ok) { s = t; break; }
+  }
+  if (!s) return { type: 'rot', angle: -Math.round(mean * 10) / 10 };
+  return { type: 'warp', hm, s, cx, cy, mean: -Math.round(mean * 10) / 10 };
+}
+
+function warpInto(x, img, W, H, pl) {
+  const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H;
+  const tx = tmp.getContext('2d', { willReadFrequently: true }); tx.drawImage(img, 0, 0, W, H);
+  const src = tx.getImageData(0, 0, W, H).data, out = x.createImageData(W, H), o = out.data;
+  const { hm, s, cx, cy } = pl;
+  for (let v = 0; v < H; v++) {
+    const vv = cy + (v - cy) / s;
+    for (let u = 0; u < W; u++) {
+      const uu = cx + (u - cx) / s, den = hm[6] * uu + hm[7] * vv + 1;
+      let X = (hm[0] * uu + hm[1] * vv + hm[2]) / den, Y = (hm[3] * uu + hm[4] * vv + hm[5]) / den;
+      X = X < 0 ? 0 : X > W - 1.001 ? W - 1.001 : X; Y = Y < 0 ? 0 : Y > H - 1.001 ? H - 1.001 : Y;
+      const x0 = X | 0, y0 = Y | 0, fx = X - x0, fy = Y - y0, i00 = (y0 * W + x0) * 4, i10 = i00 + 4, i01 = i00 + W * 4, i11 = i01 + 4, oi = (v * W + u) * 4;
+      for (let ch = 0; ch < 3; ch++) o[oi + ch] = src[i00 + ch] * (1 - fx) * (1 - fy) + src[i10 + ch] * fx * (1 - fy) + src[i01 + ch] * (1 - fx) * fy + src[i11 + ch] * fx * fy;
+      o[oi + 3] = 255;
+    }
+  }
+  x.putImageData(out, 0, 0);
+}
+
 async function retouchDataUrl(src) {
   const img = await loadImg(src);
   const MAXW = 2400, sc = Math.min(1, MAXW / Math.max(img.width, img.height));
   const W = Math.round(img.width * sc), H = Math.round(img.height * sc);
-  const ang = estimateTilt(img);
+  const plan = planGeometry(img, W, H);
+  const ang = plan.type === 'warp' ? plan.mean : (plan.angle || 0);
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d', { willReadFrequently: true });
-  if (ang) {
+  if (plan.type === 'warp') {
+    warpInto(x, img, W, H, plan);
+  } else if (ang) {
     const a = Math.abs(ang) * Math.PI / 180, s = Math.cos(a) + Math.sin(a) * Math.max(W / H, H / W);  // zoom mini pour ne pas avoir de bords vides
     x.translate(W / 2, H / 2); x.rotate(ang * Math.PI / 180); x.scale(s, s); x.drawImage(img, -W / 2, -H / 2, W, H); x.setTransform(1, 0, 0, 1, 0, 0);
   } else x.drawImage(img, 0, 0, W, H);
@@ -1076,7 +1255,7 @@ async function retouchDataUrl(src) {
     p[o] = Math.min(255, r * k); p[o + 1] = Math.min(255, g * k); p[o + 2] = Math.min(255, b * k);
   }
   x.putImageData(id, 0, 0);
-  return { url: c.toDataURL('image/jpeg', 0.92), angle: ang };
+  return { url: c.toDataURL('image/jpeg', 0.92), angle: ang, warp: plan.type === 'warp' };
 }
 
 async function enhanceAll() {
@@ -1094,7 +1273,7 @@ async function enhanceAll() {
         const r = await retouchDataUrl(p.dataUrl);
         p.orig = p.orig || p.dataUrl; p.dataUrl = r.url; p.enh = { angle: r.angle };
         p.thumb = await resizeDataUrl(r.url, 320);
-        if (r.angle) tilted++;
+        if (r.angle || r.warp) tilted++;
       } catch (_) {}
       done++;
       banner('run', `Retouche des photos… ${done}/${ids.length}`);
@@ -1175,6 +1354,32 @@ const WRAP_OPEN = "<div style='font-family:Arial,sans-serif;font-size:24px;text-
 // ══════════════════════════════════════════════════════
 // Prompt principal : UNE description pour toutes les plateformes
 // ══════════════════════════════════════════════════════
+// ── Prix : base sur TES prix habituels (articles similaires deja vendus / en ligne dans ton stock) ──
+let _priceRefs = null;
+async function loadPriceRefs() {
+  if (_priceRefs) return _priceRefs;
+  try {
+    const st = await lsFetch(BASE + '/ls/stock').then(r => r.json());
+    _priceRefs = (st.items || []).map(i => ({
+      t: String(i.title || '').replace(/\s+\d{6,8}$/, '').trim(), p: parseFloat(i.price), sold: i.status === 'sold'
+    })).filter(i => i.t && i.p > 0);
+  } catch (_) { _priceRefs = []; }
+  return _priceRefs;
+}
+const _STOP = new Set(['the', 'and', 'with', 'for', 'vintage', 'antique', 'french', 'france', 'old', 'set', 'pair', 'large', 'small', 'rustic', 'early', 'from', 'style', 'signed']);
+function _tok(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !_STOP.has(w) && !/^\d+$/.test(w)); }
+async function priceComparables(art) {
+  const refs = await loadPriceRefs();
+  if (!refs.length) return '';
+  const toks = new Set(_tok(art.title + ' ' + (art.category || '') + ' ' + (art.keywords || '')));
+  if (!toks.size) return '';
+  const scored = refs.map(r => { let s = 0; _tok(r.t).forEach(w => { if (toks.has(w)) s++; }); return { r, s: s + (r.sold ? 0.5 : 0) }; })
+    .filter(x => x.s >= 1.5).sort((a, b) => b.s - a.s).slice(0, 14);
+  const lines = scored.map(x => `- ${x.r.t} : $${Math.round(x.r.p)} (${x.r.sold ? 'sold' : 'for sale'})`);
+  const all = refs.map(r => r.p).sort((a, b) => a - b), med = all[Math.floor(all.length / 2)];
+  return (lines.length ? lines.join('\n') : '(no close match in his history)') + `\nOverall median of his prices: $${Math.round(med)}.`;
+}
+
 // Les dimensions du vendeur sont TOUJOURS en cm : on pre-calcule les pouces pour que le modele ne les confonde jamais
 function convHint(text) {
   const nums = [...new Set(String(text || '').match(/\d+(?:[.,]\d+)?/g) || [])].filter(n => parseFloat(n.replace(',', '.')) <= 400).slice(0, 40);
@@ -1220,7 +1425,8 @@ ${WRAP_OPEN}<h2 style='font-family:Arial,sans-serif;font-size:24px;text-align:ce
 - etsyTags: exactly 13 tags, each 20 characters or fewer, letters, numbers and spaces only, mixing specific and broad terms US buyers use.
 - altTexts: one per photo (${art.photoIds.slice(0, 6).length}), max 250 characters, what is visible plus material and origin.
 - seoTitle max 70 characters, seoDesc max 160 characters (Shopify page, no reference number).
-- price: realistic selling price in US dollars, a number.
+- price: your suggested selling price in US dollars, a number. The seller's OWN usual prices are the reference (list below): stay in the same range as his comparable items, adjusting up or down for size, quality, condition and desirability seen in the photos. Never go far outside his habitual price level.
+${art._comps ? 'THE SELLER\'S USUAL PRICES FOR SIMILAR ITEMS (title : price):\n' + art._comps : ''}
 - etsyCategoryGuess: the Etsy category path you would choose, in Etsy's own wording, like "Home & Living > Kitchen & Dining > Serveware".
 - productType: a short Shopify product type (2 to 3 words).
 - whenMade: one of ${ETSY_WHEN_MADE.join(', ')} (the period of manufacture; for antiques choose the century or decade bucket).
@@ -1251,6 +1457,7 @@ async function generateOne(idx) {
     ]).flat();
 
     const kwText = art.keywords.trim() || '(none)';
+    art._comps = await priceComparables(art);
     const maxEbay = 80 - art.suffix.length - 1;
     const maxEtsy = maxEbay;
 
