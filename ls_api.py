@@ -1199,8 +1199,25 @@ def _shopify_sold_skus(days=10):
     return out
 
 
-_sync_state = {'running': False, 'started': None, 'finished': None, 'code': None, 'result': None, 'error': None}
+_sync_state = {'running': False, 'started': None, 'finished': None, 'code': None, 'result': None, 'error': None,
+               'phase': None}
 _sync_state_lock = threading.Lock()
+_BOOT = time.time()
+
+
+def _rss_mb():
+    try:
+        with open('/proc/self/status') as f:
+            for ln in f:
+                if ln.startswith('VmRSS'):
+                    return round(int(ln.split()[1]) / 1024)
+    except Exception:
+        pass
+    return None
+
+
+def _ph(name):
+    _sync_state['phase'] = '%s @%ss %sMB' % (name, round(time.time() - (_sync_state.get('started') or time.time())), _rss_mb())
 
 
 def _sync_worker(run_id):
@@ -1237,7 +1254,7 @@ def ls_stock_sync():
 
 @ls_bp.route('/ls/stock_sync_status')
 def ls_stock_sync_status():
-    return jsonify(dict(_sync_state, now=time.time()))
+    return jsonify(dict(_sync_state, now=time.time(), boot=_BOOT, rss_mb=_rss_mb()))
 
 
 def _stock_sync_core(dry):
@@ -1250,11 +1267,13 @@ def _stock_sync_core(dry):
         current, errors = _fetch_all()
         merged = _merge(current)
         tm['fetch'] = round(time.time() - t0)
+        _ph('fetched')
         if dry:
             return {'dry': True, 'items': _view(merged), 'errors': errors,
                     'counts': {p: len(current.get(p, [])) for p in PLATS}}, 200
 
         st, sha = _load(STOCK_PATH)
+        _ph('stock charge')
         items = st.get('items') or {}
         now = _today_key()[1]
         ok_plats = [p for p in PLATS if p in current]
@@ -1288,6 +1307,7 @@ def _stock_sync_core(dry):
                 it['p'][p] = dict(ref, active=True)
             _price_align(it, e, ok_plats, price_actions)
 
+        _ph('fusion')
         first_run = not st.get('last')
         actions, blocked, newly_sold = list(price_actions), [], []
         cands = []
@@ -1303,6 +1323,7 @@ def _stock_sync_core(dry):
             st['etsy_rc'] = sorted(set(seen_rc or []) | set(rc_ids))[-400:]
         except Exception:
             pass  # autorisation « transactions_r » absente ou Etsy injoignable : on retombe sur la detection classique
+        _ph('recus etsy')
         for k, it in items.items():
             if it.get('status') != 'active' or not it.get('sku'):
                 continue  # sans SKU : rapprochement par titre trop risque, jamais d'action auto
@@ -1323,8 +1344,10 @@ def _stock_sync_core(dry):
                 cands.append((k, it, gone))
         # Une annonce Shopify absente de la liste « achetable » n'est PAS forcement vendue : brouillon, archivee,
         # supprimee... On ne propage que si le produit est publie et reellement epuise.
+        _ph('candidats %d' % len(cands))
         sids = [it['p']['shopify']['id'] for k, it, g in cands if 'shopify' in g and it['p'].get('shopify', {}).get('id')]
         sstates = _shopify_states(sids) if sids else {}
+        _ph('etats shopify')
         mass_shop = sum(1 for s in sstates.values() if s.get('sold_out')) > 15  # rattrapage massif = artefact de filtre, pas des ventes
         # Idem Etsy : « inactive / brouillon / expiree » (desactivee a la main ou par Etsy) n'est pas une vente.
         for k, it, gone in cands:
@@ -1352,6 +1375,7 @@ def _stock_sync_core(dry):
 
         # Ventes confirmees par les commandes recentes (eBay / Shopify) alors que l'annonce a ete vendue AVANT
         # d'avoir ete vue active par la synchro (jamais enregistree sur cette plateforme) : on propage quand meme.
+        _ph('candidats verifies %d' % len(newly_sold))
         if not first_run:
             sold_by = {}
             for plat_s, fn in (('ebay', _ebay_sold_skus), ('shopify', _shopify_sold_skus)):
@@ -1375,6 +1399,7 @@ def _stock_sync_core(dry):
                     it['p'].setdefault(p, {})['active'] = False
                 newly_sold.append((k, extra))
 
+        _ph('ventes commandes, a traiter %d' % len(newly_sold))
         if len(newly_sold) > MAX_AUTO and not first_run:
             blocked = [{'key': k, 'title': items[k].get('title'), 'gone_on': g} for k, g in newly_sold]
             for k, g in newly_sold:  # on annule le marquage pour reessayer a la prochaine fois
@@ -1442,6 +1467,7 @@ def _stock_sync_core(dry):
             log.append(dict(a, at=now))
         st['log'] = log[-200:]
         tm['actions'] = round(time.time() - t0)
+        _ph('sauvegarde')
         saved = False
         for _ in range(5):
             if _save(st, sha, 'ls: stock sync %s' % now, STOCK_PATH):
