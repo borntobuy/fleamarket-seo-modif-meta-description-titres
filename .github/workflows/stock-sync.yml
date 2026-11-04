@@ -8,17 +8,56 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Reveiller le service puis lancer la synchronisation
+      - name: Reveiller le service, lancer la synchronisation et attendre son resultat
         run: |
-          URL="https://fleamarket-seo-modif-meta-description.onrender.com"
-          for i in 1 2 3 4 5 6; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL/ls/env_status" || echo 000)
-            echo "reveil tentative $i : HTTP $code"
-            [ "$code" = "200" ] && break
-            sleep 20
-          done
-          curl -sS --max-time 280 -X POST "$URL/ls/stock_sync" | tee result.json
-          echo
-          if grep -q '"error"' result.json; then exit 1; fi
+          python3 - <<'EOF'
+          import json, sys, time, urllib.request
+          URL = "https://fleamarket-seo-modif-meta-description.onrender.com"
+
+          def call(path, method="GET", timeout=100):
+              req = urllib.request.Request(URL + path, method=method, data=(b"" if method == "POST" else None))
+              with urllib.request.urlopen(req, timeout=timeout) as r:
+                  return json.loads(r.read().decode("utf-8"))
+
+          for i in range(8):
+              try:
+                  call("/ls/env_status", timeout=90)
+                  print("service reveille")
+                  break
+              except Exception as e:
+                  print("reveil tentative", i + 1, e)
+                  time.sleep(15)
+          else:
+              sys.exit("ECHEC : service injoignable")
+
+          st = call("/ls/stock_sync", "POST")
+          print("lancement :", st)
+          if st.get("error") or not st.get("started"):
+              sys.exit("ECHEC au lancement : " + str(st))
+
+          deadline = time.time() + 600
+          while time.time() < deadline:
+              time.sleep(20)
+              try:
+                  s = call("/ls/stock_sync_status")
+              except Exception as e:
+                  print("statut indisponible :", e)
+                  continue
+              if s.get("running"):
+                  print("en cours...")
+                  continue
+              if s.get("started") != st.get("started"):
+                  print("statut d'une autre execution, on attend")
+                  continue
+              if s.get("error") or s.get("code") != 200:
+                  sys.exit("ECHEC : " + str(s.get("error") or s)[:1500])
+              res = s.get("result") or {}
+              keep = {k: res.get(k) for k in ("ok", "first_run", "checked", "actions", "blocked", "errors", "timings")}
+              print(json.dumps(keep, ensure_ascii=False)[:3500])
+              if res.get("ok") is False:
+                  sys.exit("ECHEC : sauvegarde de l'etat impossible")
+              sys.exit(0)
+          sys.exit("ECHEC : delai depasse (10 min)")
+          EOF
