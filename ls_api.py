@@ -29,7 +29,7 @@ from datetime import datetime
 from xml.sax.saxutils import escape as xml_escape
 
 import requests
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, has_request_context
 
 try:
     from zoneinfo import ZoneInfo
@@ -191,7 +191,7 @@ EBAY_NS = '{urn:ebay:apis:eBLBaseComponents}'
 
 
 def _creds():
-    h = request.headers
+    h = request.headers if has_request_context() else {}  # synchro en tache de fond : pas de requete -> variables d'environnement
     return {
         'token': (h.get('X-LS-EBAY-TOKEN') or os.environ.get('EBAY_USER_TOKEN', '')).strip(),
         'app': (h.get('X-LS-EBAY-APP') or os.environ.get('EBAY_APP_ID', '')).strip(),
