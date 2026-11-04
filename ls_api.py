@@ -23,6 +23,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from xml.sax.saxutils import escape as xml_escape
@@ -1198,20 +1199,60 @@ def _shopify_sold_skus(days=10):
     return out
 
 
+_sync_state = {'running': False, 'started': None, 'finished': None, 'code': None, 'result': None, 'error': None}
+_sync_state_lock = threading.Lock()
+
+
+def _sync_worker(run_id):
+    """Execute la vraie synchro hors requete HTTP (evite le delai du serveur) et garde le resultat / l'erreur."""
+    try:
+        res, code = _stock_sync_core(False)
+        res = json.loads(json.dumps(res, default=str))
+        _sync_state.update(code=code, result=res, error=(res.get('error') if code != 200 else None))
+    except BaseException as e:
+        _sync_state.update(code=500, result=None,
+                           error='%s: %s | %s' % (type(e).__name__, e, traceback.format_exc()[-900:]))
+    finally:
+        _sync_state['finished'] = time.time()
+        _sync_state['running'] = False
+
+
 @ls_bp.route('/ls/stock_sync', methods=['GET', 'POST'])
 def ls_stock_sync():
     key = os.environ.get('STOCK_CRON_KEY', '').strip()
     dry = request.args.get('dry') == '1'
     if key and not dry and request.args.get('key') != key:
         return jsonify({'error': 'cle invalide'}), 403
+    if dry or request.args.get('wait') == '1':  # mode synchrone (vue a blanc, diagnostic)
+        res, code = _stock_sync_core(dry)
+        return jsonify(res), code
+    with _sync_state_lock:
+        if _sync_state['running']:
+            return jsonify({'started': _sync_state['started'], 'already_running': True}), 202
+        run_id = time.time()
+        _sync_state.update(running=True, started=run_id, finished=None, code=None, result=None, error=None)
+        threading.Thread(target=_sync_worker, args=(run_id,), daemon=True).start()
+    return jsonify({'started': run_id}), 202
+
+
+@ls_bp.route('/ls/stock_sync_status')
+def ls_stock_sync_status():
+    return jsonify(dict(_sync_state, now=time.time()))
+
+
+def _stock_sync_core(dry):
+    """Corps de la synchro -> (dict, code HTTP)."""
     if not _sync_lock.acquire(blocking=False):
-        return jsonify({'error': 'synchronisation deja en cours'}), 409
+        return {'error': 'synchronisation deja en cours'}, 409
+    t0 = time.time()
+    tm = {}
     try:
         current, errors = _fetch_all()
         merged = _merge(current)
+        tm['fetch'] = round(time.time() - t0)
         if dry:
-            return jsonify({'dry': True, 'items': _view(merged), 'errors': errors,
-                            'counts': {p: len(current.get(p, [])) for p in PLATS}})
+            return {'dry': True, 'items': _view(merged), 'errors': errors,
+                    'counts': {p: len(current.get(p, [])) for p in PLATS}}, 200
 
         st, sha = _load(STOCK_PATH)
         items = st.get('items') or {}
@@ -1400,18 +1441,20 @@ def ls_stock_sync():
         for a in actions:
             log.append(dict(a, at=now))
         st['log'] = log[-200:]
+        tm['actions'] = round(time.time() - t0)
         saved = False
         for _ in range(5):
             if _save(st, sha, 'ls: stock sync %s' % now, STOCK_PATH):
                 saved = True
                 break
             _fresh, sha = _load(STOCK_PATH)
-        return jsonify({'ok': saved, 'first_run': first_run, 'checked': {p: len(current.get(p, [])) for p in PLATS},
-                        'actions': actions, 'blocked': blocked, 'errors': errors})
+        tm['total'] = round(time.time() - t0)
+        return {'ok': saved, 'first_run': first_run, 'checked': {p: len(current.get(p, [])) for p in PLATS},
+                'actions': actions, 'blocked': blocked, 'errors': errors, 'timings': tm}, 200
     except StoreError as e:
-        return jsonify({'error': str(e)}), 500
+        return {'error': str(e), 'timings': tm}, 500
     except Exception as e:
-        return jsonify({'error': 'stock: %s' % e}), 500
+        return {'error': 'stock: %s | %s' % (e, traceback.format_exc()[-700:]), 'timings': tm}, 500
     finally:
         _sync_lock.release()
 
