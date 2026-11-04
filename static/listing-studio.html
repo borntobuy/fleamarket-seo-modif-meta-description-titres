@@ -2727,7 +2727,18 @@ async function runStockSync() {
   if (!confirm('Lancer la synchronisation maintenant ?\nUn article disparu d\'une plateforme sera désactivé sur les autres.')) return;
   stockMsg('Synchronisation en cours…');
   try {
-    const d = await lsFetch(BASE + '/ls/stock_sync', { method: 'POST' }).then(r => r.json());
+    const s0 = await lsFetch(BASE + '/ls/stock_sync', { method: 'POST' }).then(r => r.json());
+    if (s0.error) throw new Error(s0.error);
+    let d = null;
+    for (let i = 0; i < 120; i++) {  // la synchro tourne cote serveur : on suit son avancement
+      await new Promise(r => setTimeout(r, 5000));
+      const st = await lsFetch(BASE + '/ls/stock_sync_status').then(r => r.json());
+      if (st.running) { stockMsg(`Synchronisation en cours… ${(i + 1) * 5} s`); continue; }
+      if (st.started !== s0.started) continue;
+      if (st.error || !st.result) throw new Error(st.error || 'synchronisation sans résultat');
+      d = st.result; break;
+    }
+    if (!d) throw new Error('La synchronisation dépasse 10 minutes : vérifie plus tard (journal du serveur).');
     if (d.error) throw new Error(d.error);
     let h = d.first_run ? '<b>Premier passage</b> : état des lieux enregistré, aucune action.' : `<b>${d.actions.length}</b> action(s).`;
     if (d.actions.length) h += '<ul style="margin:4px 0 0 18px">' + d.actions.map(a => `<li>${esc(a.title)} (disparu de ${esc((a.gone_on || []).join(', '))}) → ${esc(a.did || a.error)}</li>`).join('') + '</ul>';
