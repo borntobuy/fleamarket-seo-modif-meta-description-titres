@@ -1796,7 +1796,8 @@ def ls_stock_source():
 #   {'options': ['Number'], 'rows': [{'vals': ['3'], 'price': 45.0, 'qty': 1}, ...]}
 # --------------------------------------------------------------------------
 def _clean_variants(names, rows):
-    names = [str(n).strip() for n in names if str(n).strip()]
+    names = [(str(n).strip()[:1].upper() + str(n).strip()[1:]) if str(n).strip().islower() else str(n).strip()
+             for n in names if str(n).strip()]
     rows = [r for r in rows if r.get('qty', 0) > 0 and len(r['vals']) == len(names) and all(str(v).strip() for v in r['vals'])]
     if not names or len(names) > 2 or len(rows) < 2:
         return None  # Etsy accepte 2 options au plus ; une seule variante en stock = annonce simple
