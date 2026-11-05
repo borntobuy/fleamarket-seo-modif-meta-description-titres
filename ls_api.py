@@ -2408,3 +2408,24 @@ def _sync_worker(run_id):  # noqa: F811 - remplace la version precedente : synch
     finally:
         _sync_state['finished'] = time.time()
         _sync_state['running'] = False
+
+
+
+@ls_bp.route('/ls/variant_noop', methods=['POST'])
+def ls_variant_noop():
+    """Test d'ecriture SANS changement : remet une variante a sa quantite actuelle. {plat, ref:{id}, key?}."""
+    j = request.json or {}
+    plat, ref = j.get('plat'), j.get('ref') or {}
+    try:
+        if plat not in _VAR_SET:
+            return jsonify({'error': 'plateforme inconnue'}), 400
+        cur = _VAR_READ[plat](ref)
+        if len(cur) < 2:
+            return jsonify({'error': 'pas de variantes'}), 400
+        key = j.get('key') if j.get('key') in cur else sorted(cur)[0]
+        _VAR_SET[plat](ref, cur, {key: cur[key]['qty']})
+        after = _VAR_READ[plat](ref)
+        return jsonify({'ok': True, 'key': key, 'before': cur[key]['qty'], 'after': after.get(key, {}).get('qty'),
+                        'same_all': {k: v['qty'] for k, v in cur.items()} == {k: v['qty'] for k, v in after.items()}})
+    except Exception as e:
+        return jsonify({'error': '%s' % e}), 500
