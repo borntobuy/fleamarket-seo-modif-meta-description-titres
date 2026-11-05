@@ -2214,7 +2214,10 @@ async function publishShopify(idx) {
           tags: [g.keyword, ...g.tags].filter(Boolean).join(', '),
           status: 'active',
           published: true,
-          variants: [{ price: sPrice.toFixed(2), sku: art.sku, inventory_management: 'shopify', inventory_quantity: 1, requires_shipping: true }],
+          ...(art.variants ? { options: art.variants.options.map(n => ({ name: n })) } : {}),
+          variants: art.variants   // article a variantes (choix du numero…) : chaque variante est creee avec son stock
+            ? art.variants.rows.map(row => { const v = { price: (Number(row.price) || sPrice).toFixed(2), sku: art.sku, inventory_management: 'shopify', inventory_quantity: row.qty, requires_shipping: true }; row.vals.forEach((x, i) => { v['option' + (i + 1)] = String(x); }); return v; })
+            : [{ price: sPrice.toFixed(2), sku: art.sku, inventory_management: 'shopify', inventory_quantity: 1, requires_shipping: true }],
           metafields_global_title_tag: seoTitle,
           metafields_global_description_tag: seoDesc,
           images
@@ -2626,7 +2629,7 @@ async function exportOne(r, missing, log) {
     const liveOthers = Object.keys(r.platforms || {}).filter(p => p !== 'ebay' && r.platforms[p]);
     if (u.used && !liveOthers.length) { sku0 = ''; renewed = true; }
   }
-  const art = { id: articles.length + 1, title: s.title, category: '', photoIds, keywords: '', published: {}, sku: sku0, suffix: '-', fromStock: true };
+  const art = { id: articles.length + 1, title: s.title, category: '', photoIds, keywords: '', published: {}, sku: sku0, suffix: '-', fromStock: true, variants };
   if (!art.sku) { art.suffix = ''; await reserveRef(art); art.suffix = '-'; }
   if (renewed && r.refs && r.refs.ebay) {
     const d = await lsFetch(BASE + '/ls/ebay_set_sku', { method: 'POST', headers: JSON_H, body: JSON.stringify({ item_id: r.refs.ebay.id, sku: art.sku }) }).then(x => x.json());
@@ -2665,12 +2668,13 @@ async function exportOne(r, missing, log) {
       const el = document.getElementById(`pub-${t}-${idx}`); const txt = el ? el.innerText.trim() : '';
       if (!perr && /non posé : SKU/.test(txt)) throw new Error(`${nm} : annonce créée mais le SKU n'a pas pu être posé (${txt.slice(0, 160)}). SKU attendu : ${art.sku}`);
       const bad = perr || (el && (el.querySelector('.pub-err') || /erreur|échec|failed|error/i.test(txt)));
+      if (!bad && variants && t === 'shopify') out.push(`Shopify : ${variants.rows.length} variantes (${variants.options.join(' / ')})`);
       if (bad) {
         if (ebayRollback) { await ebayRollback(); out.push('SKU eBay remis comme avant'); }
         throw new Error(`${nm} : ${perr || txt}. Export arrêté, aucune autre modification.` + (out.length ? ' (' + out.join(' · ') + ')' : ''));
       }
       out.push(nm + ' : ' + txt);
-      if (variants) {  // recopie le choix (option) et le stock de chaque variante sur l'annonce qui vient d'etre creee
+      if (variants && t === 'etsy') {  // Etsy : recopie le choix (option) et le stock de chaque variante sur l'annonce creee (Shopify les recoit des la creation)
         const pid = t === 'etsy' ? art.published.etsy : art.published.shopify;
         const vr = await lsFetch(BASE + '/ls/variants_apply', { method: 'POST', headers: JSON_H,
           body: JSON.stringify({ plat: t, ref: { id: String(pid) }, variants, sku: art.sku }) }).then(x => x.json()).catch(e => ({ error: e.message }));
