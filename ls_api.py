@@ -1749,12 +1749,16 @@ def ls_stock_source():
             root = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(refs['ebay']['id']))
             it = root.find('.//%sItem' % EBAY_NS)
             if it is not None:
+                vr = _ebay_variants(it)
                 out['ebay'] = {
                     'title': _t(it, EBAY_NS + 'Title'), 'description': _t(it, EBAY_NS + 'Description'),
                     'price': _t(it, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'CurrentPrice') or _t(it, EBAY_NS + 'StartPrice'),
-                    'sku': _t(it, EBAY_NS + 'SKU'),
+                    'sku': _t(it, EBAY_NS + 'SKU') or _t(it, EBAY_NS + 'Variations/' + EBAY_NS + 'Variation/' + EBAY_NS + 'SKU'),
                     'images': [e.text for e in it.findall('.//%sPictureDetails/%sPictureURL' % (EBAY_NS, EBAY_NS)) if e.text],
+                    'variants': vr,
                 }
+                if vr:  # annonce a variantes : le prix de reference est le plus bas
+                    out['ebay']['price'] = '%.2f' % min(r['price'] for r in vr['rows'] if r['price'] > 0) if any(r['price'] > 0 for r in vr['rows']) else out['ebay']['price']
     except Exception as e:
         out['ebay_error'] = str(e)[:120]
     try:
@@ -1767,7 +1771,8 @@ def ls_stock_source():
                 out['shopify'] = {'title': pr.get('title', ''), 'description': pr.get('body_html', ''),
                                   'price': vs[0].get('price', ''), 'sku': vs[0].get('sku', ''),
                                   'images': [i.get('src') for i in pr.get('images', []) if i.get('src')],
-                                  'tags': [t.strip() for t in (pr.get('tags') or '').split(',') if t.strip()]}
+                                  'tags': [t.strip() for t in (pr.get('tags') or '').split(',') if t.strip()],
+                                  'variants': _shopify_variants(pr)}
     except Exception as e:
         out['shopify_error'] = str(e)[:120]
     try:
@@ -1778,10 +1783,193 @@ def ls_stock_source():
                            'price': ('%.2f' % (pr['amount'] / (pr.get('divisor') or 100))) if pr.get('amount') is not None else '',
                            'sku': (j.get('skus') or [''])[0],
                            'images': [i.get('url_fullxfull') for i in j.get('images', []) if i.get('url_fullxfull')],
-                           'tags': j.get('tags') or [], 'materials': j.get('materials') or []}
+                           'tags': j.get('tags') or [], 'materials': j.get('materials') or [],
+                           'variants': _etsy_variants(refs['etsy']['id'])}
     except Exception as e:
         out['etsy_error'] = str(e)[:120]
     return jsonify(out)
+
+
+# --------------------------------------------------------------------------
+# VARIANTES (choix du numero, de la taille, de la couleur...) : lecture sur l'annonce source,
+# application sur Etsy / Shopify. Format commun :
+#   {'options': ['Number'], 'rows': [{'vals': ['3'], 'price': 45.0, 'qty': 1}, ...]}
+# --------------------------------------------------------------------------
+def _clean_variants(names, rows):
+    names = [str(n).strip() for n in names if str(n).strip()]
+    rows = [r for r in rows if r.get('qty', 0) > 0 and len(r['vals']) == len(names) and all(str(v).strip() for v in r['vals'])]
+    if not names or len(names) > 2 or len(rows) < 2:
+        return None  # Etsy accepte 2 options au plus ; une seule variante en stock = annonce simple
+    seen, out = set(), []
+    for r in rows:
+        k = tuple(str(v).strip() for v in r['vals'])
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append({'vals': list(k), 'price': float(r.get('price') or 0), 'qty': int(r['qty'])})
+    return {'options': names, 'rows': out} if len(out) >= 2 else None
+
+
+def _ebay_variants(it):
+    vs = it.findall('.//%sVariations/%sVariation' % (EBAY_NS, EBAY_NS))
+    if len(vs) < 2:
+        return None
+    names, rows = [], []
+    for v in vs:
+        spec = [(_t(n, EBAY_NS + 'Name').strip(), _t(n, EBAY_NS + 'Value').strip())
+                for n in v.findall('./%sVariationSpecifics/%sNameValueList' % (EBAY_NS, EBAY_NS))]
+        if not spec:
+            continue
+        if not names:
+            names = [n for n, _x in spec]
+        d = dict(spec)
+        qty = max(int(_t(v, EBAY_NS + 'Quantity') or 0) - int(_t(v, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'QuantitySold') or 0), 0)
+        try:
+            price = float(_t(v, EBAY_NS + 'StartPrice') or 0)
+        except ValueError:
+            price = 0.0
+        rows.append({'vals': [d.get(n, '') for n in names], 'price': price, 'qty': qty})
+    return _clean_variants(names, rows)
+
+
+def _shopify_variants(pr):
+    opts = [o.get('name') or '' for o in (pr.get('options') or [])]
+    vs = pr.get('variants') or []
+    if len(vs) < 2 or not opts or opts == ['Title']:
+        return None
+    rows = []
+    for v in vs:
+        try:
+            price = float(v.get('price') or 0)
+        except ValueError:
+            price = 0.0
+        rows.append({'vals': [v.get('option%d' % (i + 1)) or '' for i in range(len(opts))], 'price': price,
+                     'qty': int(v.get('inventory_quantity') or 0)})
+    return _clean_variants(opts, rows)
+
+
+def _etsy_variants(lid):
+    prods = (_etsy_get('/application/listings/%s/inventory' % lid).get('products')) or []
+    if len(prods) < 2:
+        return None
+    names, rows = [], []
+    for p in prods:
+        if p.get('is_deleted'):
+            continue
+        pvs = p.get('property_values') or []
+        if not pvs:
+            continue
+        if not names:
+            names = [pv.get('property_name') or '' for pv in pvs]
+        d = {pv.get('property_name') or '': ', '.join(pv.get('values') or []) for pv in pvs}
+        o = (p.get('offerings') or [{}])[0]
+        pr = o.get('price') or {}
+        price = (pr.get('amount') or 0) / float(pr.get('divisor') or 100)
+        rows.append({'vals': [d.get(n, '') for n in names], 'price': price,
+                     'qty': int(o.get('quantity') or 0) if o.get('is_enabled', True) else 0})
+    return _clean_variants(names, rows)
+
+
+def _apply_variants_etsy(lid, variants, sku, force=False):
+    h = _etsy_ctx()
+    r = requests.get('https://openapi.etsy.com/v3/application/listings/%s/inventory' % lid, headers=h, timeout=30)
+    if r.status_code != 200:
+        raise StoreError('Etsy %s : %s' % (r.status_code, r.text[:150]))
+    prods = r.json().get('products') or []
+    if not force and (len(prods) > 1 or any(p.get('property_values') for p in prods)):
+        return {'skipped': 'deja a variantes sur Etsy'}
+    o0 = ((prods[0].get('offerings') or [{}])[0]) if prods else {}
+    rs = o0.get('readiness_state_id')
+    p0 = o0.get('price') or {}
+    price0 = (p0.get('amount') or 0) / float(p0.get('divisor') or 100)
+    opts = variants['options']
+    pids = [513, 514][:len(opts)]  # proprietes « personnalisees » d'Etsy
+    products = []
+    for row in variants['rows']:
+        off = {'quantity': int(row['qty']), 'is_enabled': True, 'price': round(float(row['price'] or price0), 2)}
+        if rs:
+            off['readiness_state_id'] = rs
+        products.append({'sku': sku or '',
+                         'property_values': [{'property_id': pids[k], 'property_name': str(opts[k])[:20], 'scale_id': None,
+                                              'value_ids': [], 'values': [str(row['vals'][k])[:45]]} for k in range(len(opts))],
+                         'offerings': [off]})
+    prices = {p['offerings'][0]['price'] for p in products}
+    body = {'products': products, 'price_on_property': pids if len(prices) > 1 else [], 'quantity_on_property': pids,
+            'sku_on_property': [], 'readiness_state_on_property': []}
+    h2 = dict(h)
+    h2['Content-Type'] = 'application/json'
+    u = requests.put('https://openapi.etsy.com/v3/application/listings/%s/inventory' % lid, headers=h2, json=body, timeout=40)
+    if u.status_code not in (200, 201):
+        raise StoreError('Etsy %s : %s' % (u.status_code, u.text[:300]))
+    return {'n': len(products)}
+
+
+def _apply_variants_shopify(pid, variants, sku, force=False):
+    shop, h = _shopify_ctx()
+    base = 'https://%s/admin/api/2024-01' % shop
+    r = requests.get(base + '/products/%s.json' % pid, headers=h, timeout=30)
+    if r.status_code != 200:
+        raise StoreError('Shopify %s : %s' % (r.status_code, r.text[:150]))
+    pr = r.json().get('product', {})
+    vs0 = pr.get('variants') or []
+    if not force and len(vs0) > 1:
+        return {'skipped': 'deja a variantes sur Shopify'}
+    price0 = float((vs0[0].get('price') if vs0 else 0) or 0)
+    opts = variants['options']
+    vbody = []
+    for k, row in enumerate(variants['rows']):
+        vb = {'price': '%.2f' % float(row['price'] or price0), 'sku': sku or '', 'inventory_management': 'shopify',
+              'inventory_policy': 'deny', 'requires_shipping': True}
+        for i, v in enumerate(row['vals']):
+            vb['option%d' % (i + 1)] = str(v)[:255]
+        if k == 0 and vs0:
+            vb['id'] = vs0[0]['id']  # la variante existante est reutilisee, les autres sont creees
+        vbody.append(vb)
+    obody = [{'name': str(n)[:255]} for n in opts]
+    for i, o in enumerate((pr.get('options') or [])[:len(opts)]):
+        obody[i]['id'] = o['id']  # on renomme l'option « Title » au lieu d'en ajouter une
+    u = requests.put(base + '/products/%s.json' % pid, headers=h, json={'product': {'id': int(pid), 'options': obody, 'variants': vbody}}, timeout=40)
+    if u.status_code != 200:
+        raise StoreError('Shopify %s : %s' % (u.status_code, u.text[:300]))
+    newv = u.json().get('product', {}).get('variants') or []
+    loc = requests.get(base + '/locations.json', headers=h, timeout=30)
+    locs = [x for x in (loc.json().get('locations') if loc.status_code == 200 else []) if x.get('active')]
+    if not locs:
+        raise StoreError('Shopify : aucun emplacement de stock trouve (variantes creees, quantites non posees)')
+    stock = {tuple(str(v) for v in row['vals']): int(row['qty']) for row in variants['rows']}
+    for v in newv:
+        key = tuple(str(v.get('option%d' % (i + 1)) or '') for i in range(len(opts)))
+        if key not in stock or not v.get('inventory_item_id'):
+            continue
+        s = requests.post(base + '/inventory_levels/set.json', headers=h, timeout=30,
+                          json={'location_id': locs[0]['id'], 'inventory_item_id': v['inventory_item_id'], 'available': stock[key]})
+        if s.status_code != 200:
+            raise StoreError('Shopify stock %s : %s' % (s.status_code, s.text[:200]))
+    return {'n': len(newv)}
+
+
+@ls_bp.route('/ls/variants_apply', methods=['POST'])
+def ls_variants_apply():
+    """{plat:'etsy'|'shopify', ref:{id}, variants:{options,rows}, sku, force?} -> recree les variantes sur l'annonce."""
+    j = request.json or {}
+    plat, ref, v = j.get('plat'), j.get('ref') or {}, j.get('variants') or {}
+    clean = _clean_variants(v.get('options') or [], [
+        {'vals': [str(x) for x in (r.get('vals') or [])], 'price': r.get('price') or 0, 'qty': int(r.get('qty') or 0)}
+        for r in (v.get('rows') or [])])
+    if not ref.get('id') or not clean:
+        return jsonify({'error': 'variantes invalides (2 options maximum, 2 variantes en stock minimum)'}), 400
+    try:
+        if plat == 'etsy':
+            res = _apply_variants_etsy(ref['id'], clean, j.get('sku'), bool(j.get('force')))
+        elif plat == 'shopify':
+            res = _apply_variants_shopify(ref['id'], clean, j.get('sku'), bool(j.get('force')))
+        else:
+            return jsonify({'error': 'plateforme inconnue'}), 400
+        return jsonify(dict(res, ok=True))
+    except StoreError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': 'variantes: %s' % e}), 500
 
 
 _IMG_OK = re.compile(r'^https://([a-z0-9-]+\.)*(ebayimg\.com|etsystatic\.com|shopify\.com|shopifycdn\.com)/', re.I)
