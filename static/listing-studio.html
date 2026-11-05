@@ -2687,11 +2687,10 @@ async function exportOne(r, missing, log) {
 async function repairVariants() {
   let rows = checkedRows(), auto = false;
   if (!rows.length) {
-    auto = true;  // detection : eBay a plusieurs unites (variantes) alors qu'une autre plateforme n'a pas le meme stock
+    auto = true;  // detection : les articles a variantes ont « number » ou « numbers » dans le titre
     rows = stockRows.filter(r => r.status === 'active' && r.refs && r.refs.ebay && (r.refs.etsy || r.refs.shopify)
-      && Number((r.qty_by || {}).ebay) > 1
-      && ['etsy', 'shopify'].some(p => r.refs[p] && Number((r.qty_by || {})[p]) !== Number(r.qty_by.ebay)));
-    if (!rows.length) return alert('Aucun article à variantes détecté. Coche un article pour forcer la vérification.');
+      && /\bnumbers?\b/i.test(r.title || ''));
+    if (!rows.length) return alert('Aucun article « number(s) » détecté. Coche un article pour forcer la vérification.');
   }
   if (!confirm(`${auto ? 'Détecté automatiquement : ' : ''}vérifier ${rows.length} article(s) et recopier le choix + le stock par variante d'eBay vers Etsy et Shopify (seulement là où l'annonce n'a pas déjà de variantes) ?`)) return;
   const lines = [];
