@@ -189,6 +189,7 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
       <option value="ebay">eBay</option><option value="etsy">Etsy</option><option value="shopify">Shopify</option><option value="all">Toutes</option>
     </select>
     <button class="btn btn-primary" style="padding:6px 14px;font-size:13px" onclick="exportSelected()">Exporter</button>
+    <button class="btn btn-outline" style="padding:6px 14px;font-size:13px" onclick="repairVariants()" title="Recopie le choix (numéro, taille…) et le stock par variante d'eBay vers Etsy et Shopify. Sans case cochée : détecte automatiquement les articles concernés.">Copier les variantes</button>
     <span style="color:#ced4da">|</span>
     <b>Désactiver sur :</b>
     <select id="stockDeact" style="padding:6px 8px;border:1px solid #ced4da;border-radius:6px;font-size:13px">
@@ -2611,6 +2612,8 @@ async function exportOne(r, missing, log) {
   const urls = [...new Set([].concat(...[src.ebay, src.shopify, src.etsy].filter(Boolean).map(x => x.images || [])))].slice(0, 10);
   const photoIds = [];
   for (const u of urls) { try { photos.push({ file: null, dataUrl: await urlToDataUrl(u), name: 'stock' }); photoIds.push(photos.length - 1); } catch (_) {} }
+  const vsrc = [src.ebay, src.shopify, src.etsy].find(x => x && x.variants);  // annonce a variantes (choix du numero, de la taille…)
+  const variants = vsrc ? vsrc.variants : null;
   const plain = htmlToPlain(s.description || '');
   const meta = await claudeJson(`Item listed on a marketplace. Title: ${s.title}\nDescription: ${plain.slice(0, 1500)}\nExisting tags: ${(src.shopify && src.shopify.tags || src.etsy && src.etsy.tags || []).join(', ')}\n\nReturn ONLY JSON with keys: keyword (best SEO keyword, 1-6 words), etsyTags (exactly 13 tags, each 20 characters or fewer, letters numbers spaces only), altTexts (${photoIds.length} items, max 250 chars, what is visible plus material and origin), seoTitle (max 70 chars), seoDesc (max 160 chars), productType (2-3 words), whenMade (one of ${ETSY_WHEN_MADE.join(', ')}), materials (up to 5 lowercase), etsyCategoryGuess (Etsy category path in Etsy wording). No double quote characters inside values.`, 1500);
   const desc = String(s.description || '').replace(/<!--\s*fmf-[a-z]+\s*-->/g, '').trim();
@@ -2667,9 +2670,51 @@ async function exportOne(r, missing, log) {
         throw new Error(`${nm} : ${perr || txt}. Export arrêté, aucune autre modification.` + (out.length ? ' (' + out.join(' · ') + ')' : ''));
       }
       out.push(nm + ' : ' + txt);
+      if (variants) {  // recopie le choix (option) et le stock de chaque variante sur l'annonce qui vient d'etre creee
+        const pid = t === 'etsy' ? art.published.etsy : art.published.shopify;
+        const vr = await lsFetch(BASE + '/ls/variants_apply', { method: 'POST', headers: JSON_H,
+          body: JSON.stringify({ plat: t, ref: { id: String(pid) }, variants, sku: art.sku }) }).then(x => x.json()).catch(e => ({ error: e.message }));
+        if (vr.error) throw new Error(`${nm} : annonce créée (#${pid}) mais variantes non posées : ${String(vr.error).slice(0, 160)}. Utilise « Copier les variantes » pour réessayer.`);
+        out.push(`${nm} : ${vr.n || variants.rows.length} variantes (${variants.options.join(' / ')})`);
+      }
     }
   }
+  if (variants && missing.includes('ebay')) out.push('eBay : les variantes ne sont pas recopiées vers eBay (annonce simple)');
   return out;
+}
+
+// ── Recopie des variantes (eBay → Etsy / Shopify) sur des annonces existantes a variante unique ──
+async function repairVariants() {
+  let rows = checkedRows(), auto = false;
+  if (!rows.length) {
+    auto = true;  // detection : eBay a plusieurs unites (variantes) alors qu'une autre plateforme n'a pas le meme stock
+    rows = stockRows.filter(r => r.status === 'active' && r.refs && r.refs.ebay && (r.refs.etsy || r.refs.shopify)
+      && Number((r.qty_by || {}).ebay) > 1
+      && ['etsy', 'shopify'].some(p => r.refs[p] && Number((r.qty_by || {})[p]) !== Number(r.qty_by.ebay)));
+    if (!rows.length) return alert('Aucun article à variantes détecté. Coche un article pour forcer la vérification.');
+  }
+  if (!confirm(`${auto ? 'Détecté automatiquement : ' : ''}vérifier ${rows.length} article(s) et recopier le choix + le stock par variante d'eBay vers Etsy et Shopify (seulement là où l'annonce n'a pas déjà de variantes) ?`)) return;
+  const lines = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    stockMsg(`Variantes ${i + 1}/${rows.length} : ${esc((r.title || '').slice(0, 60))}…` + (lines.length ? '<ul style="margin:4px 0 0 18px">' + lines.join('') + '</ul>' : ''));
+    try {
+      const src = await lsFetch(BASE + '/ls/stock_source', { method: 'POST', headers: JSON_H, body: JSON.stringify({ refs: r.refs }) }).then(x => x.json());
+      const from = ['ebay', 'shopify', 'etsy'].find(p => src[p] && src[p].variants);
+      if (!from) { lines.push(`<li>${esc((r.title || '').slice(0, 50))} : pas de variantes sur la source</li>`); continue; }
+      const out = [];
+      for (const t of ['etsy', 'shopify']) {
+        if (t === from || !r.refs[t]) continue;
+        const sku = r.sku || (src[from] && src[from].sku) || '';
+        const vr = await lsFetch(BASE + '/ls/variants_apply', { method: 'POST', headers: JSON_H,
+          body: JSON.stringify({ plat: t, ref: { id: String(r.refs[t].id) }, variants: src[from].variants, sku }) }).then(x => x.json()).catch(e => ({ error: e.message }));
+        out.push(PLAT_BADGE[t].n + ' : ' + (vr.error ? 'ERREUR ' + vr.error : vr.skipped || (vr.n + ' variantes')));
+      }
+      lines.push(`<li${out.some(o => /ERREUR/.test(o)) ? ' class="pub-err"' : ''}>${esc((r.title || '').slice(0, 50))} → ${esc(out.join(' · ') || 'rien à faire')}</li>`);
+    } catch (e) { lines.push(`<li class="pub-err">${esc((r.title || '').slice(0, 50))} : ${esc(String(e.message).slice(0, 120))}</li>`); }
+  }
+  stockMsg(`<b>Variantes terminé</b><ul style="margin:4px 0 0 18px">${lines.join('')}</ul>`);
+  await refreshRows(rows);
 }
 async function exportSelected() {
   const rows = checkedRows();
