@@ -2113,3 +2113,298 @@ def ls_etsy_finish():
         return jsonify({'error': str(e)}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+
+# --------------------------------------------------------------------------
+# SYNCHRO DU STOCK PAR VARIANTE (numero) : une vente d'un numero sur une plateforme baisse le meme numero ailleurs.
+# Etat par article (st['vs'][cle]) : last = dernier stock observe par plateforme et par numero ;
+# owe = baisses restant a appliquer sur une plateforme (reessayees au passage suivant si l'ecriture a echoue).
+# Regle : ventes_p = max(last_p - actuel_p, 0) ; a_appliquer_p += somme des ventes des AUTRES plateformes ;
+# nouveau stock_p = max(actuel_p - a_appliquer_p, 0). Les hausses (reapprovisionnement) ne sont pas propagees.
+# --------------------------------------------------------------------------
+_VAR_TITLE = re.compile(r'\bnumbers?\b', re.I)
+MAX_VAR_CHANGES = 60
+
+
+def _vkey(vals):
+    return ' / '.join(str(v).strip() for v in vals)
+
+
+def _var_read_ebay(ref):
+    root = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(ref['id']))
+    it = root.find('.//%sItem' % EBAY_NS)
+    if it is None:
+        raise StoreError('eBay : annonce illisible')
+    out = {}
+    for v in it.findall('.//%sVariations/%sVariation' % (EBAY_NS, EBAY_NS)):
+        spec = [(_t(n, EBAY_NS + 'Name').strip(), _t(n, EBAY_NS + 'Value').strip())
+                for n in v.findall('./%sVariationSpecifics/%sNameValueList' % (EBAY_NS, EBAY_NS))]
+        if not spec:
+            continue
+        sold = int(_t(v, EBAY_NS + 'SellingStatus/' + EBAY_NS + 'QuantitySold') or 0)
+        tot = int(_t(v, EBAY_NS + 'Quantity') or 0)
+        out[_vkey([x[1] for x in spec])] = {'qty': max(tot - sold, 0), 'sold': sold, 'spec': spec}
+    return out
+
+
+def _var_read_etsy(ref):
+    inv = _etsy_get('/application/listings/%s/inventory' % ref['id'])
+    out = {}
+    for p in inv.get('products') or []:
+        if p.get('is_deleted'):
+            continue
+        pvs = p.get('property_values') or []
+        if not pvs:
+            continue
+        o = (p.get('offerings') or [{}])[0]
+        out[_vkey([', '.join(pv.get('values') or []) for pv in pvs])] = {
+            'qty': int(o.get('quantity') or 0) if o.get('is_enabled', True) else 0}
+    return out
+
+
+def _var_read_shopify(ref):
+    shop, h = _shopify_ctx()
+    r = requests.get('https://%s/admin/api/2024-01/products/%s.json' % (shop, ref['id']), headers=h, timeout=30)
+    if r.status_code != 200:
+        raise StoreError('Shopify %s : %s' % (r.status_code, r.text[:120]))
+    pr = r.json().get('product', {})
+    opts = [o.get('name') or '' for o in (pr.get('options') or [])]
+    vs = pr.get('variants') or []
+    if len(vs) < 2 or opts == ['Title']:
+        return {}
+    return {_vkey([v.get('option%d' % (i + 1)) or '' for i in range(len(opts))]):
+            {'qty': int(v.get('inventory_quantity') or 0), 'inv_item': v.get('inventory_item_id')} for v in vs}
+
+
+_VAR_READ = {'ebay': _var_read_ebay, 'etsy': _var_read_etsy, 'shopify': _var_read_shopify}
+
+
+def _var_set_ebay(ref, cur, changes):
+    for key, qty in changes.items():
+        c = cur[key]
+        nv = ''.join('<NameValueList><Name>%s</Name><Value>%s</Value></NameValueList>' % (xml_escape(n), xml_escape(v))
+                     for n, v in c['spec'])
+        root = _ebay_call('ReviseFixedPriceItem',
+                          '<Item><ItemID>%s</ItemID><Variations><Variation><Quantity>%d</Quantity>'
+                          '<VariationSpecifics>%s</VariationSpecifics></Variation></Variations></Item>'
+                          % (xml_escape(ref['id']), int(qty) + int(c.get('sold') or 0), nv))
+        errs = [e for e in _errors(root) if e[0] == 'Error']
+        if errs:
+            raise StoreError('eBay : ' + errs[0][1][:140])
+    after = _var_read_ebay(ref)  # controle : le stock disponible doit etre celui demande
+    bad = ['%s=%s' % (k, after.get(k, {}).get('qty')) for k, q in changes.items() if after.get(k, {}).get('qty') != q]
+    if bad:
+        raise StoreError('eBay : stock obtenu different de celui demande (%s)' % ', '.join(bad[:3]))
+
+
+def _var_set_etsy(ref, cur, changes):
+    h = _etsy_ctx()
+    r = requests.get('https://openapi.etsy.com/v3/application/listings/%s/inventory' % ref['id'], headers=h, timeout=30)
+    if r.status_code != 200:
+        raise StoreError('Etsy %s : %s' % (r.status_code, r.text[:150]))
+    inv = r.json()
+    products = []
+    for p in inv.get('products') or []:
+        if p.get('is_deleted'):
+            continue
+        pvs = p.get('property_values') or []
+        key = _vkey([', '.join(pv.get('values') or []) for pv in pvs]) if pvs else None
+        offs = []
+        for o in p.get('offerings') or []:
+            pr = o.get('price') or {}
+            qty = int(o.get('quantity') or 0)
+            enabled = o.get('is_enabled', True)
+            if key in changes:
+                qty, enabled = int(changes[key]), int(changes[key]) > 0
+            off = {'quantity': max(qty, 1), 'is_enabled': bool(enabled),
+                   'price': (pr.get('amount') or 0) / float(pr.get('divisor') or 100)}
+            if o.get('readiness_state_id'):
+                off['readiness_state_id'] = o['readiness_state_id']
+            offs.append(off)
+        products.append({'sku': p.get('sku', ''),
+                         'property_values': [{'property_id': pv.get('property_id'), 'property_name': pv.get('property_name'),
+                                              'scale_id': pv.get('scale_id'), 'value_ids': pv.get('value_ids', []),
+                                              'values': pv.get('values', [])} for pv in pvs],
+                         'offerings': offs})
+    body = {'products': products, 'price_on_property': inv.get('price_on_property') or [],
+            'quantity_on_property': inv.get('quantity_on_property') or [],
+            'sku_on_property': inv.get('sku_on_property') or [],
+            'readiness_state_on_property': inv.get('readiness_state_on_property') or []}
+    h2 = dict(h)
+    h2['Content-Type'] = 'application/json'
+    u = requests.put('https://openapi.etsy.com/v3/application/listings/%s/inventory' % ref['id'], headers=h2, json=body, timeout=40)
+    if u.status_code not in (200, 201):
+        raise StoreError('Etsy %s : %s' % (u.status_code, u.text[:200]))
+
+
+def _shopify_inv_ok():
+    """Le jeton Shopify a-t-il les droits « inventaire » (lecture des emplacements) ?"""
+    try:
+        shop, h = _shopify_ctx()
+        return requests.get('https://%s/admin/api/2024-01/locations.json' % shop, headers=h, timeout=20).status_code == 200
+    except Exception:
+        return False
+
+
+def _var_set_shopify(ref, cur, changes):
+    shop, h = _shopify_ctx()
+    base = 'https://%s/admin/api/2024-01' % shop
+    for key, qty in changes.items():
+        item = cur[key].get('inv_item')
+        lv = requests.get(base + '/inventory_levels.json', headers=h, params={'inventory_item_ids': item}, timeout=30)
+        if lv.status_code != 200:
+            raise StoreError('Shopify : droits inventaire manquants')
+        levels = lv.json().get('inventory_levels') or []
+        if not levels:
+            raise StoreError('Shopify : emplacement de stock introuvable')
+        s = requests.post(base + '/inventory_levels/set.json', headers=h, timeout=30,
+                          json={'location_id': levels[0]['location_id'], 'inventory_item_id': item, 'available': int(qty)})
+        if s.status_code != 200:
+            raise StoreError('Shopify stock %s : %s' % (s.status_code, s.text[:150]))
+
+
+_VAR_SET = {'ebay': _var_set_ebay, 'etsy': _var_set_etsy, 'shopify': _var_set_shopify}
+
+
+def _variant_plan(last, owe, cur):
+    """Calcul pur (testable) : last/owe/cur = {plat: {cle: qty}} -> (cibles {plat: {cle: qty}}, nouvelles dettes, ventes)."""
+    plats = list(cur)
+    keys = set.intersection(*[set(cur[p]) for p in plats]) if plats else set()
+    sold = {p: {k: max(int(last.get(p, {}).get(k, cur[p][k])) - cur[p][k], 0) for k in keys} for p in plats}
+    new_owe, targets = {}, {}
+    for p in plats:
+        for k in keys:
+            n = int(owe.get(p, {}).get(k, 0)) + sum(sold[q][k] for q in plats if q != p)
+            if n > 0:
+                new_owe.setdefault(p, {})[k] = n
+                targets.setdefault(p, {})[k] = max(cur[p][k] - n, 0)
+    return targets, new_owe, sold
+
+
+def _variant_sync(items, ok_plats, st, actions, deadline, dry=False):
+    vs = st.setdefault('vs', {})
+    shop_ok = None
+    changes_done = 0
+    for k, it in items.items():
+        if it.get('status') != 'active' or it.get('pending') or not _VAR_TITLE.search(it.get('title') or ''):
+            continue
+        live = [p for p in PLATS if p in ok_plats and (it['p'].get(p) or {}).get('active')]
+        if len(live) < 2:
+            continue
+        if time.time() > deadline:
+            break
+        cur_full = {}
+        try:
+            for p in live:
+                if p == 'shopify':
+                    if shop_ok is None:
+                        shop_ok = _shopify_inv_ok()
+                    if not shop_ok:
+                        continue  # sans droits d'ecriture sur le stock, Shopify ne participe pas
+                cur_full[p] = _VAR_READ[p](it['p'][p])
+        except Exception as ex:
+            actions.append({'title': it.get('title'), 'sku': it.get('sku'), 'error': 'stock par numero (lecture) : %s' % str(ex)[:100]})
+            continue
+        cur_full = {p: v for p, v in cur_full.items() if len(v) >= 2}
+        if len(cur_full) < 2:
+            continue
+        cur = {p: {key: d['qty'] for key, d in v.items()} for p, v in cur_full.items()}
+        rec = vs.get(k) or {}
+        last, owe = rec.get('last') or {}, rec.get('owe') or {}
+        targets, new_owe, sold = _variant_plan(last, owe, cur) if rec else ({}, {}, {})
+        new_last = {p: dict(v) for p, v in cur.items()}
+        remaining_owe = {}
+        for p, tg in targets.items():
+            if dry:
+                actions.append({'title': it.get('title'), 'sku': it.get('sku'), 'did': 'A FAIRE %s : %s' % (p, ', '.join('%s %d->%d' % (kk, cur[p][kk], q) for kk, q in tg.items()))})
+                remaining_owe[p] = new_owe[p]
+                continue
+            if changes_done + len(tg) > MAX_VAR_CHANGES:
+                remaining_owe[p] = new_owe[p]  # trop de modifications d'un coup : reporte au passage suivant
+                continue
+            try:
+                _VAR_SET[p](it['p'][p], cur_full[p], tg)
+                changes_done += len(tg)
+                for kk, q in tg.items():
+                    new_last[p][kk] = q
+                actions.append({'title': it.get('title'), 'sku': it.get('sku'),
+                                'did': 'stock par numero %s : %s' % (p, ', '.join('%s %d->%d' % (kk, cur[p][kk], q) for kk, q in tg.items()))})
+            except Exception as ex:
+                remaining_owe[p] = new_owe[p]  # echec : la baisse reste due, reessayee au prochain passage
+                actions.append({'title': it.get('title'), 'sku': it.get('sku'), 'error': 'stock par numero %s : %s' % (p, str(ex)[:110])})
+        if not dry:
+            vs[k] = {'last': new_last, 'owe': remaining_owe}
+
+
+@ls_bp.route('/ls/variant_sync', methods=['GET', 'POST'])
+def ls_variant_sync():
+    """Diagnostic : synchro du stock par numero sur quelques articles. ?apply=1 pour agir (sinon a blanc), ?q=texte, ?limit=N."""
+    if not _sync_lock.acquire(blocking=False):
+        return jsonify({'error': 'synchronisation deja en cours'}), 409
+    try:
+        apply_ = request.args.get('apply') == '1'
+        q = (request.args.get('q') or '').lower()
+        limit = max(1, min(int(request.args.get('limit', 5)), 40))
+        st, sha = _load(STOCK_PATH)
+        items = st.get('items') or {}
+        sel = {k: it for k, it in items.items() if (not q or q in (it.get('title') or '').lower() or q == (it.get('sku') or '').lower())}
+        sel = dict(list(sel.items())[:limit]) if not q else sel
+        acts = []
+        before = json.dumps(st.get('vs') or {}, sort_keys=True)
+        t0 = time.time()
+        _variant_sync(sel, list(PLATS), st, acts, t0 + 100, dry=not apply_)
+        saved = None
+        if apply_:
+            log = st.get('log') or []
+            for a in acts:
+                log.append(dict(a, at=_today_key()[1]))
+            st['log'] = log[-200:]
+            saved = _save(st, sha, 'ls: stock par numero (diagnostic)', STOCK_PATH)
+        return jsonify({'apply': apply_, 'n_items': len(sel), 'actions': acts, 'saved': saved, 'secs': round(time.time() - t0),
+                        'vs_changed': before != json.dumps(st.get('vs') or {}, sort_keys=True)})
+    except Exception as e:
+        return jsonify({'error': '%s | %s' % (e, traceback.format_exc()[-400:])}), 500
+    finally:
+        _sync_lock.release()
+
+
+def _variant_pass(skip_plats=()):
+    """Passage « stock par numero » apres la synchro principale (etat et sauvegarde separes)."""
+    if not _sync_lock.acquire(blocking=False):
+        return {'skipped': 'synchronisation en cours'}
+    try:
+        st, sha = _load(STOCK_PATH)
+        items = st.get('items') or {}
+        acts = []
+        _variant_sync(items, [p for p in PLATS if p not in skip_plats], st, acts, time.time() + 280)
+        now = _today_key()[1]
+        log = st.get('log') or []
+        for a in acts:
+            log.append(dict(a, at=now))
+        st['log'] = log[-200:]
+        for _ in range(5):
+            if _save(st, sha, 'ls: stock par numero %s' % now, STOCK_PATH):
+                break
+            _fresh, sha = _load(STOCK_PATH)
+        return {'actions': acts}
+    finally:
+        _sync_lock.release()
+
+
+def _sync_worker(run_id):  # noqa: F811 - remplace la version precedente : synchro principale puis stock par numero
+    try:
+        res, code = _stock_sync_core(False)
+        res = json.loads(json.dumps(res, default=str))
+        if code == 200 and res.get('ok'):
+            try:
+                res['variants'] = json.loads(json.dumps(_variant_pass(tuple((res.get('errors') or {}).keys())), default=str))
+            except Exception as e:
+                res['variants'] = {'error': str(e)[:200]}
+        _sync_state.update(code=code, result=res, error=(res.get('error') if code != 200 else None))
+    except BaseException as e:
+        _sync_state.update(code=500, result=None,
+                           error='%s: %s | %s' % (type(e).__name__, e, traceback.format_exc()[-900:]))
+    finally:
+        _sync_state['finished'] = time.time()
+        _sync_state['running'] = False
