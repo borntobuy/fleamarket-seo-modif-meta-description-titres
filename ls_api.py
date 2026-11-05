@@ -41,6 +41,21 @@ ls_bp = Blueprint('ls_api', __name__)
 
 
 @ls_bp.after_app_request
+def _shopify_more_scopes(resp):
+    """Ajoute les droits « inventaire » Shopify (stock par variante) a la demande de connexion OAuth."""
+    try:
+        if request.path == '/shopify/auth_url' and resp.status_code == 200:
+            body = resp.get_data(as_text=True)
+            if 'write_inventory' not in body and 'write_content' in body:
+                sep = '%2C' if '%2C' in body else ','
+                resp.set_data(body.replace('write_content', 'write_content' + sep + 'read_inventory' + sep + 'write_inventory'
+                                           + sep + 'read_locations', 1))
+    except Exception:
+        pass
+    return resp
+
+
+@ls_bp.after_app_request
 def _etsy_more_scopes(resp):
     """Ajoute l'autorisation de lecture des commandes Etsy (transactions_r) a la connexion OAuth."""
     try:
