@@ -1919,12 +1919,12 @@ def _apply_variants_shopify(pid, variants, sku, force=False):
     opts = variants['options']
     vbody = []
     for k, row in enumerate(variants['rows']):
+        # variantes toutes recreees avec leur quantite d'origine (le jeton Shopify n'a pas les droits « inventaire »,
+        # seule la quantite initiale a la creation est possible) ; les anciennes sont supprimees par Shopify
         vb = {'price': '%.2f' % float(row['price'] or price0), 'sku': sku or '', 'inventory_management': 'shopify',
-              'inventory_policy': 'deny', 'requires_shipping': True}
+              'inventory_policy': 'deny', 'requires_shipping': True, 'inventory_quantity': int(row['qty'])}
         for i, v in enumerate(row['vals']):
             vb['option%d' % (i + 1)] = str(v)[:255]
-        if k == 0 and vs0:
-            vb['id'] = vs0[0]['id']  # la variante existante est reutilisee, les autres sont creees
         vbody.append(vb)
     obody = [{'name': str(n)[:255]} for n in opts]
     for i, o in enumerate((pr.get('options') or [])[:len(opts)]):
@@ -1933,19 +1933,11 @@ def _apply_variants_shopify(pid, variants, sku, force=False):
     if u.status_code != 200:
         raise StoreError('Shopify %s : %s' % (u.status_code, u.text[:300]))
     newv = u.json().get('product', {}).get('variants') or []
-    loc = requests.get(base + '/locations.json', headers=h, timeout=30)
-    locs = [x for x in (loc.json().get('locations') if loc.status_code == 200 else []) if x.get('active')]
-    if not locs:
-        raise StoreError('Shopify : aucun emplacement de stock trouve (variantes creees, quantites non posees)')
-    stock = {tuple(str(v) for v in row['vals']): int(row['qty']) for row in variants['rows']}
-    for v in newv:
-        key = tuple(str(v.get('option%d' % (i + 1)) or '') for i in range(len(opts)))
-        if key not in stock or not v.get('inventory_item_id'):
-            continue
-        s = requests.post(base + '/inventory_levels/set.json', headers=h, timeout=30,
-                          json={'location_id': locs[0]['id'], 'inventory_item_id': v['inventory_item_id'], 'available': stock[key]})
-        if s.status_code != 200:
-            raise StoreError('Shopify stock %s : %s' % (s.status_code, s.text[:200]))
+    want = {tuple(str(v) for v in row['vals']): int(row['qty']) for row in variants['rows']}
+    got = {tuple(str(v.get('option%d' % (i + 1)) or '') for i in range(len(opts))): int(v.get('inventory_quantity') or 0) for v in newv}
+    bad = ['%s: %s au lieu de %s' % ('/'.join(k), got.get(k), q) for k, q in want.items() if got.get(k) != q]
+    if bad:
+        raise StoreError('Shopify : variantes creees mais stock different (' + '; '.join(bad[:4]) + ')')
     return {'n': len(newv)}
 
 
