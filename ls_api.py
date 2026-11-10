@@ -2540,3 +2540,64 @@ def ls_stock_specs():
         except Exception as e:
             out['etsy_error'] = str(e)[:200]
     return jsonify(out)
+
+
+
+# --------------------------------------------------------------------------
+# Caracteristiques eBay v2 : lecture avec IncludeItemSpecifics, remplacement des mesures (diametre/hauteur/largeur)
+# --------------------------------------------------------------------------
+def _ebay_specs_read2(item_id):
+    root = _ebay_call('GetItem', '<ItemID>%s</ItemID><IncludeItemSpecifics>true</IncludeItemSpecifics><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(item_id))
+    it = root.find('.//%sItem' % EBAY_NS)
+    if it is None:
+        raise StoreError('eBay : annonce illisible')
+    out = []
+    for nv in it.findall('.//%sItemSpecifics/%sNameValueList' % (EBAY_NS, EBAY_NS)):
+        out.append([_t(nv, EBAY_NS + 'Name'), [(v.text or '') for v in nv.findall(EBAY_NS + 'Value')]])
+    return out
+
+
+@ls_bp.route('/ls/stock_specs2', methods=['POST'])
+def ls_stock_specs2():
+    """{refs:{ebay:{id}}, dims:{w,h en cm}, apply:bool} : hauteur -> Item Height, largeur/diametre -> Item Diameter
+    (ou Item Width si pas de diametre). Une mesure numerique non fournie est retiree (valeur fausse)."""
+    j = request.json or {}
+    ref, dims, apply_ = (j.get('refs') or {}).get('ebay') or {}, j.get('dims') or {}, bool(j.get('apply'))
+    out = {}
+    try:
+        specs = _ebay_specs_read2(ref['id'])
+        out['before'] = [[n, v] for n, v in specs if re.search(r'height|width|length|diameter|depth|size|dimension', n or '', re.I)]
+        out['n_specs'] = len(specs)
+        if apply_:
+            has_diam = any((n or '').strip().lower() in ('item diameter', 'diameter') for n, _v in specs)
+            new, changed = [], []
+            for name, vals in specs:
+                k = (name or '').strip().lower()
+                tgt = None
+                if k in ('item height', 'height'):
+                    tgt = 'h'
+                elif k in ('item diameter', 'diameter'):
+                    tgt = 'w'
+                elif k in ('item width', 'width') and not has_diam:
+                    tgt = 'w'
+                if tgt:
+                    old = vals[0] if vals else ''
+                    if dims.get(tgt) is not None:
+                        nv = ('%s cm' % dims[tgt]) if 'cm' in old.lower() else ('%.1f in' % (float(dims[tgt]) / 2.54))
+                        changed.append('%s: %s -> %s' % (name, old, nv))
+                        vals = [nv]
+                    elif re.search(r'\d', old):
+                        changed.append('%s: %s -> (retire)' % (name, old))
+                        continue
+                new.append([name, vals])
+            if changed:
+                xml = ''.join('<NameValueList><Name>%s</Name>%s</NameValueList>' %
+                              (xml_escape(n), ''.join('<Value>%s</Value>' % xml_escape(v) for v in vs)) for n, vs in new)
+                root = _ebay_call('ReviseFixedPriceItem', '<Item><ItemID>%s</ItemID><ItemSpecifics>%s</ItemSpecifics></Item>' % (xml_escape(ref['id']), xml))
+                errs = [e for e in _errors(root) if e[0] == 'Error']
+                if errs:
+                    raise StoreError('eBay : ' + errs[0][1][:150])
+            out['changed'] = changed
+    except Exception as e:
+        out['error'] = str(e)[:200]
+    return jsonify(out)
