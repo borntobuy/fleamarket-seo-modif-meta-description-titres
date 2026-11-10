@@ -2459,3 +2459,84 @@ def ls_stock_activate():
         return jsonify({'error': 'plateforme inconnue'}), 400
     except Exception as e:
         return jsonify({'error': str(e)[:200]}), 500
+
+
+
+# --------------------------------------------------------------------------
+# Caracteristiques eBay (item specifics) + dimensions Etsy : lecture / mise a jour des mesures
+# --------------------------------------------------------------------------
+_DIM_ASPECTS = {'height': 'h', 'item height': 'h', 'width': 'w', 'item width': 'w', 'diameter': 'w', 'item diameter': 'w',
+                'length': 'l', 'item length': 'l', 'depth': 'd', 'item depth': 'd'}
+
+
+def _ebay_specs_read(item_id):
+    root = _ebay_call('GetItem', '<ItemID>%s</ItemID><DetailLevel>ReturnAll</DetailLevel>' % xml_escape(item_id))
+    it = root.find('.//%sItem' % EBAY_NS)
+    if it is None:
+        raise StoreError('eBay : annonce illisible')
+    out = []
+    for nv in it.findall('.//%sItemSpecifics/%sNameValueList' % (EBAY_NS, EBAY_NS)):
+        out.append([_t(nv, EBAY_NS + 'Name'), [(v.text or '') for v in nv.findall(EBAY_NS + 'Value')]])
+    return out
+
+
+@ls_bp.route('/ls/stock_specs', methods=['POST'])
+def ls_stock_specs():
+    """{refs:{ebay:{id}, etsy:{id,shop}}, dims:{w,h,l,d en cm}, apply:bool} : lit les caracteristiques eBay et les
+    dimensions Etsy ; avec apply, remplace uniquement les mesures deja presentes (jamais d'ajout)."""
+    j = request.json or {}
+    refs, dims, apply_ = j.get('refs') or {}, j.get('dims') or {}, bool(j.get('apply'))
+    out = {}
+    if refs.get('ebay'):
+        try:
+            specs = _ebay_specs_read(refs['ebay']['id'])
+            out['ebay'] = {'before': specs}
+            if apply_:
+                new, changed, unset = [], [], []
+                for name, vals in specs:
+                    k = _DIM_ASPECTS.get((name or '').strip().lower())
+                    if k:
+                        if dims.get(k) is None:
+                            unset.append('%s=%s' % (name, ','.join(vals)))
+                        else:
+                            old = vals[0] if vals else ''
+                            nv = ('%s cm' % dims[k]) if 'cm' in old.lower() else ('%.1f in' % (float(dims[k]) / 2.54))
+                            vals = [nv]
+                            changed.append('%s: %s -> %s' % (name, old, nv))
+                    new.append([name, vals])
+                if changed:
+                    xml = ''.join('<NameValueList><Name>%s</Name>%s</NameValueList>' %
+                                  (xml_escape(n), ''.join('<Value>%s</Value>' % xml_escape(v) for v in vs)) for n, vs in new)
+                    root = _ebay_call('ReviseFixedPriceItem', '<Item><ItemID>%s</ItemID><ItemSpecifics>%s</ItemSpecifics></Item>' % (xml_escape(refs['ebay']['id']), xml))
+                    errs = [e for e in _errors(root) if e[0] == 'Error']
+                    if errs:
+                        raise StoreError('eBay : ' + errs[0][1][:150])
+                out['ebay']['changed'] = changed
+                out['ebay']['not_set'] = unset
+        except Exception as e:
+            out['ebay_error'] = str(e)[:200]
+    if refs.get('etsy'):
+        try:
+            jj = _etsy_get('/application/listings/%s' % refs['etsy']['id'])
+            keys = ['item_length', 'item_width', 'item_height', 'item_dimensions_unit']
+            out['etsy'] = {'before': {k: jj.get(k) for k in keys}}
+            if apply_:
+                unit = (jj.get('item_dimensions_unit') or 'cm')
+                f = {'cm': 1.0, 'mm': 10.0, 'in': 1 / 2.54, 'inches': 1 / 2.54}.get(unit)
+                if f is None:
+                    unit, f = 'cm', 1.0
+                body = {'item_dimensions_unit': unit}
+                for key, k in (('item_width', 'w'), ('item_height', 'h'), ('item_length', 'l')):
+                    if dims.get(k) is not None:
+                        body[key] = round(float(dims[k]) * f, 2)
+                h = _etsy_ctx()
+                h['Content-Type'] = 'application/json'
+                shop = refs['etsy'].get('shop') or _etsy_shop()
+                r = requests.patch('https://openapi.etsy.com/v3/application/shops/%s/listings/%s' % (shop, refs['etsy']['id']),
+                                   headers=h, json=body, timeout=40)
+                if r.status_code not in (200, 201):
+                    raise StoreError('Etsy %s : %s' % (r.status_code, r.text[:160]))
+                out['etsy']['sent'] = body
+        except Exception as e:
+            out['etsy_error'] = str(e)[:200]
+    return jsonify(out)
