@@ -2646,3 +2646,48 @@ def ls_stock_specs3():
     except Exception as e:
         out['error'] = str(e)[:200]
     return jsonify(out)
+
+
+
+# --------------------------------------------------------------------------
+# Caracteristiques eBay v4 : comme v3, mais une mesure inconnue devient 'Does not apply' (champ obligatoire)
+# --------------------------------------------------------------------------
+@ls_bp.route('/ls/stock_specs4', methods=['POST'])
+def ls_stock_specs4():
+    j = request.json or {}
+    ref, dims, apply_ = (j.get('refs') or {}).get('ebay') or {}, j.get('dims') or {}, bool(j.get('apply'))
+    out = {}
+    try:
+        specs = _ebay_specs_read2(ref['id'])
+        new, changed = [], []
+        for name, vals in specs:
+            k = (name or '').strip().lower()
+            tgt = None
+            if k in ('item height', 'height'):
+                tgt = 'h'
+            elif k in ('item width', 'width', 'item length', 'length', 'item diameter', 'diameter'):
+                tgt = 'w'
+            if tgt:
+                old = vals[0] if vals else ''
+                if dims.get(tgt) is not None:
+                    nv = ('%s cm' % dims[tgt]) if 'cm' in old.lower() else ('%.1f in' % (float(dims[tgt]) / 2.54))
+                elif re.search(r'\d', old):
+                    nv = 'Does not apply'
+                else:
+                    nv = old
+                if nv != old:
+                    changed.append('%s: %s -> %s' % (name, old, nv))
+                vals = [nv]
+            new.append([name, vals])
+        out['changed'] = changed
+        if apply_ and changed:
+            xml = ''.join('<NameValueList><Name>%s</Name>%s</NameValueList>' %
+                          (xml_escape(n), ''.join('<Value>%s</Value>' % xml_escape(v) for v in vs)) for n, vs in new)
+            root = _ebay_call('ReviseFixedPriceItem', '<Item><ItemID>%s</ItemID><ItemSpecifics>%s</ItemSpecifics></Item>' % (xml_escape(ref['id']), xml))
+            errs = [e for e in _errors(root) if e[0] == 'Error']
+            if errs:
+                raise StoreError('eBay : ' + errs[0][1][:150])
+            out['applied'] = True
+    except Exception as e:
+        out['error'] = str(e)[:200]
+    return jsonify(out)
