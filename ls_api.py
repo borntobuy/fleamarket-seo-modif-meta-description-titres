@@ -2429,3 +2429,33 @@ def ls_variant_noop():
                         'same_all': {k: v['qty'] for k, v in cur.items()} == {k: v['qty'] for k, v in after.items()}})
     except Exception as e:
         return jsonify({'error': '%s' % e}), 500
+
+
+# --------------------------------------------------------------------------
+# Remise en ligne d'une annonce desactivee (Etsy -> actif, Shopify -> actif)
+# --------------------------------------------------------------------------
+@ls_bp.route('/ls/stock_activate', methods=['POST'])
+def ls_stock_activate():
+    """{plat:'etsy'|'shopify', ref:{id,shop}} -> remet l'annonce en ligne."""
+    j = request.json or {}
+    plat, ref = j.get('plat'), j.get('ref') or {}
+    try:
+        if plat == 'etsy':
+            h = _etsy_ctx()
+            h['Content-Type'] = 'application/json'
+            shop = ref.get('shop') or _etsy_shop()
+            r = requests.patch('https://openapi.etsy.com/v3/application/shops/%s/listings/%s' % (shop, ref['id']),
+                               headers=h, json={'state': 'active'}, timeout=40)
+            if r.status_code not in (200, 201):
+                return jsonify({'error': 'Etsy %s : %s' % (r.status_code, r.text[:160])}), 400
+            return jsonify({'ok': True})
+        if plat == 'shopify':
+            shop, h = _shopify_ctx()
+            r = requests.put('https://%s/admin/api/2024-01/products/%s.json' % (shop, ref['id']), headers=h,
+                             json={'product': {'id': int(ref['id']), 'status': 'active'}}, timeout=40)
+            if r.status_code != 200:
+                return jsonify({'error': 'Shopify %s : %s' % (r.status_code, r.text[:160])}), 400
+            return jsonify({'ok': True})
+        return jsonify({'error': 'plateforme inconnue'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
