@@ -2691,3 +2691,59 @@ def ls_stock_specs4():
     except Exception as e:
         out['error'] = str(e)[:200]
     return jsonify(out)
+
+
+# ===== PATCH prix : ne memoriser le prix de reference que si la repercussion a reussi =====
+# Avant : quand la copie d'un prix etait sautee (lecture du stock impossible, plafond Etsy, plus de 15 changements),
+# les nouveaux prix devenaient quand meme la reference et l'ecart entre plateformes devenait permanent.
+def _price_align(it, e, ok_plats, out):  # noqa: F811
+    """Un prix modifie directement sur une plateforme est repercute sur les autres (annonces simples uniquement)."""
+    try:
+        cur = {}
+        for p, v in (e.get('price_by') or {}).items():
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                continue
+            if f > 0 and p in ok_plats and (e['p'].get(p) or {}).get('id'):
+                cur[p] = f
+        prev = it.get('pb') or {}
+        keep_prev = False  # True : on garde l'ancienne reference pour reessayer a la prochaine synchro
+        if len(cur) >= 2 and prev:
+            changed = [p for p in cur if p in prev and abs(cur[p] - prev[p]) > 0.005]
+            targets = {round(cur[p], 2) for p in changed}
+            if len(targets) == 1:
+                target = targets.pop()
+                todo = [q for q in cur if abs(cur[q] - target) > 0.005]
+                if todo:
+                    if len(out) >= 15:
+                        keep_prev = True  # trop de changements dans ce passage : la suite au prochain
+                    else:
+                        multi = False
+                        unknown = False
+                        failed = False
+                        for q in cur:  # annonces a variantes : prix par variante, on ne touche a rien
+                            sl = _stock_left(q, e['p'][q])
+                            if sl is None:
+                                unknown = True  # lecture impossible (erreur, plafond Etsy...) : on reessaiera
+                            elif sl[0] > 1:
+                                multi = True
+                        if unknown:
+                            keep_prev = True
+                        elif not multi:
+                            for q in todo:
+                                try:
+                                    res = _set_price(q, e['p'][q], target)
+                                    cur[q] = target
+                                    out.append({'title': it.get('title'), 'sku': it.get('sku'), 'gone_on': [],
+                                                'did': 'prix repercute : %s (modifie sur %s)' % (res, '+'.join(changed))})
+                                except Exception as ex:
+                                    failed = True
+                                    out.append({'title': it.get('title'), 'sku': it.get('sku'), 'gone_on': [],
+                                                'error': 'prix %s : %s' % (q, str(ex)[:100])})
+                            if failed:
+                                return  # on garde l'ancien prix de reference : nouvel essai a la prochaine synchro
+        if cur and not keep_prev:
+            it['pb'] = {p: round(v, 2) for p, v in cur.items()}
+    except Exception:
+        pass
