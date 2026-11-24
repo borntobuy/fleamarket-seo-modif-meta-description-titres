@@ -752,7 +752,9 @@ async function distributeInfos() {
   const list = (document.getElementById('infoList').value || '').trim();
   const msg = document.getElementById('infoMsg');
   if (!list) { msg.textContent = 'La liste est vide.'; return; }
-  const vis = articles.map((a, i) => ({ a, i })).filter(x => !x.a.deleted);
+  // ORDRE D'AFFICHAGE du tableau (un article séparé est inséré après son origine dans le tableau mais ajouté en fin de liste en mémoire)
+  const rows = [...document.querySelectorAll('#articlesTbody tr[id^="row-"]')].filter(r => r.style.display !== 'none');
+  const vis = rows.map(r => parseInt(r.id.slice(4), 10)).filter(i => articles[i] && !articles[i].deleted).map(i => ({ a: articles[i], i }));
   if (!vis.length) { msg.textContent = 'Groupe d\'abord les photos par article.'; return; }
   const entries = parseInfoList(list);
   if (!entries.length) { msg.textContent = 'Aucune ligne avec des chiffres dans la liste.'; return; }
