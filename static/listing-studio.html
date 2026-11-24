@@ -254,7 +254,7 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
     <span><button class="btn btn-outline" id="btnInfos" onclick="distributeInfos()" style="padding:6px 12px">Répartir dans les articles</button></span>
   </div>
   <textarea id="infoList" rows="5" placeholder="Colle ici ta liste, par ex. :&#10;Bonbonne&#10;32/42&#10;Pots&#10;12,5/9.5&#10;12/12&#10;…  (modifiable à tout moment, puis « Répartir dans les articles »)" oninput="localStorage.setItem('ls_infolist', this.value)" style="width:100%;margin-top:6px;padding:8px;border:1px solid #ced4da;border-radius:6px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
-  <div id="infoMsg" class="info-text" style="margin-top:4px">Les articles sont pris dans l'ordre, l'IA vérifie avec les photos. Le résultat arrive dans la colonne « Mots-clés / Infos » (modifiable).</div>
+  <div id="infoMsg" class="info-text" style="margin-top:4px">1 ligne = 1 article, strictement dans l'ordre du tableau (un mot seul sans chiffre = nom de l'objet pour les lignes suivantes). Le résultat arrive dans la colonne « Mots-clés / Infos » (modifiable).</div>
 </div>
 
 <div class="progress-bar-wrap" id="progressWrap">
@@ -738,7 +738,39 @@ function refreshStrip(idx) {
 
 // ── Liste d'infos collee : repartition dans les articles ──
 window.addEventListener('load', () => { try { const t = document.getElementById('infoList'); if (t) t.value = localStorage.getItem('ls_infolist') || ''; } catch (_) {} });
+// Répartition DÉTERMINISTE : 1 ligne de la liste = 1 article, dans l'ordre du tableau (aucune IA ne réattribue).
+function parseInfoList(list) {
+  const entries = []; let name = '';
+  list.split(/\r?\n/).map(s => s.trim()).filter(Boolean).forEach(line => {
+    if (!/\d/.test(line)) { name = line.replace(/[:：]\s*$/, ''); return; } // mot seul = nom de l'objet pour les lignes suivantes
+    const hasName = /[A-Za-zÀ-ÿ]{3,}/.test(line.replace(/cm|mm/gi, ''));
+    entries.push(hasName ? line : (name ? name + ' : ' + line : line));
+  });
+  return entries;
+}
 async function distributeInfos() {
+  const list = (document.getElementById('infoList').value || '').trim();
+  const msg = document.getElementById('infoMsg');
+  if (!list) { msg.textContent = 'La liste est vide.'; return; }
+  const vis = articles.map((a, i) => ({ a, i })).filter(x => !x.a.deleted);
+  if (!vis.length) { msg.textContent = 'Groupe d\'abord les photos par article.'; return; }
+  const entries = parseInfoList(list);
+  if (!entries.length) { msg.textContent = 'Aucune ligne avec des chiffres dans la liste.'; return; }
+  let n = 0;
+  vis.forEach((x, k) => {
+    const info = entries[k]; if (!info) return;
+    const a = x.a;
+    // on ne remplace que ce qui vient de la liste (ou un champ vide) : le texte tape a la main est conserve
+    if (!a.keywords || a.keywords === a._auto) { a.keywords = info; }
+    else if (!a.keywords.includes(info)) { a.keywords = a.keywords + '\n' + info; }
+    const el = document.getElementById(`kw-${x.i}`); if (el) el.value = a.keywords;
+    a._auto = info; n++;
+  });
+  const warn = entries.length !== vis.length ? ` ⚠ ${entries.length} ligne(s) pour ${vis.length} article(s) : posées dans l'ordre, vérifie le décalage.` : '';
+  msg.textContent = `${n} article(s) renseigné(s) : 1 ligne = 1 article, dans l'ordre du tableau.${warn}`;
+}
+// Ancienne version (IA + photos), conservée mais plus utilisée
+async function distributeInfosAI() {
   const list = (document.getElementById('infoList').value || '').trim();
   const msg = document.getElementById('infoMsg');
   if (!list) { msg.textContent = 'La liste est vide.'; return; }
