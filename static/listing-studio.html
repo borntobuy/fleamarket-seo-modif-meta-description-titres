@@ -1774,7 +1774,7 @@ Rules:
 - Country/Region of Manufacture is France unless the seller says otherwise. Do NOT fill Item Height / Item Width / Item Length / Item Depth / Item Diameter: they are filled automatically from the seller notes. Other dimensions only if the seller notes give them. The notes are in CENTIMETRES: aspects asking for inches get the pre-computed inch value with the unit (example 21.7 in), aspects asking for centimetres get the cm number with "cm"; NEVER put a cm number with "in". ${framedRule()} NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
 - Aspects marked "up to N values" may be an array of strings.
 Return ONLY JSON: {"Aspect name":"value"} using the exact aspect names.`, 1500);
-    return applyDims(asp, r || {}, art.keywords);
+    return applyDims(asp, r || {}, art.keywords, [art.title, g.keyword, g.ebayTitle, art.keywords].join(' '));
   } catch (_) { return {}; }
 }
 
@@ -1807,9 +1807,13 @@ function parseDims(text) {
   d.H = last.b != null ? Math.max(last.a, last.b) : last.a;
   return d;
 }
-function applyDims(asp, vals, text) {
+// Objet cylindrique (pot, bocal, bonbonne, bouteille...) : largeur = longueur = diametre
+const CYL_RE = /\b(cylindric\w*|jars?|pots?|crocks?|canisters?|tumblers?|mugs?|bottles?|demijohns?|carboys?|bonbonnes?|barrels?|buckets?|drums?|tins?|beakers?)\b/i;
+function applyDims(asp, vals, text, ctx) {
   const d = parseDims(text);
   if (!d) return vals;
+  const w0 = d.W != null ? d.W : d.Dia;
+  if (w0 != null && CYL_RE.test(String(ctx || text))) { d.W = w0; d.L = w0; d.Dia = w0; }
   const KEY = { height: 'H', width: 'W', length: 'L', depth: 'D', diameter: 'Dia' };
   asp.forEach(a => {
     const m = /^(?:item |overall )?(height|width|length|depth|diameter)\b/i.exec(a.name || '');
