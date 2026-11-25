@@ -1771,11 +1771,58 @@ Rules:
 - SelectionOnly aspects: the value MUST be copied exactly from the allowed list. FreeText aspects: the allowed list is only a guide, write the true value.
 - Every Required aspect must get a value: if truly unknown use "Does not apply" (Brand: "Unbranded").
 - Recommended and Optional aspects: include only when you are confident, otherwise leave them out.
-- Country/Region of Manufacture is France unless the seller says otherwise. Dimensions only if the seller notes give them (width x height order unless stated). The notes are in CENTIMETRES: aspects asking for inches get the pre-computed inch value with the unit (example 21.7 in), aspects asking for centimetres get the cm number with "cm"; NEVER put a cm number with "in". ${framedRule()} NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
+- Country/Region of Manufacture is France unless the seller says otherwise. Do NOT fill Item Height / Item Width / Item Length / Item Depth / Item Diameter: they are filled automatically from the seller notes. Other dimensions only if the seller notes give them. The notes are in CENTIMETRES: aspects asking for inches get the pre-computed inch value with the unit (example 21.7 in), aspects asking for centimetres get the cm number with "cm"; NEVER put a cm number with "in". ${framedRule()} NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
 - Aspects marked "up to N values" may be an array of strings.
 Return ONLY JSON: {"Aspect name":"value"} using the exact aspect names.`, 1500);
-    return r;
+    return applyDims(asp, r || {}, art.keywords);
   } catch (_) { return {}; }
+}
+
+// Dimensions eBay : lues par REGLE (jamais par l'IA). Convention du vendeur, en cm :
+// "L/H" = largeur/hauteur ; "L/P/H" = largeur/profondeur/hauteur ; "a-b/H" = longueur-largeur / hauteur ; chiffre seul = hauteur (diametre si "diam"/"round").
+function parseDims(text) {
+  const lines = String(text || '').split(/\n/).map(s => s.trim()).filter(l => /\d/.test(l));
+  if (lines.length !== 1) return null;                       // plusieurs lignes chiffrees (lot...) : on ne devine pas
+  let s = lines[0].replace(/,/g, '.').replace(/\b(cm|mm)\b/gi, ' ').replace(/^[^\d]*/, '');
+  const parts = s.split(/\s*(?:\/|\sx\s|×)\s*/i).filter(Boolean);
+  if (parts.length < 1 || parts.length > 3) return null;
+  const toks = [];
+  for (const p of parts) {
+    const m = /^(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?/.exec(p.trim());
+    if (!m) return null;
+    if (/\d/.test(p.trim().slice(m[0].length))) return null; // autre chiffre dans le morceau : trop ambigu
+    toks.push({ a: parseFloat(m[1]), b: m[2] != null ? parseFloat(m[2]) : null });
+  }
+  const d = {}; const n = toks.length;
+  const round = /diam|ø|round|rond/i.test(lines[0]);
+  const last = toks[n - 1];
+  if (n === 1) {
+    if (last.b != null) return null;
+    if (round) d.Dia = last.a; else d.H = last.a;
+    return d;
+  }
+  const first = toks[0];
+  if (first.b != null) { d.L = first.a; d.W = first.b; } else d.W = first.a;
+  if (n === 3) { if (toks[1].b != null) return null; d.D = toks[1].a; }
+  d.H = last.b != null ? Math.max(last.a, last.b) : last.a;
+  return d;
+}
+function applyDims(asp, vals, text) {
+  const d = parseDims(text);
+  if (!d) return vals;
+  const KEY = { height: 'H', width: 'W', length: 'L', depth: 'D', diameter: 'Dia' };
+  asp.forEach(a => {
+    const m = /^(?:item |overall )?(height|width|length|depth|diameter)\b/i.exec(a.name || '');
+    if (!m) return;
+    const cm = d[KEY[m[1].toLowerCase()]];
+    if (cm == null) { delete vals[a.name]; return; }         // non donnee par le vendeur : on laisse vide plutot que d'inventer
+    if (a.mode === 'SelectionOnly' && (a.values || []).length) return;
+    const nm = String(a.name);
+    if (/\bmm\b/i.test(nm)) vals[a.name] = (cm * 10).toFixed(0) + ' mm';
+    else if (/\bcm\b|centim/i.test(nm)) vals[a.name] = parseFloat(cm.toFixed(1)) + ' cm';
+    else vals[a.name] = parseFloat((cm / 2.54).toFixed(1)) + ' in';
+  });
+  return vals;
 }
 
 function renderConditionSelect(idx) {
