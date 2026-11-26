@@ -117,7 +117,7 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
 /* ── Modal lightbox ── */
 .lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;align-items:center;justify-content:center}
 .lb.open{display:flex}
-.lb img{max-width:90vw;max-height:90vh;border-radius:8px}
+.lb img{max-width:90vw;max-height:78vh;border-radius:8px}
 .lb-close{position:absolute;top:16px;right:20px;color:#fff;font-size:28px;cursor:pointer;font-weight:700}
 </style>
 </head>
@@ -284,7 +284,14 @@ body{font-family:system-ui,sans-serif;background:#f4f5f7;color:#212529;min-heigh
 <div class="lb" id="lb" onclick="this.classList.remove('open')">
   <span class="lb-close">&times;</span>
   <img id="lbImg" src="">
-  <span id="lbTag" style="position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#fff;font-size:14px"></span>
+  <span id="lbTag" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:13px"></span>
+  <div id="lbEdit" onclick="event.stopPropagation()" style="display:none;position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:rgba(20,20,30,.92);color:#fff;border-radius:10px;padding:10px 14px;font-size:13px;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:94vw">
+    <label>Rotation <input id="edRot" type="range" min="-10" max="10" step="0.1" value="0" oninput="lbEditPreview()" style="vertical-align:middle;width:150px"> <b id="edRotV" style="display:inline-block;min-width:42px">0°</b></label>
+    <label>Luminosité <input id="edBr" type="range" min="-50" max="50" step="1" value="0" oninput="lbEditPreview()" style="vertical-align:middle;width:110px"> <b id="edBrV" style="display:inline-block;min-width:28px">0</b></label>
+    <label>Contraste <input id="edCt" type="range" min="-50" max="50" step="1" value="0" oninput="lbEditPreview()" style="vertical-align:middle;width:110px"> <b id="edCtV" style="display:inline-block;min-width:28px">0</b></label>
+    <button class="btn btn-outline" style="padding:5px 10px;font-size:12px" onclick="lbEditReset()">Remettre à 0</button>
+    <button class="btn btn-primary" id="edApply" style="padding:5px 12px;font-size:12px" onclick="lbEditApply()">Appliquer</button>
+  </div>
 </div>
 
 <script>
@@ -704,7 +711,7 @@ function refreshStrip(idx) {
     img.draggable = false;
     img.src = thumbOf(pi); img.decoding = 'async';
     img.title = k === 0 ? 'Photo principale' : 'Photo ' + (k + 1);
-    img.onclick = () => openLightbox(photos[pi].dataUrl, photos[pi].orig);
+    img.onclick = () => openLightbox(photos[pi].dataUrl, photos[pi].orig, pi);
     if (photos[pi].orig) {
       const rv = document.createElement('button');
       rv.className = 'rv'; rv.textContent = '↺'; rv.title = 'Revenir à la photo originale';
@@ -981,7 +988,7 @@ function togglePanel(idx) {
   btn.textContent = open ? 'Voir ▼' : 'Masquer ▲';
 }
 
-function openLightbox(src, orig) {
+function openLightbox(src, orig, pi) {
   const im = document.getElementById('lbImg'), tag = document.getElementById('lbTag');
   im.src = src; im.onclick = null; if (tag) tag.textContent = '';
   if (orig && tag) {
@@ -990,7 +997,60 @@ function openLightbox(src, orig) {
     set();
     im.onclick = e => { e.stopPropagation(); cur = !cur; set(); };
   }
+  // Retouche manuelle (rotation fine, luminosité, contraste) : uniquement quand on sait de quelle photo il s'agit
+  window._edPi = (pi != null && photos[pi]) ? pi : null;
+  document.getElementById('lbEdit').style.display = window._edPi != null ? 'flex' : 'none';
+  lbEditReset();
   document.getElementById('lb').classList.add('open');
+}
+
+// Facteur d'agrandissement pour que la photo tournee de a degres couvre tout le cadre (pas de coins vides)
+function coverScale(w, h, deg) {
+  const a = Math.abs(deg) * Math.PI / 180;
+  return Math.cos(a) + Math.sin(a) * Math.max(w / h, h / w);
+}
+function lbEditVals() {
+  return { rot: parseFloat(document.getElementById('edRot').value) || 0, br: parseInt(document.getElementById('edBr').value, 10) || 0, ct: parseInt(document.getElementById('edCt').value, 10) || 0 };
+}
+function lbEditPreview() {
+  const v = lbEditVals(), im = document.getElementById('lbImg');
+  document.getElementById('edRotV').textContent = v.rot.toFixed(1) + '°';
+  document.getElementById('edBrV').textContent = (v.br > 0 ? '+' : '') + v.br;
+  document.getElementById('edCtV').textContent = (v.ct > 0 ? '+' : '') + v.ct;
+  const w = im.naturalWidth || 1, h = im.naturalHeight || 1;
+  im.style.transform = v.rot ? `rotate(${v.rot}deg) scale(${coverScale(w, h, v.rot).toFixed(4)})` : '';
+  im.style.filter = (v.br || v.ct) ? `brightness(${1 + v.br / 100}) contrast(${1 + v.ct / 100})` : '';
+}
+function lbEditReset() {
+  ['edRot', 'edBr', 'edCt'].forEach(id => { const e = document.getElementById(id); if (e) e.value = 0; });
+  lbEditPreview();
+}
+async function lbEditApply() {
+  const pi = window._edPi, v = lbEditVals();
+  if (pi == null || !photos[pi] || (!v.rot && !v.br && !v.ct)) return;
+  const btn = document.getElementById('edApply'); btn.disabled = true;
+  try {
+    const p = photos[pi];
+    const img = await loadImg(p.dataUrl);
+    const sc = Math.min(1, 2400 / Math.max(img.width, img.height));
+    const W = Math.round(img.width * sc), H = Math.round(img.height * sc);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    x.filter = `brightness(${1 + v.br / 100}) contrast(${1 + v.ct / 100})`;
+    x.translate(W / 2, H / 2);
+    x.rotate(v.rot * Math.PI / 180);
+    const k = v.rot ? coverScale(W, H, v.rot) : 1;
+    x.scale(k, k);
+    x.drawImage(img, -W / 2, -H / 2, W, H);
+    const url = c.toDataURL('image/jpeg', 0.92);
+    p.orig = p.orig || p.dataUrl;        // l'original d'origine est conserve : ↺ y revient toujours
+    p.dataUrl = url; p.enh = p.enh || { angle: 0, manual: true };
+    p.thumb = await resizeDataUrl(url, 320);
+    articles.forEach((a, i) => { if (!a.deleted && a.photoIds.includes(pi)) refreshStrip(i); });
+    document.getElementById('btnUnenhance').style.display = '';
+    openLightbox(url, p.orig, pi);       // reaffiche la photo retouchee, curseurs a 0
+  } catch (e) { alert('Retouche impossible : ' + e.message); }
+  btn.disabled = false;
 }
 
 // ══════════════════════════════════════════════════════
