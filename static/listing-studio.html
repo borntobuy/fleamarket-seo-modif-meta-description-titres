@@ -318,7 +318,7 @@ async function lsFetch(url, opts = {}) {
   for (let n = 0; n < 4; n++) {
     const r = await fetch(url, Object.assign({}, opts, { headers: h }));
     const ct = r.headers.get('content-type') || '';
-    if (!get || !(ct.includes('text/html') || [502, 503, 504].includes(r.status))) return r;
+    if (!get || ct.includes('json')) return r;  // reponse normale de l'application (meme une erreur JSON) : on la rend telle quelle
     await new Promise(res => setTimeout(res, 3000 * (n + 1)));
   }
   return new Response(JSON.stringify({ error: 'Serveur indisponible (redémarrage en cours), réessaie dans 1 minute' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
