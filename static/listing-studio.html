@@ -510,7 +510,11 @@ async function claudeCall(messages, maxTokens = 2048) {
     })
   });
   const d = await r.json();
-  if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));
+  if (d.error) {
+    const m = d.error.message || JSON.stringify(d.error);
+    if (/credit|balance|billing/i.test(m)) window._creditHits = (window._creditHits || 0) + 1;  // plus de credit Anthropic
+    throw new Error(m);
+  }
   return d.content[0].text;
 }
 
@@ -1542,6 +1546,7 @@ async function generateOne(idx) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
 
+  const hits0 = window._creditHits || 0;
   try {
     await reserveRef(art);
 
@@ -1607,14 +1612,48 @@ async function generateOne(idx) {
     setStatus(idx, 'generating', 'Catégories…');
 
     await classifyAndFill(idx);
+    if ((window._creditHits || 0) > hits0) throw new Error('Crédit Anthropic épuisé');
     setStatus(idx, 'ready', 'Prêt');
   } catch(e) {
-    setStatus(idx, 'error', 'Erreur');
-    alert(`Article #${art.id}: ${e.message}`);
+    if (/cr[ée]dit|balance|billing/i.test(e.message)) { window._creditStop = true; setStatus(idx, 'error', 'Crédit épuisé'); }  // pas de fenêtre par article
+    else { setStatus(idx, 'error', 'Erreur'); alert(`Article #${art.id}: ${e.message}`); }
   }
 
   btn.disabled = false;
-  btn.innerHTML = 'Regénérer';
+  btn.innerHTML = art.generated ? 'Regénérer' : 'Générer';
+  updateGenBtn();
+}
+
+// Un article est « à reprendre » s'il n'a pas de listing, n'est pas au statut Prêt, ou si ses caractéristiques eBay sont vides alors qu'eBay en propose
+function needsGen(i) {
+  const a = articles[i];
+  if (!a || a.deleted) return false;
+  const st = (document.getElementById(`status-${i}`) || {}).textContent || '';
+  const ebayEmpty = a.ebayAsp && (a.ebayAsp.aspects || []).length && !Object.keys(a.ebayVals || {}).length;
+  return !a.generated || !/Prêt/.test(st) || !!ebayEmpty;
+}
+// Le bouton devient « Reprendre la génération (N restants) » dès qu'une génération a été interrompue
+function updateGenBtn() {
+  const btn = document.getElementById('btnGenAll');
+  if (!btn || btn.disabled) return;
+  const live = articles.map((a, i) => i).filter(i => !articles[i].deleted);
+  const need = live.filter(needsGen);
+  const started = live.some(i => articles[i].generated);
+  btn.textContent = (started && need.length) ? `Reprendre la génération (${need.length} restant${need.length > 1 ? 's' : ''})` : 'Générer tous les listings';
+}
+// Reprise d'un article dont la description existe deja : on ne refait QUE catégories + caractéristiques (pas de nouvelle description)
+async function resumeClassify(idx) {
+  const art = articles[idx], hits0 = window._creditHits || 0;
+  try {
+    setStatus(idx, 'generating', 'Reprise…');
+    art.ebayCat = ''; art.etsyCat = ''; art.ebayVals = {}; art.etsyVals = {};
+    await classifyAndFill(idx);
+    if ((window._creditHits || 0) > hits0) throw new Error('Crédit Anthropic épuisé');
+    setStatus(idx, 'ready', 'Prêt');
+  } catch (e) {
+    if (/cr[ée]dit|balance|billing/i.test(e.message)) { window._creditStop = true; setStatus(idx, 'error', 'Crédit épuisé'); }
+    else { setStatus(idx, 'error', 'Erreur'); alert(`Article #${art.id}: ${e.message}`); }
+  }
 }
 
 function deleteArticle(idx) {
@@ -1632,22 +1671,37 @@ function deleteArticle(idx) {
 }
 
 async function generateAll() {
-  const todo = articles.map((a, i) => i).filter(i => !articles[i].deleted);
-  if (!todo.length) return;
-  const already = todo.filter(i => articles[i].generated).length;
-  if (already && !confirm(already + ' article(s) ont déjà un listing généré.\nTout regénérer ? (les modifications faites à la main dans les listings seront remplacées)')) return;
+  const live = articles.map((a, i) => i).filter(i => !articles[i].deleted);
+  if (!live.length) return;
+  const need = live.filter(needsGen);
+  let todo, resume = false;
+  if (need.length) {
+    // génération interrompue (crédit épuisé, erreur...) : on ne reprend QUE ce qui manque, sans rien confirmer ni écraser
+    todo = need; resume = live.some(i => articles[i].generated);
+  } else {
+    const already = live.filter(i => articles[i].generated).length;
+    if (already && !confirm(already + ' article(s) ont déjà un listing généré.\nTout regénérer ? (les modifications faites à la main dans les listings seront remplacées)')) return;
+    todo = live;
+  }
   const btn = document.getElementById('btnGenAll');
-  const label = btn.innerHTML;
   btn.disabled = true;
+  window._creditStop = false;
   let done = 0;
-  const upd = () => { btn.innerHTML = `<span class="spinner"></span> Génération ${done}/${todo.length}`; banner('run', `Génération des listings : ${done}/${todo.length} (reste ${todo.length - done})`); };
+  const verb = resume ? 'Reprise' : 'Génération des listings';
+  const upd = () => { btn.innerHTML = `<span class="spinner"></span> ${resume ? 'Reprise' : 'Génération'} ${done}/${todo.length}`; banner('run', `${verb} : ${done}/${todo.length} (reste ${todo.length - done})`); };
   upd();
   const q = todo.slice();
   await Promise.all([0, 1, 2].map(async () => {
-    while (q.length) { const i = q.shift(); await generateOne(i); done++; upd(); }
+    while (q.length && !window._creditStop) {
+      const i = q.shift();
+      if (resume && articles[i].generated) await resumeClassify(i); else await generateOne(i);
+      done++; upd();
+    }
   }));
-  btn.disabled = false; btn.innerHTML = label;
-  banner('ok', `Génération terminée : ${todo.length} article(s)`);
+  btn.disabled = false;
+  updateGenBtn();
+  if (window._creditStop) banner('err', `Crédit Anthropic épuisé : recharge ton crédit puis clique « Reprendre la génération » (${live.filter(needsGen).length} article(s) restant(s)).`);
+  else banner('ok', `${resume ? 'Reprise' : 'Génération'} terminée : ${todo.length} article(s)`);
 }
 
 // ── Publication sur les 3 plateformes (meme SKU partout) ──
