@@ -2088,7 +2088,7 @@ def ls_etsy_finish():
                 raw = base64.b64decode(im.get('data', ''))
                 r = requests.post('https://openapi.etsy.com/v3/application/shops/%s/listings/%s/images' % (shop, lid),
                                   headers=h, files={'image': ('photo%d.jpg' % (i + 1), raw, 'image/jpeg')},
-                                  data={'rank': i + 1, 'alt_text': str(im.get('alt') or '')[:500], 'overwrite': 'false'}, timeout=60)
+                                  data={'rank': ((d.get('ranks') or [])[i] if i < len(d.get('ranks') or []) else i + 1), 'alt_text': str(im.get('alt') or '')[:500], 'overwrite': ('true' if d.get('overwrite') else 'false')}, timeout=60)
                 if r.status_code in (200, 201):
                     out['uploaded'] += 1
                 else:
