@@ -1894,11 +1894,21 @@ Rules:
 - SelectionOnly aspects: the value MUST be copied exactly from the allowed list. FreeText aspects: the allowed list is only a guide, write the true value.
 - Every Required aspect must get a value: if truly unknown use "Does not apply" (Brand: "Unbranded").
 - Recommended and Optional aspects: include only when you are confident, otherwise leave them out.
-- Country/Region of Manufacture is France unless the seller says otherwise. Do NOT fill Item Height / Item Width / Item Length / Item Depth / Item Diameter: they are filled automatically from the seller notes. Other dimensions only if the seller notes give them. The notes are in CENTIMETRES: aspects asking for inches get the pre-computed inch value with the unit (example 21.7 in), aspects asking for centimetres get the cm number with "cm"; NEVER put a cm number with "in". ${framedRule()} NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
+- Country/Region of Manufacture is France unless the seller says otherwise. ${parseDims(art.keywords) ? 'Do NOT fill Item Height / Item Width / Item Length / Item Depth / Item Diameter: they are filled automatically from the seller notes.' : 'The seller notes do not follow the standard width/height shorthand, so fill Item Height / Width / Length / Depth / Diameter yourself, only from the notes.'} Other dimensions only if the seller notes give them. The notes are in CENTIMETRES: aspects asking for inches get the pre-computed inch value with the unit (example 21.7 in), aspects asking for centimetres get the cm number with "cm"; NEVER put a cm number with "in". ${framedRule()} NEVER invent or estimate a dimension, leave the aspect out instead. Plain ASCII, max 60 characters per value.
 - Aspects marked "up to N values" may be an array of strings.
 Return ONLY JSON: {"Aspect name":"value"} using the exact aspect names.`, 1500);
-    return applyDims(asp, r || {}, art.keywords, [art.title, g.keyword, g.ebayTitle, art.keywords].join(' '));
+    return fillRequired(asp, applyDims(asp, r || {}, art.keywords, [art.title, g.keyword, g.ebayTitle, art.keywords].join(' ')));
   } catch (_) { return {}; }
+}
+// eBay refuse l'annonce si un champ OBLIGATOIRE est vide : quand l'info n'existe vraiment pas, on met « Does not apply » (= non renseigné)
+function fillRequired(asp, vals) {
+  asp.forEach(a => {
+    if (a.usage !== 'Required') return;
+    if (a.mode === 'SelectionOnly' && (a.values || []).length) return;   // liste fermee : on ne peut pas inventer une valeur
+    const v = vals[a.name];
+    if (v == null || String(v).trim() === '' || (Array.isArray(v) && !v.length)) vals[a.name] = /^brand$/i.test(a.name) ? 'Unbranded' : 'Does not apply';
+  });
+  return vals;
 }
 
 // Dimensions eBay : lues par REGLE (jamais par l'IA). Convention du vendeur, en cm :
@@ -1942,7 +1952,7 @@ function applyDims(asp, vals, text, ctx) {
     const m = /^(?:item |overall )?(height|width|length|depth|diameter)\b/i.exec(a.name || '');
     if (!m) return;
     const cm = d[KEY[m[1].toLowerCase()]];
-    if (cm == null) { delete vals[a.name]; return; }         // non donnee par le vendeur : on laisse vide plutot que d'inventer
+    if (cm == null) { delete vals[a.name]; return; }         // non donnee par le vendeur : on laisse vide plutot que d'inventer (fillRequired mettra « Does not apply » si eBay l'exige)
     if (a.mode === 'SelectionOnly' && (a.values || []).length) return;
     const nm = String(a.name);
     if (/\bmm\b/i.test(nm)) vals[a.name] = (cm * 10).toFixed(0) + ' mm';
