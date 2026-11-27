@@ -901,6 +901,7 @@ function dropIfEmpty(idx) {
   const n = articles.filter(a => !a.deleted).length;
   document.getElementById('photoCount').textContent = n + ' article' + (n > 1 ? 's' : '') + ' restant' + (n > 1 ? 's' : '');
   banner('ok', `Article #${art.id} supprimé (plus aucune photo)`);
+  if (typeof refreshExportCount === 'function' && articles.some(a => a.published && a.published.ebay)) refreshExportCount();
   return true;
 }
 
@@ -1677,6 +1678,7 @@ function deleteArticle(idx) {
   document.getElementById(`panel-${idx}`).style.display = 'none';
   const n = articles.filter(a => !a.deleted).length;
   document.getElementById('photoCount').textContent = n + ' article' + (n > 1 ? 's' : '') + ' restant' + (n > 1 ? 's' : '');
+  if (articles.some(a => a.published && a.published.ebay)) refreshExportCount();
 }
 
 async function generateAll() {
@@ -1744,6 +1746,18 @@ async function publishAllOne(idx) {
   else banner('ok', `Article #${art.id} publié partout (eBay, Etsy, Shopify)`);
 }
 
+// Compteur global (bouton + texte) : recalculé après chaque publication, suppression ou export
+function refreshExportCount() {
+  if (window.__exporting) return;
+  const btn = document.getElementById('btnExportAll'), pc = document.getElementById('photoCount');
+  if (!btn || !articles.length) return;
+  const live = articles.filter(a => !a.deleted);
+  const full = live.filter(a => a.published && a.published.ebay && a.published.etsy && a.published.shopify).length;
+  const rest = live.length - full;
+  btn.innerHTML = rest ? `Exporter les ${rest} restant${rest > 1 ? 's' : ''}` : `✓ ${full} article${full > 1 ? 's' : ''} exporté${full > 1 ? 's' : ''}`;
+  if (pc) pc.textContent = `${full} exporté${full > 1 ? 's' : ''} sur ${live.length}` + (rest ? ` · ${rest} à exporter` : ' · tout est exporté');
+}
+
 async function exportAll() {
   const todo = articles.map((a, i) => i).filter(i => !articles[i].deleted && !(articles[i].published && articles[i].published.ebay && articles[i].published.etsy && articles[i].published.shopify));
   if (!todo.length) { alert('Tous les articles sont déjà exportés.'); return; }
@@ -1752,7 +1766,7 @@ async function exportAll() {
   const btn = document.getElementById('btnExportAll');
   const label = btn.innerHTML;
   btn.disabled = true;
-  window.__batch = true;
+  window.__batch = true; window.__exporting = true;
   let done = 0, ok = 0; const errs = [];
   const pc = document.getElementById('photoCount');
   const upd = () => {
@@ -1770,7 +1784,7 @@ async function exportAll() {
       done++; upd();
     }
   } finally {
-    window.__batch = false; btn.disabled = false;
+    window.__batch = false; window.__exporting = false; btn.disabled = false;
     // etat final lisible : le bouton et le texte a droite disent la meme chose
     const live = articles.filter(a => !a.deleted);
     const full = live.filter(a => a.published && a.published.ebay && a.published.etsy && a.published.shopify).length;
@@ -2322,7 +2336,7 @@ async function publishEbay(idx) {
     });
     const d = await r.json();
     if (d.error) throw new Error(typeof d.error === 'string' ? d.error : JSON.stringify(d.error));
-    art.published.ebay = d.item_id;
+    art.published.ebay = d.item_id; refreshExportCount();
     status.innerHTML = `<span class="pub-status">✓ ${d.item_id}</span>`;
     btn.textContent = 'Republier';
   } catch(e) {
@@ -2360,7 +2374,7 @@ async function publishEtsy(idx) {
     if (rt && rt.value) body.return_policy_id = Number(rt.value);
 
     const d = await etsyApi('POST', `/application/shops/${etsyInfo.shopId}/listings`, body);
-    art.published.etsy = d.listing_id;
+    art.published.etsy = d.listing_id; refreshExportCount();
     const notes = [];
     for (const p of props) {
       try {
@@ -2445,7 +2459,7 @@ async function publishShopify(idx) {
     const d = await r.json();
     if (d.error) throw new Error(typeof d.error === 'string' ? d.error : JSON.stringify(d.error));
     const pid = d.product && d.product.id;
-    art.published.shopify = pid;
+    art.published.shopify = pid; refreshExportCount();
     status.innerHTML = `<span class="pub-status">✓ en ligne #${pid}</span>`;
     btn.textContent = 'Republier';
   } catch(e) {
