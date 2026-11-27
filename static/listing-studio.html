@@ -2671,23 +2671,202 @@ async function openStockPreview(i) {
     const src = await lsFetch(BASE + '/ls/stock_source', { method: 'POST', headers: JSON_H, body: JSON.stringify({ refs: r.refs }) }).then(x => x.json());
     const s = src.ebay || src.shopify || src.etsy;
     if (!s) throw new Error('annonce illisible');
-    const imgs = [...new Set([].concat(...[src.ebay, src.shopify, src.etsy].filter(Boolean).map(x => x.images || [])))].slice(0, 12);
+    // photos : une liste par plateforme (meme ordre) ; la liste affichee est celle de Shopify (ou Etsy, ou eBay)
+    const pl = { ebay: (src.ebay || {}).images || [], etsy: (src.etsy || {}).images || [], shopify: (src.shopify || {}).images || [] };
+    const prim = pl.shopify.length ? pl.shopify : (pl.etsy.length ? pl.etsy : pl.ebay);
+    SP.i = i; SP.src = src; SP.pl = pl; SP.imgs = prim.slice(0, 12); SP.edits = {}; SP.orig = {};
     let desc = String(s.description || '').replace(/<!--\s*fmf-[a-z]+\s*-->/g, '').trim();
     if (!/<[a-z][\s\S]*>/i.test(desc)) desc = desc.split(/\n{2,}/).map(p => '<p>' + esc(p).replace(/\n/g, '<br>') + '</p>').join('');
     const plats = Object.keys(r.refs).map(p => PLAT_BADGE[p].n).join(', ');
     document.getElementById('spBody').className = '';
     document.getElementById('spBody').innerHTML =
-      `<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px">${imgs.map(u => `<img src="${esc(u)}" style="height:90px;border-radius:6px">`).join('')}</div>` +
+      `<div class="info-text" style="margin-bottom:4px">Clique sur une photo pour la retoucher (rotation, luminosité, contraste).</div>` +
+      `<div id="spGal" style="display:flex;gap:6px;overflow-x:auto;margin-bottom:6px"></div>` +
+      `<div id="spPhBar" style="display:none;margin-bottom:10px;padding:8px;background:#fff9db;border:1px solid #f59f00;border-radius:8px"></div>` +
       `<label style="font-size:12px;color:#868e96">Titre (max 80 caractères sur eBay)</label>` +
       `<input id="spTitle" value="${esc(s.title || '')}" maxlength="140" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:6px;margin-bottom:10px">` +
       `<label style="font-size:12px;color:#868e96">Description (modifiable ici)</label>` +
       `<div id="spDesc" contenteditable="true" style="border:1px solid #ced4da;border-radius:6px;padding:10px;min-height:200px;max-height:42vh;overflow:auto;font-size:15px">${desc}</div>` +
       `<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><button class="btn btn-primary" id="spSave" onclick="saveStockPreview(${i})">Enregistrer sur ${esc(plats)}</button><span id="spMsg" class="info-text"></span></div>`;
+    spGallery();
   } catch (e) {
     document.getElementById('spBody').innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 160))}</span>`;
   }
 }
 function closeStockPreview() { const m = document.getElementById('stockPrev'); if (m) m.remove(); }
+
+// ── Retouche des photos depuis la fiche du stock (rotation, luminosite, contraste) puis envoi aux 3 plateformes ──
+const SP = { i: null, src: null, pl: {}, imgs: [], edits: {}, orig: {} };
+let SPE = null;   // etat de l'editeur ouvert
+function spGallery() {
+  const g = document.getElementById('spGal'); if (!g) return;
+  g.innerHTML = SP.imgs.map((u, k) => {
+    const ed = SP.edits[k];
+    return `<div onclick="spEditPhoto(${k})" title="Retoucher cette photo" style="position:relative;flex:0 0 auto;cursor:pointer">` +
+      `<img src="${esc(ed || u)}" style="height:90px;border-radius:6px;display:block;${ed ? 'outline:3px solid #f59f00' : ''}">` +
+      (ed ? '<span style="position:absolute;top:3px;left:3px;background:#f59f00;color:#fff;border-radius:4px;font-size:11px;padding:0 4px">retouchée</span>' : '') + `</div>`;
+  }).join('');
+  const n = Object.keys(SP.edits).length, bar = document.getElementById('spPhBar');
+  if (!bar) return;
+  bar.style.display = n ? '' : 'none';
+  bar.innerHTML = `<button class="btn btn-primary" id="spPhBtn" onclick="spApplyPhotos()">Appliquer ${n} photo${n > 1 ? 's' : ''} retouchée${n > 1 ? 's' : ''} sur ${Object.keys(stockRows[SP.i].refs).map(p => PLAT_BADGE[p].n).join(', ')}</button> <span id="spPhMsg" class="info-text"></span>`;
+}
+function spDraw(img, v, maxSide) {
+  const sc = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const iw = Math.round(img.width * sc), ih = Math.round(img.height * sc);
+  const q = ((v.q % 4) + 4) % 4, odd = q % 2 === 1;
+  const W = odd ? ih : iw, H = odd ? iw : ih;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.filter = `brightness(${1 + v.br / 100}) contrast(${1 + v.ct / 100})`;
+  x.translate(W / 2, H / 2);
+  x.rotate((q * 90 + v.rot) * Math.PI / 180);
+  const k = v.rot ? coverScale(W, H, v.rot) : 1;
+  x.scale(k, k);
+  x.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+  return c;
+}
+function spVals() {
+  return { q: SPE.q, rot: parseFloat(document.getElementById('sgRot').value) || 0, br: parseInt(document.getElementById('sgBr').value, 10) || 0, ct: parseInt(document.getElementById('sgCt').value, 10) || 0 };
+}
+function spPreview() {
+  if (!SPE || !SPE.img) return;
+  const v = spVals();
+  document.getElementById('sgRotV').textContent = v.rot.toFixed(1) + '°';
+  document.getElementById('sgBrV').textContent = (v.br > 0 ? '+' : '') + v.br;
+  document.getElementById('sgCtV').textContent = (v.ct > 0 ? '+' : '') + v.ct;
+  const c = spDraw(SPE.img, v, 900), cv = document.getElementById('sgCv');
+  cv.width = c.width; cv.height = c.height;
+  cv.getContext('2d').drawImage(c, 0, 0);
+}
+function spTurn(d) { if (SPE) { SPE.q = (SPE.q + d + 4) % 4; spPreview(); } }
+function spReset() {
+  if (!SPE) return;
+  SPE.q = 0;
+  ['sgRot', 'sgBr', 'sgCt'].forEach(id => { document.getElementById(id).value = 0; });
+  spPreview();
+}
+function spEdClose() { const m = document.getElementById('spEd'); if (m) m.remove(); SPE = null; }
+async function spEditPhoto(k) {
+  const u = SP.imgs[k]; if (!u) return;
+  spEdClose();
+  SPE = { k, q: 0, img: null };
+  const m = document.createElement('div');
+  m.id = 'spEd';
+  m.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:12px';
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:980px;width:100%;max-height:96vh;overflow:auto;padding:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Retoucher la photo ${k + 1} / ${SP.imgs.length}</b><button class="btn btn-outline" onclick="spEdClose()">Annuler</button></div>
+    <div style="text-align:center;background:#f1f3f5;border-radius:8px;min-height:120px"><canvas id="sgCv" style="max-width:100%;max-height:62vh;display:block;margin:0 auto"></canvas><div id="sgLoad" class="info-text" style="padding:30px">chargement de la photo…</div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:10px;font-size:13px">
+      <span><button class="btn btn-outline" onclick="spTurn(-1)" title="Tourner de 90° à gauche">↺ 90°</button> <button class="btn btn-outline" onclick="spTurn(1)" title="Tourner de 90° à droite">↻ 90°</button></span>
+      <label>Rotation fine <input id="sgRot" type="range" min="-10" max="10" step="0.1" value="0" oninput="spPreview()" style="vertical-align:middle;width:150px"> <b id="sgRotV" style="display:inline-block;min-width:42px">0°</b></label>
+      <label>Luminosité <input id="sgBr" type="range" min="-50" max="50" step="1" value="0" oninput="spPreview()" style="vertical-align:middle;width:110px"> <b id="sgBrV" style="display:inline-block;min-width:28px">0</b></label>
+      <label>Contraste <input id="sgCt" type="range" min="-50" max="50" step="1" value="0" oninput="spPreview()" style="vertical-align:middle;width:110px"> <b id="sgCtV" style="display:inline-block;min-width:28px">0</b></label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-primary" onclick="spEdOk()">Valider la retouche</button><button class="btn btn-outline" onclick="spReset()">Réinitialiser</button>${SP.edits[k] ? '<button class="btn btn-outline" onclick="spEdRevert()">Revenir à la photo d\'origine</button>' : ''}</div></div>`;
+  document.body.appendChild(m);
+  try {
+    if (!SP.orig[k]) {
+      const f = await fetch(BASE + '/fetch_image', { method: 'POST', headers: JSON_H, body: JSON.stringify({ url: u }) }).then(r => r.json());
+      if (!f.base64) throw new Error(f.error || 'photo illisible');
+      SP.orig[k] = `data:${f.mediaType || 'image/jpeg'};base64,${f.base64}`;
+    }
+    SPE.img = await loadImg(SP.orig[k]);
+    document.getElementById('sgLoad').remove();
+    spPreview();
+  } catch (e) { const l = document.getElementById('sgLoad'); if (l) l.innerHTML = `<span class="pub-err">${esc(String(e.message).slice(0, 160))}</span>`; }
+}
+function spEdOk() {
+  if (!SPE || !SPE.img) return;
+  const v = spVals(), k = SPE.k;
+  if (!(((v.q % 4) + 4) % 4) && !v.rot && !v.br && !v.ct) delete SP.edits[k];
+  else SP.edits[k] = spDraw(SPE.img, v, 2400).toDataURL('image/jpeg', 0.92);
+  spEdClose(); spGallery();
+}
+function spEdRevert() { if (SPE) { delete SP.edits[SPE.k]; spEdClose(); spGallery(); } }
+async function shopApi(method, path, body) {
+  const r = await fetch(BASE + '/shopify/api', { method: 'POST', headers: JSON_H, body: JSON.stringify({ method, path, body }) });
+  const d = await r.json();
+  if (d.error) throw new Error(typeof d.error === 'string' ? d.error : JSON.stringify(d.error));
+  return d;
+}
+async function spApplyPhotos() {
+  const r = stockRows[SP.i], ks = Object.keys(SP.edits).map(Number).sort((a, b) => a - b);
+  if (!ks.length) return;
+  const btn = document.getElementById('spPhBtn'), msg = document.getElementById('spPhMsg');
+  btn.disabled = true;
+  const say = t => { msg.textContent = t; };
+  const res = {}, cdn = {};
+  const n = SP.imgs.length;
+  const sameCount = p => (SP.pl[p] || []).length === n;
+  window.__batch = true;
+  // 1. Shopify : on ajoute la photo retouchee a la meme position puis on supprime l'ancienne
+  if (r.refs.shopify) {
+    try {
+      say('Shopify…');
+      if (!sameCount('shopify')) throw new Error('nombre de photos différent sur Shopify');
+      const pid = r.refs.shopify.id;
+      const old = ((await shopApi('GET', `/products/${pid}/images.json`)).images || []).sort((a, b) => a.position - b.position);
+      if (old.length !== n) throw new Error('nombre de photos différent sur Shopify');
+      for (const k of ks) {
+        const att = dataUrlToBase64(await resizeDataUrl(SP.edits[k], 1600));
+        const d = await shopApi('POST', `/products/${pid}/images.json`, { image: { attachment: att, position: k + 1, alt: old[k].alt || '' } });
+        if (!d.image || !d.image.src) throw new Error('envoi refusé par Shopify');
+        cdn[k] = d.image.src;
+        try { await shopApi('DELETE', `/products/${pid}/images/${old[k].id}.json`); } catch (_) {}
+      }
+      res.shopify = 'ok';
+    } catch (e) { res.shopify = 'erreur : ' + e.message; }
+  }
+  // 2. Etsy : meme position (rank) avec remplacement
+  if (r.refs.etsy) {
+    try {
+      say('Etsy…');
+      if (!sameCount('etsy')) throw new Error('nombre de photos différent sur Etsy');
+      for (const k of ks) {
+        const data = dataUrlToBase64(await resizeDataUrl(SP.edits[k], 2000));
+        const d = await fetch(BASE + '/ls/etsy_finish', { method: 'POST', headers: JSON_H,
+          body: JSON.stringify({ shop_id: r.refs.etsy.shop, listing_id: r.refs.etsy.id, images: [{ data, alt: r.title }], ranks: [k + 1], overwrite: true, activate: false }) }).then(x => x.json());
+        if (d.error || !d.uploaded) throw new Error(d.error || (d.errors || []).join(' ; ') || 'refusé par Etsy');
+      }
+      res.etsy = 'ok';
+    } catch (e) { res.etsy = 'erreur : ' + e.message; }
+  }
+  // 3. eBay : liste d'adresses de photos (les retouchees pointent vers un hebergement durable)
+  if (r.refs.ebay) {
+    try {
+      say('eBay…');
+      if (!sameCount('ebay')) throw new Error('nombre de photos différent sur eBay');
+      const urls = SP.pl.ebay.slice();
+      const miss = ks.filter(k => !cdn[k]);
+      if (miss.length) {   // pas de Shopify : hebergement temporaire du serveur (a verifier plus tard)
+        const up = await fetch(BASE + '/ls/upload', { method: 'POST', headers: JSON_H,
+          body: JSON.stringify({ images: await Promise.all(miss.map(async k => ({ data: dataUrlToBase64(await resizeDataUrl(SP.edits[k], 1600)) }))) }) }).then(x => x.json());
+        if (!up.files || up.files.length !== miss.length) throw new Error('hébergement des photos échoué');
+        miss.forEach((k, j) => { cdn[k] = location.origin + up.files[j].url; });
+      }
+      ks.forEach(k => { urls[k] = cdn[k]; });
+      const c = seoCreds();
+      if (!c['s-ebay-token']) throw new Error('jeton eBay manquant (Réglages)');
+      const x = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const body = '<?xml version="1.0" encoding="utf-8"?><ReviseItemRequest xmlns="urn:ebay:apis:eBLBaseComponents"><RequesterCredentials><eBayAuthToken>' + c['s-ebay-token'] + '</eBayAuthToken></RequesterCredentials><Item><ItemID>' + r.refs.ebay.id + '</ItemID><PictureDetails><GalleryType>Gallery</GalleryType>' + urls.map(u => '<PictureURL>' + x(u) + '</PictureURL>').join('') + '</PictureDetails></Item></ReviseItemRequest>';
+      const d = await fetch(BASE + '/ebay', { method: 'POST', headers: JSON_H, body: JSON.stringify({ headers: {
+        'X-EBAY-API-COMPATIBILITY-LEVEL': '1193', 'X-EBAY-API-CALL-NAME': 'ReviseItem', 'X-EBAY-API-SITEID': '0',
+        'X-EBAY-API-APP-NAME': c['s-ebay-app'] || '', 'X-EBAY-API-CERT-NAME': c['s-ebay-cert'] || '', 'Content-Type': 'text/xml' }, body }) }).then(y => y.json());
+      const xml = d.body || '';
+      if (!/<Ack>(Success|Warning)<\/Ack>/.test(xml)) throw new Error(((xml.match(/<LongMessage>([^<]*)/) || [])[1]) || d.error || 'refusé par eBay');
+      res.ebay = 'ok';
+    } catch (e) { res.ebay = 'erreur : ' + e.message; }
+  }
+  window.__batch = false;
+  const bad = Object.entries(res).filter(([, v]) => v !== 'ok').map(([p, v]) => PLAT_BADGE[p].n + ' ' + v);
+  const ok = Object.entries(res).filter(([, v]) => v === 'ok').map(([p]) => PLAT_BADGE[p].n);
+  msg.innerHTML = (ok.length ? `<span style="color:#1b6b2b">✓ ${esc(ok.join(', '))}</span> ` : '') + (bad.length ? `<span class="pub-err">${esc(bad.join(' · '))}</span>` : '');
+  if (!bad.length) {
+    banner('ok', 'Photos retouchées appliquées sur ' + ok.join(', ') + ' (eBay peut mettre quelques minutes à les afficher)');
+    setTimeout(() => { if (document.getElementById('stockPrev') && SP.i === stockRows.indexOf(r)) openStockPreview(SP.i); }, 1500);
+  } else { btn.disabled = false; }
+}
 async function saveStockPreview(i) {
   const r = stockRows[i];
   const title = document.getElementById('spTitle').value.trim();
